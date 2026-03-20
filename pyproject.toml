@@ -1,0 +1,42 @@
+[project]
+name = "djcode-python"
+version = "0.1.0"
+description = "DJcode — Local-first AI coding CLI by DarshJ.AI"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [
+    { name = "DarshJ", email = "darsh@darshj.ai" },
+]
+keywords = ["ai", "cli", "coding", "ollama", "local-first"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "click>=8.1",
+    "rich>=13.7",
+    "httpx>=0.27",
+    "prompt-toolkit>=3.0",
+]
+
+[project.scripts]
+djcode = "djcode.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/djcode"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
