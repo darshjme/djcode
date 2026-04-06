@@ -4,7 +4,7 @@ Usage:
     djcode                         Interactive REPL
     djcode "write a function"     One-shot mode
     djcode --provider mlx          Use MLX backend
-    djcode --model qwen3:32b       Specific model
+    djcode --model gemma4          Specific model
     djcode --bypass-rlhf           Unrestricted mode
     djcode --version               Show version
 """
@@ -35,7 +35,7 @@ console = Console()
     "--model",
     "-m",
     default=None,
-    help="Model name (default: qwen3:32b)",
+    help="Model name (default: gemma4)",
 )
 @click.option(
     "--bypass-rlhf",

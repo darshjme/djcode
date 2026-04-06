@@ -17,7 +17,7 @@ HISTORY_FILE = CONFIG_DIR / "history.txt"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "provider": "ollama",
-    "model": "qwen3:32b",
+    "model": "gemma4",
     "ollama_url": "http://localhost:11434",
     "mlx_url": "http://localhost:8080",
     "remote_url": "",

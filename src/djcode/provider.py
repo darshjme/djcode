@@ -247,9 +247,10 @@ class Provider:
         messages: list[Message],
         *,
         stream: bool = True,
+        use_tools: bool = True,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Call Ollama /api/chat with streaming."""
-        payload = {
+        """Call Ollama /api/chat with streaming. Falls back without tools if model rejects them."""
+        payload: dict[str, Any] = {
             "model": self.config.model,
             "messages": [self._msg_to_ollama(m) for m in messages],
             "stream": stream,
@@ -257,24 +258,33 @@ class Provider:
                 "temperature": self.config.temperature,
                 "num_predict": self.config.max_tokens,
             },
-            "tools": TOOL_DEFINITIONS,
         }
+        if use_tools:
+            payload["tools"] = TOOL_DEFINITIONS
 
         url = f"{self.config.base_url}/api/chat"
 
-        if stream:
-            async with self._client.stream("POST", url, json=payload) as resp:
+        try:
+            if stream:
+                async with self._client.stream("POST", url, json=payload) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if line.strip():
+                            try:
+                                yield json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+            else:
+                resp = await self._client.post(url, json=payload)
                 resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if line.strip():
-                        try:
-                            yield json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-        else:
-            resp = await self._client.post(url, json=payload)
-            resp.raise_for_status()
-            yield resp.json()
+                yield resp.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400 and use_tools:
+                # Model doesn't support tools — retry without them
+                async for chunk in self.chat_ollama(messages, stream=stream, use_tools=False):
+                    yield chunk
+            else:
+                raise
 
     # -- OpenAI-compatible API (MLX, remote) --
 
