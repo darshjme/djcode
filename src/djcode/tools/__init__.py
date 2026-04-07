@@ -11,6 +11,7 @@ from djcode.tools.file_write import execute_file_write
 from djcode.tools.git import execute_git
 from djcode.tools.glob import execute_glob
 from djcode.tools.grep import execute_grep
+from djcode.tools.web_fetch import execute_web_fetch
 
 # Central dispatch table
 TOOL_DISPATCH: dict[str, Any] = {
@@ -21,6 +22,7 @@ TOOL_DISPATCH: dict[str, Any] = {
     "grep": execute_grep,
     "glob": execute_glob,
     "git": execute_git,
+    "web_fetch": execute_web_fetch,
 }
 
 

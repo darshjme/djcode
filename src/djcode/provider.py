@@ -239,6 +239,27 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": "Fetch content from a URL and return its text. Useful for reading docs, APIs, or web pages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to fetch.",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Maximum characters to return (default 10000).",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 
@@ -488,6 +509,121 @@ class Provider:
                 "Request timed out. Try a smaller model or increase timeout."
             )
 
+    # -- Anthropic native Messages API --
+
+    async def chat_anthropic(
+        self,
+        messages: list[Message],
+        *,
+        stream: bool = True,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Call Anthropic's native Messages API (/v1/messages)."""
+        headers = {
+            "x-api-key": self.config.api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        payload: dict[str, Any] = {
+            "model": self.config.model,
+            "max_tokens": self.config.max_tokens,
+            "messages": [
+                {"role": m.role, "content": m.content}
+                for m in messages
+                if m.role != "system"
+            ],
+        }
+        # Anthropic uses system as a top-level param, not a message
+        system_msgs = [m.content for m in messages if m.role == "system"]
+        if system_msgs:
+            payload["system"] = "\n".join(system_msgs)
+
+        # Add tools in Anthropic format
+        anthropic_tools = []
+        for td in TOOL_DEFINITIONS:
+            func = td.get("function", {})
+            anthropic_tools.append({
+                "name": func["name"],
+                "description": func.get("description", ""),
+                "input_schema": func.get("parameters", {}),
+            })
+        payload["tools"] = anthropic_tools
+
+        url = f"{self.config.base_url}/v1/messages"
+
+        try:
+            if stream:
+                payload["stream"] = True
+                async with self._client.stream("POST", url, json=payload, headers=headers) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if line.startswith("data: ") and line != "data: [DONE]":
+                            try:
+                                chunk = json.loads(line[6:])
+                            except json.JSONDecodeError:
+                                continue
+                            # Convert Anthropic streaming format to OpenAI-compatible internal format
+                            if chunk.get("type") == "content_block_delta":
+                                delta = chunk.get("delta", {})
+                                if delta.get("type") == "text_delta":
+                                    yield {"choices": [{"delta": {"content": delta.get("text", "")}}]}
+                                elif delta.get("type") == "input_json_delta":
+                                    # Tool call argument streaming
+                                    yield {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": delta.get("partial_json", "")}}]}}]}
+                            elif chunk.get("type") == "content_block_start":
+                                block = chunk.get("content_block", {})
+                                if block.get("type") == "tool_use":
+                                    yield {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": block.get("id", ""), "function": {"name": block.get("name", ""), "arguments": ""}}]}}]}
+                            elif chunk.get("type") == "message_delta":
+                                stop = chunk.get("delta", {}).get("stop_reason", "")
+                                if stop == "tool_use":
+                                    yield {"choices": [{"finish_reason": "tool_calls"}]}
+                                elif stop == "end_turn":
+                                    yield {"choices": [{"finish_reason": "stop"}]}
+            else:
+                resp = await self._client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+                # Convert Anthropic response to OpenAI-compatible format
+                content_parts = data.get("content", [])
+                text = ""
+                tool_calls = []
+                for part in content_parts:
+                    if part.get("type") == "text":
+                        text += part.get("text", "")
+                    elif part.get("type") == "tool_use":
+                        tool_calls.append({
+                            "id": part.get("id", ""),
+                            "function": {
+                                "name": part.get("name", ""),
+                                "arguments": json.dumps(part.get("input", {})),
+                            },
+                        })
+                result: dict[str, Any] = {"choices": [{"message": {"content": text, "role": "assistant"}}]}
+                if tool_calls:
+                    result["choices"][0]["message"]["tool_calls"] = tool_calls
+                yield result
+
+        except httpx.ConnectError:
+            raise ConnectionError(
+                f"Cannot connect to Anthropic API at {self.config.base_url}."
+            )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise ConnectionError(
+                    "Anthropic authentication failed. Check your API key (/auth or ANTHROPIC_API_KEY env var)."
+                )
+            elif e.response.status_code == 404:
+                raise ConnectionError(
+                    f"Anthropic model '{self.config.model}' not found."
+                )
+            else:
+                raise ConnectionError(
+                    f"Anthropic API error {e.response.status_code}: {e.response.text[:200]}"
+                )
+        except httpx.ReadTimeout:
+            raise ConnectionError("Anthropic request timed out.")
+
     # -- Unified interface --
 
     async def chat(
@@ -500,8 +636,11 @@ class Provider:
         if self.config.name == "ollama":
             async for chunk in self.chat_ollama(messages, stream=stream):
                 yield chunk
+        elif self.config.name == "anthropic":
+            async for chunk in self.chat_anthropic(messages, stream=stream):
+                yield chunk
         else:
-            # All other providers (openai, anthropic, nvidia, google, groq,
+            # All other providers (openai, nvidia, google, groq,
             # together, openrouter, mlx, remote) use OpenAI-compatible API
             async for chunk in self.chat_openai_compat(messages, stream=stream):
                 yield chunk

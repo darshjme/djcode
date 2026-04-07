@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any, AsyncIterator
 
+import questionary
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -30,10 +31,12 @@ class Operator:
         bypass_rlhf: bool = False,
         raw: bool = False,
         model: str = "",
+        auto_accept: bool = False,
     ) -> None:
         self.provider = provider
         self.bypass_rlhf = bypass_rlhf
         self.raw = raw
+        self.auto_accept = auto_accept
         self.messages: list[Message] = [
             Message(role="system", content=build_system_prompt(
                 bypass_rlhf=bypass_rlhf, model=model or provider.config.model
@@ -96,6 +99,25 @@ class Operator:
                     # Display tool call
                     if not self.raw:
                         self._display_tool_call(name, args)
+
+                    # Tool confirmation gate — require user approval unless auto_accept
+                    if not self.auto_accept:
+                        console.print(Panel(
+                            f"[bold]Tool:[/] {name}\n[bold]Args:[/] {json.dumps(args, indent=2)[:500]}",
+                            title="[yellow]Tool Call[/]",
+                            border_style="yellow",
+                        ))
+                        confirm = questionary.confirm("Execute this tool?", default=True).ask()
+                        if not confirm:
+                            self.messages.append(
+                                Message(
+                                    role="tool",
+                                    content="Error: User denied tool execution",
+                                    tool_call_id=tc.get("id", f"call_{name}"),
+                                    name=name,
+                                )
+                            )
+                            continue
 
                     # Execute tool
                     result = await dispatch_tool(name, args)

@@ -86,7 +86,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 
 # ── Uncensored model detection ─────────────────────────────────────────────
 
-UNCENSORED_KEYWORDS = {"dolphin", "abliterated", "uncensored", "wizard-vicuna"}
+UNCENSORED_KEYWORDS = {"dolphin", "abliterated", "uncensored", "wizard-vicuna", "nous-hermes"}
 
 
 def is_uncensored_model(model_name: str) -> bool:

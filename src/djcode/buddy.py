@@ -1,6 +1,6 @@
 """DJcode Buddy — persistent ASCII companion that lives beside your prompt.
 
-Inspired by Claude Code's companion system, but uniquely DarshJ-themed.
+A uniquely DarshJ-themed companion system.
 The buddy reacts to what's happening: thinking, success, error, idle.
 
 Species: diya (oil lamp), cobra, lotus, chai, peacock, om

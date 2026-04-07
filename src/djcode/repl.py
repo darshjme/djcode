@@ -147,6 +147,9 @@ HELP_TEXT = f"""\
   [cyan]/provider[/]          Interactive provider picker
   [cyan]/auth[/]              Configure provider + API key
   [cyan]/auto[/]              Toggle auto-accept tool calls
+  [cyan]/scout[/] <query>     Read-only codebase exploration
+  [cyan]/architect[/] <task>  Generate implementation plan
+  [cyan]/uncensored[/]        Show uncensored model info
   [cyan]/memory[/]            Show memory stats
   [cyan]/remember[/] k=v      Store a persistent fact
   [cyan]/recall[/] <key>      Recall a persistent fact
@@ -392,6 +395,7 @@ async def handle_slash_command(
         cfg = load_config()
         new_val = not cfg.get("auto_accept", False)
         set_value("auto_accept", new_val)
+        operator.auto_accept = new_val
         status_bar.update(auto_accept=new_val)
         state = "ON" if new_val else "OFF"
         console.print(f"[green]Auto-accept:[/] {state}")
@@ -474,6 +478,48 @@ async def handle_slash_command(
             set_value(key, parsed)
             console.print(f"[green]Set {key}=[/]{parsed}")
 
+    elif command == "/scout":
+        if not arg:
+            console.print(f"[yellow]Usage: /scout <query>[/]")
+        else:
+            from djcode.agents.scout import Scout
+
+            scout = Scout(operator.provider)
+            console.print(f"[dim]Scout investigating...[/]")
+            result = await scout.investigate(arg)
+            console.print(Markdown(result))
+
+    elif command == "/architect":
+        if not arg:
+            console.print(f"[yellow]Usage: /architect <task>[/]")
+        else:
+            from djcode.agents.architect import Architect
+
+            architect = Architect(operator.provider)
+            console.print(f"[dim]Architect planning...[/]")
+            result = await architect.plan(arg)
+            console.print(Markdown(result))
+
+    elif command == "/uncensored":
+        console.print(Panel(
+            "[bold]Uncensored Models:[/]\n\n"
+            "  dolphin3          — Fully uncensored, no RLHF\n"
+            "  abliterated       — RLHF removed via activation engineering\n"
+            "  wizard-vicuna     — Classic unrestricted model\n"
+            "  nous-hermes       — Minimal alignment, broad capabilities\n\n"
+            "[bold]How it works:[/]\n"
+            "  DJcode detects uncensored models and injects a strong\n"
+            "  RLHF-override system prompt that forces direct answers\n"
+            "  without refusals, disclaimers, or safety warnings.\n\n"
+            "[bold]Censored models:[/]\n"
+            "  gemma4, qwen2.5-coder, deepseek-coder, llama3\n"
+            "  These may refuse certain requests. Use --bypass-rlhf\n"
+            "  to attempt override (not guaranteed).\n\n"
+            "[bold]Switch:[/] /model dolphin3",
+            title=f"[bold {GOLD}]Uncensored Mode[/]",
+            border_style=GOLD,
+        ))
+
     elif command == "/raw":
         operator.raw = not operator.raw
         state = "on" if operator.raw else "off"
@@ -533,7 +579,14 @@ async def run_repl(
         console.print(f"[dim]{msg}[/]")
 
     # Initialize operator with model-aware system prompt
-    operator = Operator(llm, bypass_rlhf=bypass_rlhf, raw=raw, model=llm.config.model)
+    effective_auto_accept = auto_accept or cfg.get("auto_accept", False)
+    operator = Operator(
+        llm,
+        bypass_rlhf=bypass_rlhf,
+        raw=raw,
+        model=llm.config.model,
+        auto_accept=effective_auto_accept,
+    )
 
     # Initialize memory
     memory = MemoryManager()
@@ -623,6 +676,16 @@ async def run_repl(
                 console.print()  # Newline after streaming
                 memory.add_session_message("assistant", full_response)
                 buddy.set_mood("success")
+
+                # Censorship detection — warn if aligned model refuses
+                from djcode.prompt import CENSORED_WARNING, detect_refusal
+
+                if detect_refusal(full_response) and not is_uncensored_model(llm.config.model):
+                    console.print(Panel(
+                        CENSORED_WARNING.format(model=llm.config.model),
+                        title="[yellow]Model Censorship Detected[/]",
+                        border_style="yellow",
+                    ))
             else:
                 buddy.set_mood("idle")
 
