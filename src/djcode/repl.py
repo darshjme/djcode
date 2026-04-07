@@ -46,6 +46,9 @@ from djcode.context_file import save_context, inject_context_into_prompt
 from djcode.permissions import PermissionManager
 from djcode.prompt_enhancer import enhance_prompt, describe_enhancement
 from djcode.stats import record_session_start, record_session_update, record_session_end, render_stats
+from djcode.extensions import ExtensionManager
+from djcode.recipes import RecipeManager, render_recipe_list, render_recipe_detail
+from djcode.sessions import SessionDB, render_session_list
 from djcode.config import (
     HISTORY_FILE,
     ensure_dirs,
@@ -193,6 +196,15 @@ HELP_TEXT = f"""\
   [cyan]/stats[/]             Usage dashboard with activity heatmap
   [cyan]/stats 7d[/]          Last 7 days stats
   [cyan]/stats 30d[/]         Last 30 days stats
+  [cyan]/extension[/]         List MCP extensions
+  [cyan]/extension add[/]     Add an MCP extension (name cmd [args])
+  [cyan]/extension rm[/]      Remove an extension
+  [cyan]/recipe[/]            List available recipes
+  [cyan]/recipe run[/]        Run a recipe (name [params])
+  [cyan]/recipe show[/]       Show recipe details
+  [cyan]/history[/]           Browse past sessions
+  [cyan]/history search[/]    Search past conversations
+  [cyan]/resume[/]            Resume a past session by ID
   [cyan]/buddy[/]             Show your buddy + speech bubble
   [cyan]/buddy pet[/]         Pet your buddy
   [cyan]/buddy species[/]     Show all species
@@ -752,6 +764,233 @@ async def handle_slash_command(
     elif command == "/shortcuts":
         show_shortcuts()
 
+    # ── MCP Extensions ────────────────────────────────────────────────
+    elif command == "/extension":
+        ext_mgr = ExtensionManager()
+        sub = arg.strip().split(maxsplit=2) if arg.strip() else []
+
+        if not sub or sub[0] == "list":
+            statuses = ext_mgr.get_status()
+            if not statuses:
+                console.print(f"[{GOLD}]No extensions registered.[/]")
+                console.print("[dim]Add one: /extension add <name> <command> [args...][/]")
+            else:
+                from rich.table import Table as _T
+                table = _T(show_header=True, header_style=f"bold {GOLD}", border_style="dim")
+                table.add_column("Name", style="bold white")
+                table.add_column("Command", style="dim")
+                table.add_column("Status")
+                table.add_column("Tools", justify="right")
+                for s in statuses:
+                    status = "[green]on[/]" if s["enabled"] else "[red]off[/]"
+                    if s.get("connected"):
+                        status = "[green]connected[/]"
+                    if s.get("last_error"):
+                        status = f"[red]error[/]"
+                    table.add_row(s["name"], s["cmd"], status, str(s["tools_count"]))
+                console.print()
+                console.print(table)
+                console.print()
+
+        elif sub[0] == "add" and len(sub) >= 3:
+            ext_name = sub[1]
+            ext_cmd_parts = sub[2].split()
+            ext_cmd = ext_cmd_parts[0]
+            ext_args = ext_cmd_parts[1:] if len(ext_cmd_parts) > 1 else []
+            ext = ext_mgr.add(ext_name, ext_cmd, ext_args)
+            console.print(f"[green]Added extension:[/] {ext.name} -> {ext.cmd}")
+            console.print(f"[dim]Tools will be discovered on first use. Try: /extension tools {ext_name}[/]")
+
+        elif sub[0] in ("rm", "remove") and len(sub) >= 2:
+            if ext_mgr.remove(sub[1]):
+                console.print(f"[green]Removed extension:[/] {sub[1]}")
+            else:
+                console.print(f"[yellow]Extension not found:[/] {sub[1]}")
+
+        elif sub[0] == "enable" and len(sub) >= 2:
+            ext_mgr.enable(sub[1])
+            console.print(f"[green]Enabled:[/] {sub[1]}")
+
+        elif sub[0] == "disable" and len(sub) >= 2:
+            ext_mgr.disable(sub[1])
+            console.print(f"[yellow]Disabled:[/] {sub[1]}")
+
+        elif sub[0] == "tools" and len(sub) >= 2:
+            try:
+                tools = await ext_mgr.refresh_tools(sub[1])
+                if tools:
+                    console.print(f"\n[bold {GOLD}]Tools from {sub[1]}:[/]")
+                    for t in tools:
+                        desc = t.get("description", "")[:60]
+                        console.print(f"  [white]{t.get('name', '?')}[/] [dim]— {desc}[/]")
+                    console.print()
+                else:
+                    console.print(f"[dim]No tools found for {sub[1]}[/]")
+            except Exception as e:
+                console.print(f"[red]Error connecting to {sub[1]}:[/] {e}")
+            finally:
+                await ext_mgr.shutdown()
+
+        else:
+            console.print("[dim]Usage: /extension [list|add|rm|enable|disable|tools] ...[/]")
+
+    # ── Recipes ───────────────────────────────────────────────────────
+    elif command == "/recipe":
+        recipe_mgr = RecipeManager()
+        sub = arg.strip().split(maxsplit=1) if arg.strip() else []
+
+        if not sub or sub[0] == "list":
+            render_recipe_list(console)
+
+        elif sub[0] == "show" and len(sub) >= 2:
+            try:
+                recipe = recipe_mgr.load(sub[1])
+                render_recipe_detail(console, recipe)
+            except FileNotFoundError as e:
+                console.print(f"[yellow]{e}[/]")
+
+        elif sub[0] == "run" and len(sub) >= 2:
+            # Parse: /recipe run <name> [params]
+            run_parts = sub[1].split(maxsplit=1)
+            recipe_name = run_parts[0]
+            param_str = run_parts[1] if len(run_parts) > 1 else ""
+
+            try:
+                recipe = recipe_mgr.load(recipe_name)
+                params = recipe_mgr.collect_params_from_args(recipe, param_str)
+
+                # Check for missing required params — prompt interactively
+                missing = [
+                    p for p in recipe.parameters
+                    if p.required and p.key not in params and not p.default
+                ]
+                if missing:
+                    console.print(f"[bold {GOLD}]Recipe: {recipe.name}[/] — {recipe.description}")
+                    console.print(f"[dim]Fill in the required parameters:[/]")
+                    extra = recipe_mgr.collect_params_interactive(recipe)
+                    params.update(extra)
+
+                console.print(f"\n[bold {GOLD}]Running recipe:[/] {recipe.name}")
+                console.print()
+
+                full_response = ""
+                async for token in recipe_mgr.execute(recipe, params, operator):
+                    sys.stdout.write(token)
+                    sys.stdout.flush()
+                    full_response += token
+
+                if full_response:
+                    console.print()
+
+            except FileNotFoundError as e:
+                console.print(f"[yellow]{e}[/]")
+            except ValueError as e:
+                console.print(f"[red]{e}[/]")
+            except Exception as e:
+                console.print(f"[red]Recipe execution error:[/] {e}")
+
+        elif sub[0] == "create":
+            console.print(f"[bold {GOLD}]Create a new recipe[/]")
+            try:
+                name = input("  Name: ").strip()
+                desc = input("  Description: ").strip()
+                instructions = input("  System instructions: ").strip()
+                prompt = input("  Prompt template (use {{param}} for placeholders): ").strip()
+                param_keys = input("  Parameters (comma-separated keys): ").strip()
+
+                from djcode.recipes import Recipe, RecipeParam
+                params = []
+                for key in param_keys.split(","):
+                    key = key.strip()
+                    if key:
+                        param_desc = input(f"    {key} description: ").strip()
+                        params.append(RecipeParam(key=key, description=param_desc))
+
+                recipe = Recipe(
+                    name=name,
+                    description=desc,
+                    instructions=instructions,
+                    prompt=prompt,
+                    parameters=params,
+                    author="user",
+                )
+                path = recipe_mgr.save(recipe)
+                console.print(f"\n[green]Recipe saved:[/] {path}")
+            except (EOFError, KeyboardInterrupt):
+                console.print("\n[dim]Cancelled.[/]")
+
+        elif sub[0] == "delete" and len(sub) >= 2:
+            if recipe_mgr.delete(sub[1]):
+                console.print(f"[green]Deleted recipe:[/] {sub[1]}")
+            else:
+                console.print(f"[yellow]Recipe not found:[/] {sub[1]}")
+
+        else:
+            console.print("[dim]Usage: /recipe [list|show|run|create|delete] ...[/]")
+
+    # ── Session History & Resume ──────────────────────────────────────
+    elif command == "/history":
+        sdb = SessionDB()
+        sub = arg.strip().split(maxsplit=1) if arg.strip() else []
+
+        if not sub:
+            sessions = sdb.list_sessions(limit=20)
+            render_session_list(console, sessions)
+
+        elif sub[0] == "search" and len(sub) >= 2:
+            results = sdb.search_sessions(sub[1])
+            if results:
+                console.print(f"\n[bold {GOLD}]Sessions matching '{sub[1]}':[/]")
+                render_session_list(console, results)
+            else:
+                console.print(f"[dim]No sessions match '{sub[1]}'[/]")
+
+        else:
+            console.print("[dim]Usage: /history [search <query>][/]")
+
+    elif command == "/resume":
+        if not arg.strip():
+            console.print("[dim]Usage: /resume <session_id>[/]")
+            console.print("[dim]Use /history to find session IDs[/]")
+        else:
+            sdb = SessionDB()
+            target_id = arg.strip()
+            session = sdb.get_session(target_id)
+            if not session:
+                console.print(f"[yellow]Session not found:[/] {target_id}")
+            else:
+                messages = sdb.load_conversation(target_id)
+                if not messages:
+                    console.print(f"[yellow]No conversation data for session {target_id}[/]")
+                else:
+                    # Restore messages into operator
+                    from djcode.provider import Message as _Msg
+                    # Keep the current system prompt, replace the rest
+                    system_msg = operator.messages[0] if operator.messages else None
+                    operator.messages.clear()
+                    if system_msg:
+                        operator.messages.append(system_msg)
+
+                    restored = 0
+                    for m in messages:
+                        role = m.get("role", "")
+                        if role == "system":
+                            continue  # Keep our own system prompt
+                        content = m.get("content", "")
+                        tc = m.get("tool_calls")
+                        operator.messages.append(_Msg(
+                            role=role,
+                            content=content,
+                            tool_calls=tc if tc else None,
+                        ))
+                        restored += 1
+
+                    console.print(
+                        f"[green]Resumed session {target_id}[/] "
+                        f"({session.model}, {restored} messages)"
+                    )
+                    console.print(f"[dim]Conversation context restored. Continue where you left off.[/]")
+
     else:
         console.print(f"[yellow]Unknown command:[/] {command}")
         console.print("[dim]Type /help for available commands[/]")
@@ -833,9 +1072,15 @@ async def run_repl(
     # Permission system
     permissions = PermissionManager(auto_accept=effective_auto_accept)
 
-    # Track session
+    # Track session (dual: legacy JSON + new SQLite)
     session_id = record_session_start(llm.config.model, llm.config.name)
+    session_db = SessionDB()
+    session_db.migrate_from_json()  # One-time migration, no-op if already done
+    sqlite_session_id = session_db.create_session(llm.config.model, llm.config.name)
     files_touched: list[str] = []
+
+    # Initialize extension manager
+    ext_manager = ExtensionManager()
 
     # Print banner + permissions warning + buddy greeting
     print_banner(llm)
@@ -1003,9 +1248,15 @@ async def run_repl(
                 buddy.set_mood("success")
                 buddy.tick()
 
-                # Track usage stats
+                # Track usage stats (legacy JSON + SQLite)
                 token_est = len(full_response) // 4
                 record_session_update(session_id, tokens=token_est, messages=1)
+                session_db.update_session(
+                    sqlite_session_id, tokens_out=token_est, messages=1,
+                )
+                # Persist conversation for /resume
+                session_db.save_message(sqlite_session_id, "user", user_input)
+                session_db.save_message(sqlite_session_id, "assistant", full_response)
 
                 # Tool extraction router — for models without native tool calling
                 # If the model produced text but didn't use any native tool_calls,
