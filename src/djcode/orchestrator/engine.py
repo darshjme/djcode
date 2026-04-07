@@ -288,6 +288,16 @@ class Orchestrator:
         self.auto_accept = auto_accept
         self.bus = ContextBus()
 
+        # Semantic router (embedding-based agent dispatch)
+        from djcode.orchestrator.router import SemanticRouter
+        self.router = SemanticRouter(provider)
+        self._router_initialized = False
+
+        # Vector context store (long-term memory retrieval)
+        from djcode.orchestrator.vector_context import VectorContextStore
+        self.vector_store = VectorContextStore(provider)
+        self.vector_store.initialize()  # Non-blocking, fails gracefully
+
     def _print_agent_header(self, spec: AgentSpec) -> None:
         """Print a compact header when an agent starts working."""
         icon = {
@@ -337,17 +347,38 @@ class Orchestrator:
     async def execute(self, task: str) -> AsyncIterator[str]:
         """Full orchestration — classify intent, pick agents, execute pipeline.
 
-        For simple tasks: routes to a single agent.
-        For complex tasks: runs a multi-agent pipeline.
+        1. Route via semantic embeddings (or regex fallback)
+        2. Inject relevant vector context from past sessions
+        3. Dispatch to single or multi-agent pipeline
+        4. Store results back to vector store for future retrieval
         """
+        # Initialize semantic router on first use (lazy, non-blocking)
+        if not self._router_initialized:
+            self._router_initialized = await self.router.initialize()
+
+        # Route: semantic if available, regex fallback
+        if self.router.is_semantic:
+            roles = await self.router.route(task)
+            route_method = "semantic"
+        else:
+            from djcode.prompt_enhancer import detect_intent as _detect
+            intent = _detect(task)
+            roles = get_agent_for_intent(intent)
+            route_method = "regex"
+
         intent = detect_intent(task)
-        roles = get_agent_for_intent(intent)
         self.bus.clear()
         self.bus.set_task(task, intent)
 
+        # Inject relevant past context from vector store
+        n_injected = self.vector_store.inject_context(self.bus, task, n_results=3)
+
         console.print(
             f"\n  [\u2728 {GOLD}]Orchestrator[/] "
-            f"[dim]intent={intent}, agents={[get_spec(r).name for r in roles]}[/]"
+            f"[dim]intent={intent}, agents={[get_spec(r).name for r in roles]}, "
+            f"router={route_method}"
+            + (f", context={n_injected} docs" if n_injected else "")
+            + "[/]"
         )
 
         if len(roles) == 1:
@@ -382,8 +413,24 @@ class Orchestrator:
                     preview = lines[0][:100] if lines else "(no output)"
                     console.print(f"    [dim]{preview}[/]")
 
+        # Store agent results in vector store for future context
+        for entry in self.bus.read_all():
+            if entry.role != "memory":  # Don't re-store retrieved context
+                self.vector_store.store_agent_result(
+                    agent_name=entry.agent,
+                    role=entry.role,
+                    task=task,
+                    result=entry.content,
+                )
+
         # Final summary
-        console.print(f"\n  [dim]Orchestration complete. {len(self.bus)} entries on context bus.[/]\n")
+        stored = self.vector_store.count()
+        console.print(
+            f"\n  [dim]Orchestration complete. "
+            f"{len(self.bus)} entries on context bus"
+            + (f", {stored} in vector memory" if stored else "")
+            + ".[/]\n"
+        )
 
     def render_roster(self) -> None:
         """Display the agent roster — all 10 agents with status."""
