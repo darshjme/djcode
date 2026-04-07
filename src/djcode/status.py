@@ -77,52 +77,38 @@ class StatusBar:
     def render(self) -> HTML:
         """Render the bottom toolbar as prompt_toolkit HTML.
 
-        This is called by prompt_toolkit on every keypress to keep the
-        toolbar up to date. It must return an HTML fragment.
+        Clean single line: ⏺ Mitra · ACT · gemma4 · ollama · ↓ 2.4k tokens · ~/project · Ctrl+? help
         """
-        emoji = self.buddy.emoji
         name = self.buddy.name
-        mood = self.buddy.mood
-        # Mood indicators
-        mood_icons = {
-            "idle": "",
-            "thinking": " \u23f3",
-            "success": " \u2713",
-            "error": " \u2717",
-        }
-        mood_suffix = mood_icons.get(mood, "")
         cwd = _shorten_cwd()
         tokens = _format_tokens(self.token_count)
 
         model_display = self.model or "no model"
-        if self.uncensored:
-            model_display += " \U0001f513"  # unlocked padlock
 
-        auto_str = "on" if self.auto_accept else "off"
-
-        # Mode indicator: highlight PLAN mode in magenta, ACT in green
+        # Mode indicator: PLAN highlighted magenta, ACT normal
         mode = self.mode
         if mode == "PLAN":
-            mode_segment = f'<style fg="#FF00FF" bg="#330033"><b> PLAN </b></style>'
+            mode_segment = f'<style fg="#FF00FF"><b>PLAN</b></style>'
         else:
-            mode_segment = f'<style fg="#00FF00"> ACT </style>'
+            mode_segment = f'<style fg="#00FF00">ACT</style>'
+
+        sep = ' <style fg="#444444">\u00b7</style> '
 
         return HTML(
-            f'<b><style fg="{GOLD}">{emoji} {name}{mood_suffix}</style></b>'
-            f' <style fg="#666666">\u2502</style> '
+            f'<style fg="{GOLD}">\u23fa</style> '
+            f'<b><style fg="{GOLD}">{name}</style></b>'
+            f'{sep}'
             f'{mode_segment}'
-            f' <style fg="#666666">\u2502</style> '
-            f'<style fg="#FFFFFF">{model_display}</style>'
-            f' <style fg="#666666">\u2502</style> '
-            f'<style fg="#888888">{self.provider}</style>'
-            f' <style fg="#666666">\u2502</style> '
-            f'<style fg="#888888">{tokens} tokens</style>'
-            f' <style fg="#666666">\u2502</style> '
-            f'<style fg="#888888">{cwd}</style>'
-            f' <style fg="#666666">\u2502</style> '
-            f'<style fg="#888888">auto: {auto_str}</style>'
-            f' <style fg="#666666">\u2502</style> '
-            f'<style fg="#666666">Ctrl+? help</style>'
+            f'{sep}'
+            f'<style fg="#AAAAAA">{model_display}</style>'
+            f'{sep}'
+            f'<style fg="#666666">{self.provider}</style>'
+            f'{sep}'
+            f'<style fg="#666666">\u2193 {tokens} tokens</style>'
+            f'{sep}'
+            f'<style fg="#555555">{cwd}</style>'
+            f'{sep}'
+            f'<style fg="#444444">Ctrl+? help</style>'
         )
 
 

@@ -869,14 +869,15 @@ async def run_repl(
         try:
             buddy.set_mood("idle")
 
+            # Prompt: ❯ (gold) in ACT mode, ⏸ (magenta) in PLAN mode
+            if tui_mode.plan_mode:
+                _prompt_html = HTML("<style fg='#FF00FF'><b>\u23f8 </b></style>")
+            else:
+                _prompt_html = HTML("<style fg='#FFD700'><b>\u276f </b></style>")
+
             user_input = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: session.prompt(
-                    HTML(
-                        f"<style fg='#FFD700'><b>djcode</b></style>"
-                        f" <ansibrightblack>></ansibrightblack> "
-                    )
-                ),
+                lambda: session.prompt(_prompt_html),
             )
         except (EOFError, KeyboardInterrupt):
             console.print("\n[dim]Goodbye.[/]")
@@ -940,21 +941,32 @@ async def run_repl(
             else:
                 buddy.react("thinking", response=user_input)
 
-            # Show thinking spinner until first token arrives
-            spinner_frames = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"]
-            spinner_idx = 0
+            # Live thinking indicator: ⏺ Thinking... (Xs · ↓ N tokens)
+            import time as _time
+            _start_time = _time.monotonic()
+            _token_count = 0
             first_token = True
+
+            # Show initial thinking indicator
+            sys.stdout.write(f"\033[33m\u23fa\033[0m \033[2mThinking...\033[0m")
+            sys.stdout.flush()
 
             async for token in operator.send(send_text):
                 # Check if user hit Ctrl+K to cancel
                 if tui_mode.is_cancelled:
-                    console.print("\n[yellow]Generation cancelled.[/]")
+                    sys.stdout.write("\r\033[K")
+                    console.print("[yellow]Generation cancelled.[/]")
                     break
 
+                _token_count += 1
+
                 if first_token:
-                    # Clear spinner line
+                    # Clear the thinking indicator line
                     sys.stdout.write("\r\033[K")
                     first_token = False
+                else:
+                    # Update thinking indicator while waiting (every 5 tokens)
+                    pass
 
                 if raw:
                     sys.stdout.write(token)
@@ -965,12 +977,27 @@ async def run_repl(
 
                 full_response += token
 
+                # Periodically update thinking line if we haven't started output yet
+                if first_token and _token_count % 3 == 0:
+                    elapsed = _time.monotonic() - _start_time
+                    sys.stdout.write(f"\r\033[K\033[33m\u23fa\033[0m \033[2mThinking... ({elapsed:.1f}s \u00b7 \u2193 {_token_count} tokens)\033[0m")
+                    sys.stdout.flush()
+
             if first_token:
-                # Never got a token — clear spinner
+                # Never got a token -- clear thinking indicator
                 sys.stdout.write("\r\033[K")
 
+            # Show response stats after completion
+            if full_response and not raw:
+                _elapsed = _time.monotonic() - _start_time
+                _est_tokens = len(full_response) // 4
+                if _est_tokens >= 1000:
+                    _tok_str = f"{_est_tokens / 1000:.1f}k"
+                else:
+                    _tok_str = str(_est_tokens)
+                console.print(f"\n  [dim]\u2193 {_tok_str} tokens \u00b7 {_elapsed:.1f}s[/]")
+
             if full_response:
-                console.print()  # Newline after streaming
                 memory.add_session_message("assistant", full_response)
                 buddy.observe(user_input, full_response, success=True)
                 buddy.set_mood("success")
@@ -1028,6 +1055,14 @@ async def run_repl(
                 token_count=token_est,
                 auto_accept=current_cfg.get("auto_accept", False),
             )
+
+            # Dim separator after each response
+            if full_response and not raw:
+                try:
+                    _term_width = os.get_terminal_size().columns
+                except OSError:
+                    _term_width = 80
+                console.print(f"[dim]{'─' * _term_width}[/]")
 
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted.[/]")
