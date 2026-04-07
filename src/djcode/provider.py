@@ -2,12 +2,15 @@
 
 Supports Ollama, MLX, and generic OpenAI-compatible endpoints.
 All communication is local-first via httpx async.
+Includes model validation, fuzzy matching, and robust error handling.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
+from difflib import get_close_matches
 from typing import Any, AsyncIterator
 
 import httpx
@@ -54,11 +57,18 @@ class ProviderConfig:
             "remote": cfg.get("remote_url", ""),
         }
 
+        # For remote, also check env vars for API key
+        api_key = cfg.get("remote_api_key", "")
+        if provider == "remote" and not api_key:
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+            if not api_key:
+                api_key = os.environ.get("DJCODE_API_KEY", "")
+
         return cls(
             name=provider,
             base_url=url_map.get(provider, cfg.get("ollama_url", "http://localhost:11434")),
             model=model,
-            api_key=cfg.get("remote_api_key", ""),
+            api_key=api_key,
             temperature=cfg.get("temperature", 0.7),
             max_tokens=cfg.get("max_tokens", 8192),
         )
@@ -225,6 +235,79 @@ TOOL_DEFINITIONS = [
 ]
 
 
+# -- Model management helpers --
+
+
+def fetch_ollama_models_sync(base_url: str = "http://localhost:11434") -> list[dict[str, Any]]:
+    """Fetch available models from Ollama synchronously. Returns list of model dicts."""
+    try:
+        resp = httpx.get(f"{base_url}/api/tags", timeout=5.0)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("models", [])
+    except httpx.ConnectError:
+        return []
+    except Exception:
+        return []
+
+
+def get_ollama_model_names(base_url: str = "http://localhost:11434") -> list[str]:
+    """Get just the model name strings from Ollama."""
+    models = fetch_ollama_models_sync(base_url)
+    return [m.get("name", "") for m in models if m.get("name")]
+
+
+def fuzzy_match_model(query: str, available: list[str]) -> str | None:
+    """Fuzzy-match a partial model name against available models.
+
+    Tries exact match first, then prefix match, then substring, then difflib.
+    Returns the best match or None.
+    """
+    if not available:
+        return None
+
+    # Exact match
+    if query in available:
+        return query
+
+    # Exact match with :latest suffix
+    if f"{query}:latest" in available:
+        return f"{query}:latest"
+
+    # Prefix match (e.g., "qwen" matches "qwen2.5-coder:7b")
+    prefix_matches = [m for m in available if m.startswith(query)]
+    if len(prefix_matches) == 1:
+        return prefix_matches[0]
+    if prefix_matches:
+        # Return the shortest prefix match (most likely what the user meant)
+        return min(prefix_matches, key=len)
+
+    # Substring match (e.g., "dolphin" matches "dolphin3:latest")
+    sub_matches = [m for m in available if query in m]
+    if len(sub_matches) == 1:
+        return sub_matches[0]
+    if sub_matches:
+        return min(sub_matches, key=len)
+
+    # difflib fuzzy matching
+    close = get_close_matches(query, available, n=1, cutoff=0.4)
+    if close:
+        return close[0]
+
+    return None
+
+
+def format_model_size(size_bytes: int) -> str:
+    """Format bytes to human readable."""
+    if size_bytes <= 0:
+        return ""
+    gb = size_bytes / (1024 ** 3)
+    if gb >= 1.0:
+        return f"{gb:.1f} GB"
+    mb = size_bytes / (1024 ** 2)
+    return f"{mb:.0f} MB"
+
+
 class Provider:
     """Async LLM provider that handles chat completions with tool calling."""
 
@@ -239,6 +322,35 @@ class Provider:
     @property
     def display_name(self) -> str:
         return f"{self.config.name}:{self.config.model}"
+
+    # -- Model validation --
+
+    def validate_model(self) -> tuple[bool, str]:
+        """Validate the current model exists. Returns (ok, message).
+
+        For Ollama, checks against /api/tags.
+        For remote providers, we can't validate — always returns ok.
+        """
+        if self.config.name != "ollama":
+            return True, ""
+
+        available = get_ollama_model_names(self.config.base_url)
+        if not available:
+            # Can't reach Ollama — will fail at chat time with better error
+            return True, ""
+
+        model = self.config.model
+        if model in available:
+            return True, ""
+
+        # Try fuzzy match
+        match = fuzzy_match_model(model, available)
+        if match:
+            self.config.model = match
+            return True, f"Resolved '{model}' to '{match}'"
+
+        names_str = ", ".join(available[:10])
+        return False, f"Model '{model}' not found. Available: {names_str}"
 
     # -- Ollama native API --
 
@@ -278,13 +390,32 @@ class Provider:
                 resp = await self._client.post(url, json=payload)
                 resp.raise_for_status()
                 yield resp.json()
+
+        except httpx.ConnectError:
+            raise ConnectionError(
+                "Cannot connect to Ollama. Start it with: ollama serve"
+            )
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 400 and use_tools:
+            if e.response.status_code == 404:
+                available = get_ollama_model_names(self.config.base_url)
+                suggestion = fuzzy_match_model(self.config.model, available) if available else None
+                msg = f"Model '{self.config.model}' not found."
+                if suggestion:
+                    msg += f" Did you mean '{suggestion}'?"
+                elif available:
+                    msg += f" Available: {', '.join(available[:8])}"
+                msg += f"\nPull it with: ollama pull {self.config.model}"
+                raise ConnectionError(msg)
+            elif e.response.status_code == 400 and use_tools:
                 # Model doesn't support tools — retry without them
                 async for chunk in self.chat_ollama(messages, stream=stream, use_tools=False):
                     yield chunk
             else:
                 raise
+        except httpx.ReadTimeout:
+            raise ConnectionError(
+                "Request timed out. Try a smaller model or increase timeout."
+            )
 
     # -- OpenAI-compatible API (MLX, remote) --
 
@@ -310,20 +441,45 @@ class Provider:
 
         url = f"{self.config.base_url}/v1/chat/completions"
 
-        if stream:
-            async with self._client.stream("POST", url, json=payload, headers=headers) as resp:
+        try:
+            if stream:
+                async with self._client.stream(
+                    "POST", url, json=payload, headers=headers
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if line.startswith("data: ") and line != "data: [DONE]":
+                            try:
+                                yield json.loads(line[6:])
+                            except json.JSONDecodeError:
+                                continue
+            else:
+                resp = await self._client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    line = line.strip()
-                    if line.startswith("data: ") and line != "data: [DONE]":
-                        try:
-                            yield json.loads(line[6:])
-                        except json.JSONDecodeError:
-                            continue
-        else:
-            resp = await self._client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            yield resp.json()
+                yield resp.json()
+
+        except httpx.ConnectError:
+            raise ConnectionError(
+                f"Cannot connect to {self.config.base_url}. Check the URL and ensure the server is running."
+            )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise ConnectionError(
+                    "Authentication failed. Check your API key (set via config or OPENAI_API_KEY env var)."
+                )
+            elif e.response.status_code == 404:
+                raise ConnectionError(
+                    f"Model '{self.config.model}' not found at {self.config.base_url}."
+                )
+            else:
+                raise ConnectionError(
+                    f"API error {e.response.status_code}: {e.response.text[:200]}"
+                )
+        except httpx.ReadTimeout:
+            raise ConnectionError(
+                "Request timed out. Try a smaller model or increase timeout."
+            )
 
     # -- Unified interface --
 
@@ -347,13 +503,23 @@ class Provider:
         """Get embeddings via Ollama."""
         cfg = load_config()
         embed_model = model or cfg.get("embedding_model", "nomic-embed-text")
-        resp = await self._client.post(
-            f"{self.config.base_url}/api/embed",
-            json={"model": embed_model, "input": text},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("embeddings", [data.get("embedding", [])])[0]
+
+        try:
+            resp = await self._client.post(
+                f"{self.config.base_url}/api/embed",
+                json={"model": embed_model, "input": text},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("embeddings", [data.get("embedding", [])])[0]
+        except httpx.ConnectError:
+            raise ConnectionError("Cannot connect to Ollama for embeddings. Start it with: ollama serve")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ConnectionError(
+                    f"Embedding model '{embed_model}' not found. Pull it with: ollama pull {embed_model}"
+                )
+            raise
 
     # -- Message formatting --
 

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from djcode.config import MEMORY_DIR
-from djcode.memory.embedder import cosine_similarity
+from djcode.memory.embedder import VectorStore, cosine_similarity
 
 FACTS_FILE = MEMORY_DIR / "facts.json"
 CONVERSATIONS_DIR = MEMORY_DIR / "conversations"
@@ -56,6 +56,7 @@ class MemoryManager:
     def __init__(self) -> None:
         self._session: list[dict[str, str]] = []  # Tier 1: conversation messages
         self._facts: dict[str, MemoryEntry] = {}  # Tier 2: persistent facts
+        self._vectors = VectorStore()  # Tier 3: ChromaDB vector store
         self._load_facts()
 
     def _load_facts(self) -> None:
@@ -100,7 +101,7 @@ class MemoryManager:
         tags: list[str] | None = None,
         embedding: list[float] | None = None,
     ) -> None:
-        """Store a persistent fact."""
+        """Store a persistent fact. Also indexes in ChromaDB if embedding provided."""
         self._facts[key] = MemoryEntry(
             key=key,
             content=content,
@@ -108,6 +109,15 @@ class MemoryManager:
             embedding=embedding or [],
         )
         self._save_facts()
+
+        # Also store in ChromaDB vector store
+        if embedding:
+            self._vectors.add(
+                doc_id=key,
+                content=content,
+                embedding=embedding,
+                metadata={"tags": ",".join(tags or [])},
+            )
 
     def recall(self, key: str) -> str | None:
         """Recall a fact by exact key."""
@@ -119,10 +129,11 @@ class MemoryManager:
         return None
 
     def forget(self, key: str) -> bool:
-        """Remove a fact."""
+        """Remove a fact from persistent storage and vector store."""
         if key in self._facts:
             del self._facts[key]
             self._save_facts()
+            self._vectors.delete(key)
             return True
         return False
 
@@ -138,10 +149,24 @@ class MemoryManager:
         top_k: int = 5,
         min_similarity: float = 0.5,
     ) -> list[tuple[str, float]]:
-        """Find facts most similar to the query embedding."""
+        """Find facts most similar to the query embedding.
+
+        Uses ChromaDB if available, falls back to in-memory cosine similarity.
+        """
         if not query_embedding:
             return []
 
+        # Try ChromaDB first
+        if self._vectors.is_chroma:
+            results = self._vectors.query(query_embedding, n_results=top_k)
+            if results:
+                return [
+                    (r["id"], r["score"])
+                    for r in results
+                    if r["score"] >= min_similarity
+                ]
+
+        # Fallback: in-memory cosine similarity
         scored = []
         for key, entry in self._facts.items():
             if not entry.embedding:
@@ -183,4 +208,6 @@ class MemoryManager:
             "session_messages": len(self._session),
             "persistent_facts": len(self._facts),
             "facts_with_embeddings": sum(1 for f in self._facts.values() if f.embedding),
+            "vector_store_docs": self._vectors.count(),
+            "vector_store_backend": "chromadb" if self._vectors.is_chroma else "in-memory",
         }

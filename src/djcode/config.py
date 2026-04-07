@@ -29,6 +29,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "telemetry": False,
     "theme": "dark",
     "auto_approve_tools": False,
+    "auto_accept": False,
 }
 
 

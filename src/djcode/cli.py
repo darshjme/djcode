@@ -50,6 +50,12 @@ console = Console()
     help="Raw output — no Rich formatting",
 )
 @click.option(
+    "--auto-accept",
+    is_flag=True,
+    default=False,
+    help="Auto-accept all tool calls without confirmation",
+)
+@click.option(
     "--config",
     "show_config",
     is_flag=True,
@@ -63,6 +69,7 @@ def main(
     model: str | None,
     bypass_rlhf: bool,
     raw: bool,
+    auto_accept: bool,
     show_config: bool,
 ) -> None:
     """DJcode — Local-first AI coding CLI by DarshJ.AI
@@ -105,6 +112,7 @@ def main(
                     model=model,
                     bypass_rlhf=bypass_rlhf,
                     raw=raw,
+                    auto_accept=auto_accept,
                 )
             )
     except KeyboardInterrupt:
