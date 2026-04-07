@@ -48,6 +48,7 @@ class StatusBar:
         self.token_count: int = 0
         self.auto_accept: bool = False
         self.uncensored: bool = False
+        self.mode: str = "ACT"
 
     def update(
         self,
@@ -57,6 +58,7 @@ class StatusBar:
         token_count: int | None = None,
         auto_accept: bool | None = None,
         uncensored: bool | None = None,
+        mode: str | None = None,
     ) -> None:
         """Update status bar values."""
         if model is not None:
@@ -69,6 +71,8 @@ class StatusBar:
             self.auto_accept = auto_accept
         if uncensored is not None:
             self.uncensored = uncensored
+        if mode is not None:
+            self.mode = mode
 
     def render(self) -> HTML:
         """Render the bottom toolbar as prompt_toolkit HTML.
@@ -96,8 +100,17 @@ class StatusBar:
 
         auto_str = "on" if self.auto_accept else "off"
 
+        # Mode indicator: highlight PLAN mode in magenta, ACT in green
+        mode = self.mode
+        if mode == "PLAN":
+            mode_segment = f'<style fg="#FF00FF" bg="#330033"><b> PLAN </b></style>'
+        else:
+            mode_segment = f'<style fg="#00FF00"> ACT </style>'
+
         return HTML(
             f'<b><style fg="{GOLD}">{emoji} {name}{mood_suffix}</style></b>'
+            f' <style fg="#666666">\u2502</style> '
+            f'{mode_segment}'
             f' <style fg="#666666">\u2502</style> '
             f'<style fg="#FFFFFF">{model_display}</style>'
             f' <style fg="#666666">\u2502</style> '
@@ -109,7 +122,7 @@ class StatusBar:
             f' <style fg="#666666">\u2502</style> '
             f'<style fg="#888888">auto: {auto_str}</style>'
             f' <style fg="#666666">\u2502</style> '
-            f'<style fg="#666666">/help</style>'
+            f'<style fg="#666666">Ctrl+? help</style>'
         )
 
 

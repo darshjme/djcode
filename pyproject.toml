@@ -26,6 +26,9 @@ dependencies = [
     "questionary>=2.1.1",
 ]
 
+[project.optional-dependencies]
+voice = ["sounddevice>=0.4"]
+
 [project.scripts]
 djcode = "djcode.cli:main"
 
