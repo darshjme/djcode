@@ -552,6 +552,15 @@ async def run_repl(
     # Print banner
     print_banner(llm)
 
+    # Check for updates (non-blocking, once per 24h)
+    try:
+        from djcode.updater import get_update_message
+        update_msg = get_update_message()
+        if update_msg:
+            console.print(f"\n{update_msg}\n")
+    except Exception:
+        pass
+
     # Set up prompt toolkit session with FIXED bottom toolbar
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(HISTORY_FILE)),
