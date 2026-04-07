@@ -34,6 +34,28 @@ from djcode.tools import dispatch_tool
 logger = logging.getLogger(__name__)
 console = Console()
 
+# Files that should NEVER be overwritten in the current directory by the tool router.
+# These are the user's existing project files — the model should not clobber them.
+PROTECTED_FILES = {
+    "pyproject.toml", "package.json", "Cargo.toml", "go.mod", "pom.xml",
+    "build.gradle", "Gemfile", "mix.exs", "composer.json",
+    "README.md", "readme.md", "LICENSE", "license",
+    ".gitignore", ".env", "Makefile", "Dockerfile",
+    "tsconfig.json", "next.config.js", "next.config.ts", "next.config.mjs",
+    "vite.config.ts", "vite.config.js",
+    "uv.lock", "package-lock.json", "yarn.lock", "Cargo.lock",
+}
+
+
+def _is_protected(path: str) -> bool:
+    """Check if a file path points to a protected file in the cwd."""
+    resolved = Path(path).resolve()
+    cwd = Path.cwd().resolve()
+    # Only protect files directly in the current working directory
+    if resolved.parent == cwd and resolved.name in PROTECTED_FILES:
+        return True
+    return False
+
 GOLD = "#FFD700"
 
 # ── Intent data structures ────────────────────────────────────────────────
@@ -343,6 +365,21 @@ class ToolExtractionRouter:
         """Main pipeline: parse text -> extract intents -> confirm -> execute -> return results."""
 
         intents = self.extract_intents(text)
+        if not intents:
+            return []
+
+        # Filter out protected file overwrites
+        safe_intents: list[ToolIntent] = []
+        for intent in intents:
+            if intent.action == "file_write" and intent.path and _is_protected(intent.path):
+                console.print(
+                    f"  [yellow]⚠ Blocked:[/] [dim]{intent.path} is a protected project file. "
+                    f"Create in a subdirectory instead.[/]"
+                )
+            else:
+                safe_intents.append(intent)
+        intents = safe_intents
+
         if not intents:
             return []
 
