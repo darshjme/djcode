@@ -716,9 +716,11 @@ async def run_repl(
                 console.print()  # Newline after streaming
                 memory.add_session_message("assistant", full_response)
                 buddy.observe(user_input, full_response, success=True)
-                buddy.react("success", response=full_response)
+                reaction = buddy.react("success", response=full_response)
                 buddy.tick()
-                buddy.render_full(console)
+                # Subtle one-line quip instead of full ASCII block
+                if reaction:
+                    console.print(f"  [dim {GOLD}]{buddy.emoji} {reaction}[/]")
 
                 # Censorship detection — warn if aligned model refuses
                 from djcode.prompt import CENSORED_WARNING, detect_refusal
@@ -746,13 +748,15 @@ async def run_repl(
         except ConnectionError as e:
             console.print(f"\n[red]{e}[/]")
             buddy.observe(user_input, "", success=False)
-            buddy.react("error", error_msg=str(e))
-            buddy.render_full(console)
+            reaction = buddy.react("error", error_msg=str(e))
+            if reaction:
+                console.print(f"  [dim red]{buddy.emoji} {reaction}[/]")
         except Exception as e:
             console.print(f"\n[red]Error:[/] {e}")
             buddy.observe(user_input, "", success=False)
-            buddy.react("error", error_msg=str(e))
-            buddy.render_full(console)
+            reaction = buddy.react("error", error_msg=str(e))
+            if reaction:
+                console.print(f"  [dim red]{buddy.emoji} {reaction}[/]")
 
     await llm.close()
 
