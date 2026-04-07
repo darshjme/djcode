@@ -575,6 +575,7 @@ async def run_repl(
     bypass_rlhf: bool = False,
     raw: bool = False,
     auto_accept: bool = False,
+    show_thinking: bool = True,
 ) -> None:
     """Run the interactive REPL."""
     ensure_dirs()
@@ -613,6 +614,7 @@ async def run_repl(
         raw=raw,
         model=llm.config.model,
         auto_accept=effective_auto_accept,
+        show_thinking=show_thinking,
     )
 
     # Initialize memory
@@ -730,11 +732,9 @@ async def run_repl(
                 console.print()  # Newline after streaming
                 memory.add_session_message("assistant", full_response)
                 buddy.observe(user_input, full_response, success=True)
-                reaction = buddy.react("success", response=full_response)
+                buddy.set_mood("success")
                 buddy.tick()
-                # Subtle one-line quip instead of full ASCII block
-                if reaction:
-                    console.print(f"  [dim {GOLD}]{buddy.emoji} {reaction}[/]")
+                # Buddy stays in status bar only — no inline quips per response
 
                 # Censorship detection — warn if aligned model refuses
                 from djcode.prompt import CENSORED_WARNING, detect_refusal
@@ -762,15 +762,11 @@ async def run_repl(
         except ConnectionError as e:
             console.print(f"\n[red]{e}[/]")
             buddy.observe(user_input, "", success=False)
-            reaction = buddy.react("error", error_msg=str(e))
-            if reaction:
-                console.print(f"  [dim red]{buddy.emoji} {reaction}[/]")
+            buddy.set_mood("error")
         except Exception as e:
             console.print(f"\n[red]Error:[/] {e}")
             buddy.observe(user_input, "", success=False)
-            reaction = buddy.react("error", error_msg=str(e))
-            if reaction:
-                console.print(f"  [dim red]{buddy.emoji} {reaction}[/]")
+            buddy.set_mood("error")
 
     await llm.close()
 
@@ -781,6 +777,7 @@ async def run_oneshot(
     model: str | None = None,
     bypass_rlhf: bool = False,
     raw: bool = False,
+    show_thinking: bool = True,
 ) -> None:
     """Run a single prompt and exit."""
     provider_config = ProviderConfig.from_config(
@@ -797,7 +794,10 @@ async def run_oneshot(
     elif msg:
         console.print(f"[dim]{msg}[/]")
 
-    operator = Operator(llm, bypass_rlhf=bypass_rlhf, raw=raw, model=llm.config.model)
+    operator = Operator(
+        llm, bypass_rlhf=bypass_rlhf, raw=raw, model=llm.config.model,
+        show_thinking=show_thinking,
+    )
 
     try:
         async for token in operator.send(prompt):

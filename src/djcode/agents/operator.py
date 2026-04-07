@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import json
+import sys
 from typing import Any, AsyncIterator
 
 import questionary
@@ -22,6 +23,143 @@ from djcode.tools import dispatch_tool
 
 console = Console()
 
+# ── Thinking block detection ───────────────────────────────────────────────
+# Models like qwen3, deepseek, gemma4 emit <think>...</think> tags.
+# We detect these and render them as dimmed verbose thinking output,
+# separate from the actual response — like Claude Code's thinking blocks.
+
+THINK_OPEN = "<think>"
+THINK_CLOSE = "</think>"
+
+# Dimmed styling for thinking output
+THINK_PREFIX = "\033[2m\033[3m"   # dim + italic
+THINK_RESET = "\033[0m"
+THINK_LABEL = "\033[2m\033[33m"   # dim yellow
+
+
+class ThinkingStreamProcessor:
+    """Processes a stream of tokens, separating thinking from response.
+
+    Detects <think>...</think> blocks and renders them as dimmed output.
+    Everything outside thinking blocks is yielded as normal response text.
+    """
+
+    def __init__(self, show_thinking: bool = True, raw: bool = False) -> None:
+        self.show_thinking = show_thinking
+        self.raw = raw
+        self._in_think = False
+        self._buffer = ""
+        self._think_started = False  # Track if we printed the thinking header
+        self._response_text = ""     # Accumulated non-thinking response
+
+    def process_token(self, token: str) -> str | None:
+        """Process a single streamed token.
+
+        Returns the text to yield as response (or None if it's thinking content).
+        Side effect: prints thinking output directly to stderr if show_thinking.
+        """
+        self._buffer += token
+
+        # Check for think open tag
+        if not self._in_think:
+            if THINK_OPEN in self._buffer:
+                # Split: everything before the tag is response, after is thinking
+                before, _, after = self._buffer.partition(THINK_OPEN)
+                self._buffer = after
+                self._in_think = True
+
+                # Print thinking header
+                if self.show_thinking and not self.raw:
+                    if not self._think_started:
+                        sys.stderr.write(f"\n{THINK_LABEL}  \u2728 thinking...{THINK_RESET}\n")
+                        self._think_started = True
+                    # Flush any buffered thinking content
+                    if self._buffer:
+                        sys.stderr.write(f"{THINK_PREFIX}  {self._buffer}{THINK_RESET}")
+                        sys.stderr.flush()
+                        self._buffer = ""
+
+                if before.strip():
+                    self._response_text += before
+                    return before
+                return None
+
+            # Check for partial tag at end of buffer (could be start of <think>)
+            for i in range(1, len(THINK_OPEN)):
+                if self._buffer.endswith(THINK_OPEN[:i]):
+                    # Hold back the potential partial tag
+                    safe = self._buffer[:-i]
+                    self._buffer = self._buffer[-i:]
+                    if safe:
+                        self._response_text += safe
+                        return safe
+                    return None
+
+            # No tag detected — flush buffer as response
+            result = self._buffer
+            self._buffer = ""
+            if result:
+                self._response_text += result
+                return result
+            return None
+
+        # Inside thinking block
+        if THINK_CLOSE in self._buffer:
+            # End of thinking
+            before, _, after = self._buffer.partition(THINK_CLOSE)
+            self._buffer = ""
+            self._in_think = False
+
+            # Print remaining thinking content
+            if self.show_thinking and not self.raw and before:
+                sys.stderr.write(f"{THINK_PREFIX}  {before}{THINK_RESET}\n")
+            if self.show_thinking and not self.raw:
+                sys.stderr.write(f"{THINK_LABEL}  \u2728 done thinking{THINK_RESET}\n\n")
+                sys.stderr.flush()
+
+            # Anything after </think> is response
+            if after.strip():
+                self._response_text += after
+                return after
+            return None
+
+        # Check for partial </think> at end of buffer — hold it back
+        for i in range(1, len(THINK_CLOSE)):
+            if self._buffer.endswith(THINK_CLOSE[:i]):
+                safe = self._buffer[:-i]
+                self._buffer = self._buffer[-i:]
+                if self.show_thinking and not self.raw and safe:
+                    sys.stderr.write(f"{THINK_PREFIX}  {safe}{THINK_RESET}")
+                    sys.stderr.flush()
+                return None
+
+        # Still inside thinking — print and consume
+        if self.show_thinking and not self.raw and self._buffer:
+            sys.stderr.write(f"{THINK_PREFIX}  {self._buffer}{THINK_RESET}")
+            sys.stderr.flush()
+        self._buffer = ""
+        return None
+
+    def flush(self) -> str | None:
+        """Flush any remaining buffer content."""
+        if self._buffer:
+            if self._in_think:
+                # Unclosed thinking block — print it
+                if self.show_thinking and not self.raw:
+                    sys.stderr.write(f"{THINK_PREFIX}  {self._buffer}{THINK_RESET}\n")
+                    sys.stderr.flush()
+                self._buffer = ""
+                return None
+            result = self._buffer
+            self._buffer = ""
+            self._response_text += result
+            return result
+        return None
+
+    @property
+    def had_thinking(self) -> bool:
+        return self._think_started
+
 
 class Operator:
     """Main execution agent with tool-calling loop."""
@@ -34,17 +172,20 @@ class Operator:
         raw: bool = False,
         model: str = "",
         auto_accept: bool = False,
+        show_thinking: bool = True,
     ) -> None:
         self.provider = provider
         self.bypass_rlhf = bypass_rlhf
         self.raw = raw
         self.auto_accept = auto_accept
+        self.show_thinking = show_thinking
         self.messages: list[Message] = [
             Message(role="system", content=build_system_prompt(
                 bypass_rlhf=bypass_rlhf, model=model or provider.config.model
             ))
         ]
         self.max_tool_rounds = 20  # Safety limit on tool-calling loops
+        self.last_had_thinking = False  # Track if last response had thinking
 
     async def send(self, user_input: str) -> AsyncIterator[str]:
         """Send a user message and yield streamed response tokens.
@@ -52,30 +193,48 @@ class Operator:
         Handles the full tool-calling loop: if the LLM requests tools,
         we execute them and feed results back until the LLM produces
         a final text response.
+
+        Thinking blocks (<think>...</think>) are detected and rendered
+        as dimmed verbose output to stderr, not included in the response.
         """
         self.messages.append(Message(role="user", content=user_input))
 
         for _round in range(self.max_tool_rounds):
             full_response = ""
             tool_calls: list[dict[str, Any]] = []
+            thinker = ThinkingStreamProcessor(
+                show_thinking=self.show_thinking, raw=self.raw
+            )
 
             # Stream the response
             if self.provider.is_ollama:
                 async for chunk in self._stream_ollama():
                     text, calls = chunk
                     if text:
-                        full_response += text
-                        yield text
+                        response_part = thinker.process_token(text)
+                        if response_part:
+                            full_response += response_part
+                            yield response_part
                     if calls:
                         tool_calls.extend(calls)
             else:
                 async for chunk in self._stream_openai():
                     text, calls = chunk
                     if text:
-                        full_response += text
-                        yield text
+                        response_part = thinker.process_token(text)
+                        if response_part:
+                            full_response += response_part
+                            yield response_part
                     if calls:
                         tool_calls.extend(calls)
+
+            # Flush remaining buffer
+            remainder = thinker.flush()
+            if remainder:
+                full_response += remainder
+                yield remainder
+
+            self.last_had_thinking = thinker.had_thinking
 
             # If there are tool calls, execute them and loop
             if tool_calls:

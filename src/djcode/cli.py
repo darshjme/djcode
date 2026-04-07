@@ -59,6 +59,11 @@ console = Console()
     help="Auto-accept all tool calls without confirmation",
 )
 @click.option(
+    "--thinking/--no-thinking",
+    default=True,
+    help="Show model thinking process (verbose reasoning)",
+)
+@click.option(
     "--config",
     "show_config",
     is_flag=True,
@@ -73,6 +78,7 @@ def main(
     bypass_rlhf: bool,
     raw: bool,
     auto_accept: bool,
+    thinking: bool,
     show_config: bool,
 ) -> None:
     """DJcode — Local-first AI coding CLI by DarshJ.AI
@@ -105,6 +111,7 @@ def main(
                     model=model,
                     bypass_rlhf=bypass_rlhf,
                     raw=raw,
+                    show_thinking=thinking,
                 )
             )
         else:
@@ -116,6 +123,7 @@ def main(
                     bypass_rlhf=bypass_rlhf,
                     raw=raw,
                     auto_accept=auto_accept,
+                    show_thinking=thinking,
                 )
             )
     except KeyboardInterrupt:
