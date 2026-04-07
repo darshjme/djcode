@@ -38,6 +38,7 @@ from djcode.buddy import BODIES, SPECIES_EMOJI, get_buddy
 from djcode.errors import classify_error, format_error, get_fallback_model
 from djcode.orchestrator import Orchestrator
 from djcode.agents.registry import AgentRole
+from djcode.agents.content_registry import ContentRole, list_content_agents, get_content_spec
 from djcode.prompt_enhancer import enhance_prompt, describe_enhancement
 from djcode.stats import record_session_start, record_session_update, record_session_end, render_stats
 from djcode.config import (
@@ -170,7 +171,12 @@ HELP_TEXT = f"""\
   [cyan]/refactor[/] <code>   Restructure code (Shiva agent)
   [cyan]/devops[/] <task>     Docker/CI/CD (Vayu agent)
   [cyan]/docs[/] <target>     Generate docs (Saraswati agent)
-  [cyan]/agents[/]            Show all 10 agents roster
+  [cyan]/launch[/] <product>  Build + Ship + Campaign (full pipeline)
+  [cyan]/campaign[/] <brief>  Content campaign (12 content agents)
+  [cyan]/image[/] <concept>   Generate image prompts (Maya)
+  [cyan]/video[/] <concept>   Cinematic video prompts (Kubera)
+  [cyan]/social[/] <topic>    Social media content (Chitragupta)
+  [cyan]/agents[/]            Show all 22 agents roster
   [cyan]/stats[/]             Usage dashboard with activity heatmap
   [cyan]/stats 7d[/]          Last 7 days stats
   [cyan]/stats 30d[/]         Last 30 days stats
@@ -597,8 +603,95 @@ async def handle_slash_command(
             sys.stdout.flush()
         console.print()
 
+    elif command == "/launch":
+        if not arg:
+            console.print(f"[yellow]Usage: /launch <product description>[/]")
+        else:
+            # Full pipeline: Build → Ship → Campaign
+            console.print(f"\n  [{GOLD}]🚀 LAUNCH PIPELINE[/] [dim]build → ship → go viral[/]\n")
+
+            console.print(f"  [{GOLD}]Phase 1: Build[/]")
+            async for token in orchestrator.execute(f"build: {arg}"):
+                sys.stdout.write(token)
+                sys.stdout.flush()
+            console.print()
+
+            console.print(f"\n  [{GOLD}]Phase 2: Campaign[/]")
+            campaign_brief = (
+                f"Create a full launch campaign for: {arg}\n"
+                f"Generate: blog post outline, 5 tweets, 3 LinkedIn posts, "
+                f"2 image prompts, 1 video script, SEO keywords."
+            )
+            # Run campaign director
+            spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
+            from djcode.orchestrator.engine import AgentRunner
+            runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=True)
+            async for token in runner.run_streaming(campaign_brief):
+                sys.stdout.write(token)
+                sys.stdout.flush()
+            console.print()
+            console.print(f"\n  [{GOLD}]🚀 Launch complete. Product built + campaign ready.[/]\n")
+
+    elif command == "/campaign":
+        if not arg:
+            console.print(f"[yellow]Usage: /campaign <brief>[/]")
+        else:
+            console.print(f"\n  [{GOLD}]📢 Content Campaign[/]\n")
+            spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
+            from djcode.orchestrator.engine import AgentRunner
+            runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=True)
+            async for token in runner.run_streaming(arg):
+                sys.stdout.write(token)
+                sys.stdout.flush()
+            console.print()
+
+    elif command == "/image":
+        task = arg or "generate creative image prompts for a tech product"
+        console.print(f"\n  [{GOLD}]🎨 Maya (Image Prompter)[/]\n")
+        spec = get_content_spec(ContentRole.IMAGE_PROMPTER)
+        from djcode.orchestrator.engine import AgentRunner
+        runner = AgentRunner(llm, spec, orchestrator.bus, auto_accept=True)
+        async for token in runner.run_streaming(task):
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        console.print()
+
+    elif command == "/video":
+        task = arg or "create a cinematic product video shot list"
+        console.print(f"\n  [{GOLD}]🎬 Kubera (Video Director)[/]\n")
+        spec = get_content_spec(ContentRole.VIDEO_DIRECTOR)
+        from djcode.orchestrator.engine import AgentRunner
+        runner = AgentRunner(llm, spec, orchestrator.bus, auto_accept=True)
+        async for token in runner.run_streaming(task):
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        console.print()
+
+    elif command == "/social":
+        task = arg or "create social media content for a tech product launch"
+        console.print(f"\n  [{GOLD}]📱 Chitragupta (Social Strategist)[/]\n")
+        spec = get_content_spec(ContentRole.SOCIAL_STRATEGIST)
+        from djcode.orchestrator.engine import AgentRunner
+        runner = AgentRunner(llm, spec, orchestrator.bus, auto_accept=True)
+        async for token in runner.run_streaming(task):
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        console.print()
+
     elif command == "/agents":
         orchestrator.render_roster()
+        # Also show content agents
+        console.print(f"\n  [bold {GOLD}]Content Agents[/]\n")
+        for spec in list_content_agents():
+            console.print(
+                f"  📢 [bold white]{spec.name:<14}[/] "
+                f"[dim]{spec.title:<28}[/] "
+                f"{len(spec.tools_allowed)} tools  "
+                f"{'[dim red]read-only[/]' if spec.read_only else '[dim green]full[/]'}  "
+                f"[dim]t={spec.temperature}[/]"
+            )
+        console.print(f"\n  [dim]Use /campaign, /image, /video, /social for content agents[/]")
+        console.print(f"  [dim]Use /launch for full build → ship → campaign pipeline[/]\n")
 
     elif command == "/stats":
         period = arg.strip().lower() if arg.strip() else "all"
