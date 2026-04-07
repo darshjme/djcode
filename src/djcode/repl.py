@@ -35,6 +35,7 @@ from djcode.auth import (
     is_uncensored_model,
 )
 from djcode.buddy import BODIES, SPECIES_EMOJI, get_buddy
+from djcode.prompt_enhancer import enhance_prompt, describe_enhancement
 from djcode.config import (
     HISTORY_FILE,
     ensure_dirs,
@@ -682,6 +683,10 @@ async def run_repl(
         # Track in memory
         memory.add_session_message("user", user_input)
 
+        # Enhance the prompt with context before sending
+        enhanced = enhance_prompt(user_input)
+        send_text = enhanced.enhanced if enhanced.was_enhanced else user_input
+
         # Send to operator and stream response
         full_response = ""
         try:
@@ -689,9 +694,15 @@ async def run_repl(
                 console.print()  # Spacing
 
             buddy.ctx.last_user_query = user_input
-            buddy.react("thinking", response=user_input)
+            if enhanced.was_enhanced:
+                desc = describe_enhancement(enhanced)
+                buddy.react("thinking", response=user_input)
+                buddy.speak("thinking", custom_text=desc)
+                console.print(f"  [dim {GOLD}]{buddy.emoji} {buddy.name}: {desc}[/]")
+            else:
+                buddy.react("thinking", response=user_input)
 
-            async for token in operator.send(user_input):
+            async for token in operator.send(send_text):
                 if raw:
                     sys.stdout.write(token)
                     sys.stdout.flush()
