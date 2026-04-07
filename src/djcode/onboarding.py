@@ -1,22 +1,31 @@
 """First-run onboarding wizard for DJcode.
 
 Interactive setup that runs when no ~/.djcode/config.json exists.
+Uses questionary for beautiful arrow-key selection.
 Detects available models, lets user pick provider and model.
 """
 
 from __future__ import annotations
 
 import httpx
+import questionary
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
-from rich.table import Table
 
+from djcode.auth import PROVIDERS, is_uncensored_model
 from djcode.config import CONFIG_FILE, DEFAULT_CONFIG, ensure_dirs, save_config
 
 console = Console()
 
 GOLD = "#FFD700"
+
+Q_STYLE = questionary.Style([
+    ("selected", "fg:#FFD700 bold"),
+    ("pointer", "fg:#FFD700 bold"),
+    ("highlighted", "fg:#FFD700"),
+    ("question", "fg:#FFD700 bold"),
+    ("answer", "fg:#FFFFFF bold"),
+])
 
 
 def needs_onboarding() -> bool:
@@ -71,53 +80,72 @@ def run_onboarding() -> dict:
 
     config = dict(DEFAULT_CONFIG)
 
-    # --- Provider selection ---
-    console.print(f"[bold {GOLD}]? Choose your provider:[/]")
-    console.print("  [white]1)[/] Ollama [dim](local, recommended)[/]")
-    console.print("  [white]2)[/] MLX [dim](Apple Silicon native)[/]")
-    console.print("  [white]3)[/] Remote API [dim](OpenAI-compatible)[/]")
-    console.print()
+    # --- Provider selection (interactive arrow keys) ---
+    provider_choices = [
+        questionary.Choice("Ollama (local, recommended)", value="ollama"),
+        questionary.Choice("OpenAI", value="openai"),
+        questionary.Choice("Anthropic", value="anthropic"),
+        questionary.Choice("NVIDIA NIM", value="nvidia"),
+        questionary.Choice("Google AI", value="google"),
+        questionary.Choice("Groq (fast)", value="groq"),
+        questionary.Choice("Together AI", value="together"),
+        questionary.Choice("OpenRouter (multi-provider)", value="openrouter"),
+        questionary.Choice("MLX-LM (Apple Silicon)", value="mlx"),
+    ]
 
-    provider_choice = Prompt.ask(
-        f"[{GOLD}]Select[/]",
-        choices=["1", "2", "3"],
-        default="1",
-    )
+    provider_choice = questionary.select(
+        "Choose your provider:",
+        choices=provider_choices,
+        style=Q_STYLE,
+    ).ask()
 
-    provider_map = {"1": "ollama", "2": "mlx", "3": "remote"}
-    config["provider"] = provider_map[provider_choice]
+    if not provider_choice:
+        provider_choice = "ollama"
+
+    config["provider"] = provider_choice
 
     # --- Provider-specific setup ---
-    if config["provider"] == "remote":
+    prov_info = PROVIDERS.get(provider_choice, {})
+
+    if prov_info.get("needs_key"):
+        # Cloud provider — needs API key
         console.print()
-        remote_url = Prompt.ask(
-            f"[{GOLD}]API base URL[/]",
-            default="https://api.openai.com",
-        )
-        config["remote_url"] = remote_url
+        env_var = prov_info.get("env", "")
+        console.print(f"  [dim]You can also set the {env_var} environment variable.[/]")
 
-        api_key = Prompt.ask(f"[{GOLD}]API key[/]", password=True)
-        config["remote_api_key"] = api_key
+        api_key = questionary.password(
+            f"Enter API key for {prov_info['name']}:",
+            style=Q_STYLE,
+        ).ask()
 
-        model_name = Prompt.ask(
-            f"[{GOLD}]Model name[/]",
-            default="gpt-4o-mini",
-        )
-        config["model"] = model_name
+        if api_key:
+            config[f"{provider_choice}_api_key"] = api_key
 
-    elif config["provider"] == "mlx":
+        # Set base URL
+        config[f"{provider_choice}_url"] = prov_info["base_url"]
+
+        model_name = questionary.text(
+            "Model name:",
+            default=_default_model_for_provider(provider_choice),
+            style=Q_STYLE,
+        ).ask()
+        config["model"] = model_name or _default_model_for_provider(provider_choice)
+
+    elif provider_choice == "mlx":
         console.print()
-        mlx_url = Prompt.ask(
-            f"[{GOLD}]MLX server URL[/]",
-            default="http://localhost:8080",
-        )
-        config["mlx_url"] = mlx_url
+        mlx_url = questionary.text(
+            "MLX server URL:",
+            default="http://localhost:8899",
+            style=Q_STYLE,
+        ).ask()
+        config["mlx_url"] = mlx_url or "http://localhost:8899"
 
-        model_name = Prompt.ask(
-            f"[{GOLD}]Model name[/]",
+        model_name = questionary.text(
+            "Model name:",
             default="mlx-community/gemma-2-2b-it-4bit",
-        )
-        config["model"] = model_name
+            style=Q_STYLE,
+        ).ask()
+        config["model"] = model_name or "mlx-community/gemma-2-2b-it-4bit"
 
     else:
         # Ollama — auto-detect models
@@ -133,51 +161,41 @@ def run_onboarding() -> dict:
                 f"[dim]Make sure it's running: ollama serve[/]"
             )
             console.print()
-            model_name = Prompt.ask(
-                f"[{GOLD}]Model name[/]",
+            model_name = questionary.text(
+                "Model name:",
                 default="gemma4",
-            )
-            config["model"] = model_name
+                style=Q_STYLE,
+            ).ask()
+            config["model"] = model_name or "gemma4"
         else:
             console.print(f"[green]Found {len(models)} model(s)[/]")
             console.print()
 
-            table = Table(
-                border_style=GOLD,
-                show_header=True,
-                header_style=f"bold {GOLD}",
-            )
-            table.add_column("#", style="white", width=4)
-            table.add_column("Model", style="white")
-            table.add_column("Size", style="dim")
+            model_choices = []
+            for m in models:
+                name = m["name"]
+                size = _format_size(m["size"])
+                label = f"{name}  ({size})"
+                if is_uncensored_model(name):
+                    label += " \U0001f513 uncensored"
+                model_choices.append(questionary.Choice(label, value=name))
 
-            for i, m in enumerate(models, 1):
-                table.add_row(str(i), m["name"], _format_size(m["size"]))
+            selected_model = questionary.select(
+                "Select model:",
+                choices=model_choices,
+                style=Q_STYLE,
+            ).ask()
 
-            console.print(table)
-            console.print()
-
-            choice = Prompt.ask(
-                f"[{GOLD}]Select model number[/]",
-                default="1",
-            )
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(models):
-                    config["model"] = models[idx]["name"]
-                else:
-                    config["model"] = models[0]["name"]
-            except ValueError:
-                # User typed a model name directly
-                config["model"] = choice
+            config["model"] = selected_model or models[0]["name"]
 
     # --- Auto-accept ---
     console.print()
-    auto_accept = Confirm.ask(
-        f"[{GOLD}]Enable auto-accept tool calls?[/]",
+    auto_accept = questionary.confirm(
+        "Enable auto-accept tool calls?",
         default=False,
-    )
-    config["auto_accept"] = auto_accept
+        style=Q_STYLE,
+    ).ask()
+    config["auto_accept"] = bool(auto_accept)
 
     # --- Save ---
     save_config(config)
@@ -186,3 +204,19 @@ def run_onboarding() -> dict:
     console.print()
 
     return config
+
+
+def _default_model_for_provider(provider_id: str) -> str:
+    """Return a sensible default model name for each provider."""
+    defaults = {
+        "openai": "gpt-4o-mini",
+        "anthropic": "claude-sonnet-4-20250514",
+        "nvidia": "deepseek-ai/deepseek-coder-6.7b-instruct",
+        "google": "gemini-2.0-flash",
+        "groq": "llama-3.3-70b-versatile",
+        "together": "meta-llama/Llama-3-70b-chat-hf",
+        "openrouter": "meta-llama/llama-3-8b-instruct",
+        "ollama": "gemma4",
+        "mlx": "mlx-community/gemma-2-2b-it-4bit",
+    }
+    return defaults.get(provider_id, "gemma4")

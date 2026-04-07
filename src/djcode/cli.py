@@ -27,7 +27,10 @@ console = Console()
 @click.option(
     "--provider",
     "-p",
-    type=click.Choice(["ollama", "mlx", "remote"]),
+    type=click.Choice([
+        "ollama", "openai", "anthropic", "nvidia", "google",
+        "groq", "together", "openrouter", "mlx", "remote",
+    ]),
     default=None,
     help="LLM provider (default: ollama)",
 )

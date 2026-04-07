@@ -115,36 +115,36 @@ SPRITES: dict[str, dict[str, list[str]]] = {
         "idle": [
             "  ~~~~~~ ",
             "  |    | ",
-            "  | ☕ | ",
+            "  | \u2615 | ",
             "  |    | ",
             "  \\____/ ",
         ],
         "thinking": [
-            " ~~°~~~ ",
+            " ~~\u00b0~~~ ",
             "  |    | ",
-            "  | ☕ | ",
+            "  | \u2615 | ",
             "  |    | ",
             "  \\____/ ",
         ],
         "success": [
             " ~*~*~* ",
             "  |    | ",
-            "  | ☕ | ",
-            "  |  ✓ | ",
+            "  | \u2615 | ",
+            "  |  \u2713 | ",
             "  \\____/ ",
         ],
         "error": [
             "  ~~~~~~ ",
             "  |    | ",
-            "  | ☕ | ",
-            "  |  ✗ | ",
+            "  | \u2615 | ",
+            "  |  \u2717 | ",
             "  \\____/ ",
         ],
     },
     "peacock": {
         "idle": [
             " \\|/|\\/ ",
-            "  (°°)  ",
+            "  (\u00b0\u00b0)  ",
             "  /||\\  ",
             " / || \\ ",
             "  _/\\_  ",
@@ -173,28 +173,28 @@ SPRITES: dict[str, dict[str, list[str]]] = {
     },
     "om": {
         "idle": [
-            "   ॐ    ",
+            "   \u0950    ",
             "  / \\   ",
             " | . |  ",
             "  \\ /   ",
             "   ~    ",
         ],
         "thinking": [
-            "  *ॐ*   ",
+            "  *\u0950*   ",
             "  / \\   ",
             " | ~ |  ",
             "  \\ /   ",
             "   ~    ",
         ],
         "success": [
-            "  +ॐ+   ",
+            "  +\u0950+   ",
             "  / \\   ",
             " | ^ |  ",
             "  \\ /   ",
             "   ~    ",
         ],
         "error": [
-            "   ॐ    ",
+            "   \u0950    ",
             "  / \\   ",
             " | x |  ",
             "  \\ /   ",
@@ -215,6 +215,24 @@ TITLES = [
     "the Illuminated", "the Swift", "the Serene",
     "the Watchful", "the Steadfast", "the Wise",
 ]
+
+# ── Species emoji mapping ────────────────────────────────────────────────
+
+SPECIES_EMOJI: dict[str, str] = {
+    "diya": "\U0001fa94",   # oil lamp
+    "cobra": "\U0001f40d",  # snake
+    "lotus": "\U0001fab7",  # lotus
+    "chai": "\u2615",       # hot beverage
+    "peacock": "\U0001f99a",  # peacock
+    "om": "\U0001f549\ufe0f",  # om
+}
+
+MOOD_EMOJI: dict[str, str] = {
+    "idle": "",        # use species emoji
+    "thinking": "\u23f3",  # hourglass
+    "success": "\u2728",   # sparkles
+    "error": "\u274c",     # cross mark
+}
 
 
 @dataclass
@@ -239,6 +257,13 @@ class Buddy:
 
         return cls(name=name, species=species, title=title)
 
+    @property
+    def emoji(self) -> str:
+        """Get the current emoji based on mood. Uses species emoji when idle."""
+        if self.mood == "idle":
+            return SPECIES_EMOJI.get(self.species, "\u2615")
+        return MOOD_EMOJI.get(self.mood, SPECIES_EMOJI.get(self.species, "\u2615"))
+
     def get_sprite(self, mood: str | None = None) -> list[str]:
         """Get the current sprite lines for the buddy."""
         m = mood or self.mood
@@ -260,12 +285,12 @@ class Buddy:
     def greeting(self) -> str:
         """Generate a buddy greeting message."""
         greetings = {
-            "diya": f"🪔 {self.name} {self.title} lights your path.",
-            "cobra": f"🐍 {self.name} {self.title} guards your code.",
-            "lotus": f"🪷 {self.name} {self.title} blooms beside you.",
-            "chai": f"☕ {self.name} {self.title} brews fresh ideas.",
-            "peacock": f"🦚 {self.name} {self.title} displays with pride.",
-            "om": f"🕉️ {self.name} {self.title} resonates with clarity.",
+            "diya": f"\U0001fa94 {self.name} {self.title} lights your path.",
+            "cobra": f"\U0001f40d {self.name} {self.title} guards your code.",
+            "lotus": f"\U0001fab7 {self.name} {self.title} blooms beside you.",
+            "chai": f"\u2615 {self.name} {self.title} brews fresh ideas.",
+            "peacock": f"\U0001f99a {self.name} {self.title} displays with pride.",
+            "om": f"\U0001f549\ufe0f {self.name} {self.title} resonates with clarity.",
         }
         return greetings.get(self.species, f"{self.name} {self.title} is here.")
 
@@ -281,12 +306,12 @@ class Buddy:
                 "om": "hums quietly, processing...",
             },
             "success": {
-                "diya": "flame burns bright! ✨",
-                "cobra": "hood spreads wide with pride! 🎯",
-                "lotus": "blooms fully! 🌸",
-                "chai": "overflows with warmth! ☕",
-                "peacock": "fans out in celebration! 🦚",
-                "om": "resonates with harmony! 🔔",
+                "diya": "flame burns bright!",
+                "cobra": "hood spreads wide with pride!",
+                "lotus": "blooms fully!",
+                "chai": "overflows with warmth!",
+                "peacock": "fans out in celebration!",
+                "om": "resonates with harmony!",
             },
             "error": {
                 "diya": "flame dims... but still burns.",

@@ -29,12 +29,15 @@ class Operator:
         *,
         bypass_rlhf: bool = False,
         raw: bool = False,
+        model: str = "",
     ) -> None:
         self.provider = provider
         self.bypass_rlhf = bypass_rlhf
         self.raw = raw
         self.messages: list[Message] = [
-            Message(role="system", content=build_system_prompt(bypass_rlhf=bypass_rlhf))
+            Message(role="system", content=build_system_prompt(
+                bypass_rlhf=bypass_rlhf, model=model or provider.config.model
+            ))
         ]
         self.max_tool_rounds = 20  # Safety limit on tool-calling loops
 

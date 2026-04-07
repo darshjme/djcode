@@ -2,6 +2,7 @@
 
 Uses Prompt Toolkit for input and Rich for output.
 Supports slash commands, streaming responses, and tool calling.
+Fixed bottom toolbar via prompt_toolkit's bottom_toolbar feature.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import sys
 import uuid
 from typing import Any
 
+import questionary
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -24,6 +26,15 @@ from rich.text import Text
 
 from djcode import __version__
 from djcode.agents.operator import Operator
+from djcode.auth import (
+    PROVIDERS,
+    get_api_key,
+    get_base_url,
+    interactive_auth,
+    interactive_provider_picker,
+    is_uncensored_model,
+)
+from djcode.buddy import get_buddy
 from djcode.config import (
     HISTORY_FILE,
     ensure_dirs,
@@ -40,7 +51,7 @@ from djcode.provider import (
     fuzzy_match_model,
     get_ollama_model_names,
 )
-from djcode.status import render_status_bar
+from djcode.status import StatusBar
 
 console = Console()
 
@@ -54,6 +65,14 @@ ASCII_BANNER = r"""
   ██████╔╝╚█████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
   ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 """
+
+Q_STYLE = questionary.Style([
+    ("selected", "fg:#FFD700 bold"),
+    ("pointer", "fg:#FFD700 bold"),
+    ("highlighted", "fg:#FFD700"),
+    ("question", "fg:#FFD700 bold"),
+    ("answer", "fg:#FFFFFF bold"),
+])
 
 
 def print_banner(provider: Provider) -> None:
@@ -72,7 +91,8 @@ def print_banner(provider: Provider) -> None:
     elif provider.config.name == "mlx":
         provider_detail = f"MLX ({provider.config.base_url})"
     else:
-        provider_detail = provider.config.base_url or "Remote API"
+        prov_info = PROVIDERS.get(provider.config.name, {})
+        provider_detail = prov_info.get("name", provider.config.base_url or "Remote API")
 
     auto_accept = cfg.get("auto_accept", False)
     mode = "Interactive"
@@ -85,6 +105,12 @@ def print_banner(provider: Provider) -> None:
     else:
         ctx_str = f"{max_tokens} tokens"
 
+    model_display = provider.config.model
+    if is_uncensored_model(model_display):
+        model_display += " \U0001f513"
+
+    buddy = get_buddy()
+
     inner = (
         f"[bold {GOLD}]{ASCII_BANNER}[/]\n"
         f"  [bold white]DarshJ.AI Code[/] [dim]v{__version__}[/]\n"
@@ -92,11 +118,12 @@ def print_banner(provider: Provider) -> None:
     )
 
     info_lines = (
-        f"\n  [bold {GOLD}]Model:[/]     [white]{provider.config.model}[/] [dim]({provider_label})[/]\n"
+        f"\n  [bold {GOLD}]Model:[/]     [white]{model_display}[/] [dim]({provider_label})[/]\n"
         f"  [bold {GOLD}]Provider:[/]  [white]{provider_detail}[/]\n"
         f"  [bold {GOLD}]Folder:[/]    [white]{cwd_display}[/]\n"
         f"  [bold {GOLD}]Context:[/]   [white]{ctx_str}[/]\n"
-        f"  [bold {GOLD}]Mode:[/]      [white]{mode}[/]"
+        f"  [bold {GOLD}]Mode:[/]      [white]{mode}[/]\n"
+        f"  [bold {GOLD}]Buddy:[/]     [white]{buddy.emoji} {buddy.name} {buddy.title}[/]"
     )
 
     console.print()
@@ -114,10 +141,11 @@ HELP_TEXT = f"""\
 [bold {GOLD}]Slash Commands[/]
 
   [cyan]/help[/]              Show this help
+  [cyan]/model[/]             Interactive model picker (arrow keys)
   [cyan]/model[/] <name>      Switch model (fuzzy match supported)
   [cyan]/models[/]            List available models
-  [cyan]/provider[/] <p>      Switch provider (ollama, mlx, remote)
-  [cyan]/provider remote[/]   Configure remote API (--url, --key)
+  [cyan]/provider[/]          Interactive provider picker
+  [cyan]/auth[/]              Configure provider + API key
   [cyan]/auto[/]              Toggle auto-accept tool calls
   [cyan]/memory[/]            Show memory stats
   [cyan]/remember[/] k=v      Store a persistent fact
@@ -156,18 +184,72 @@ def _handle_models_list(provider: Provider) -> None:
     table.add_column("Model", style="white")
     table.add_column("Size", style="dim")
     table.add_column("", style="green")
+    table.add_column("", style="dim")
 
     for m in models:
         name = m.get("name", "unknown")
         size = format_model_size(m.get("size", 0))
-        current = "*" if name == provider.config.model else ""
-        table.add_row(name, size, current)
+        current = "\u2605 current" if name == provider.config.model else ""
+        uncensored = "\U0001f513 uncensored" if is_uncensored_model(name) else ""
+        table.add_row(name, size, current, uncensored)
 
     console.print(table)
-    console.print(f"\n[dim]Switch with: /model <name>[/]")
+    console.print(f"\n[dim]Switch with: /model (interactive) or /model <name>[/]")
 
 
-def _handle_model_switch(arg: str, operator: Operator) -> None:
+def _handle_model_switch_interactive(operator: Operator, status_bar: StatusBar) -> None:
+    """Interactive model picker using questionary arrow keys."""
+    provider = operator.provider
+
+    if provider.config.name != "ollama":
+        console.print(f"[yellow]Interactive picker only available for Ollama.[/]")
+        console.print(f"[dim]Current model: {provider.config.model}[/]")
+        return
+
+    models = fetch_ollama_models_sync(provider.config.base_url)
+    if not models:
+        console.print(
+            "[yellow]No models found.[/] "
+            "[dim]Is Ollama running? Start with: ollama serve[/]"
+        )
+        return
+
+    choices = []
+    for m in models:
+        name = m.get("name", "unknown")
+        size = format_model_size(m.get("size", 0))
+        label = f"{name}  ({size})"
+        if name == provider.config.model:
+            label += " \u2605 current"
+        if is_uncensored_model(name):
+            label += " \U0001f513 uncensored"
+        choices.append(questionary.Choice(label, value=name))
+
+    selected = questionary.select(
+        "Select model:",
+        choices=choices,
+        style=Q_STYLE,
+    ).ask()
+
+    if selected:
+        provider.config.model = selected
+        set_value("model", selected)
+        uncensored = is_uncensored_model(selected)
+        status_bar.update(model=selected, uncensored=uncensored)
+
+        # Rebuild system prompt if uncensored status changed
+        if uncensored or operator.bypass_rlhf:
+            from djcode.prompt import build_system_prompt
+            operator.messages[0].content = build_system_prompt(
+                bypass_rlhf=operator.bypass_rlhf, model=selected
+            )
+
+        console.print(f"[green]Model switched to:[/] {selected}")
+        if uncensored:
+            console.print(f"  [dim]\U0001f513 Uncensored mode active[/]")
+
+
+def _handle_model_switch(arg: str, operator: Operator, status_bar: StatusBar) -> None:
     """Handle /model <name> with fuzzy matching and validation."""
     provider = operator.provider
 
@@ -181,7 +263,18 @@ def _handle_model_switch(arg: str, operator: Operator) -> None:
                     console.print(f"[dim]Resolved '{arg}' -> '{match}'[/]")
                 provider.config.model = match
                 set_value("model", match)
+                uncensored = is_uncensored_model(match)
+                status_bar.update(model=match, uncensored=uncensored)
+
+                if uncensored or operator.bypass_rlhf:
+                    from djcode.prompt import build_system_prompt
+                    operator.messages[0].content = build_system_prompt(
+                        bypass_rlhf=operator.bypass_rlhf, model=match
+                    )
+
                 console.print(f"[green]Model switched to:[/] {match}")
+                if uncensored:
+                    console.print(f"  [dim]\U0001f513 Uncensored mode active[/]")
             else:
                 console.print(f"[red]Model '{arg}' not found.[/]")
                 names = ", ".join(available[:10])
@@ -192,55 +285,53 @@ def _handle_model_switch(arg: str, operator: Operator) -> None:
             console.print(f"[yellow]Cannot verify model (Ollama unreachable).[/]")
             provider.config.model = arg
             set_value("model", arg)
+            status_bar.update(model=arg, uncensored=is_uncensored_model(arg))
             console.print(f"[green]Model set to:[/] {arg}")
     else:
         # Non-Ollama provider — just set it
         provider.config.model = arg
         set_value("model", arg)
+        status_bar.update(model=arg, uncensored=is_uncensored_model(arg))
         console.print(f"[green]Model switched to:[/] {arg}")
 
 
-def _handle_provider_switch(arg: str, operator: Operator, provider_config: ProviderConfig) -> None:
-    """Handle /provider command with remote API configuration."""
-    parts = arg.split()
-    provider_name = parts[0] if parts else ""
-
-    if provider_name not in ("ollama", "mlx", "remote"):
-        console.print(f"[red]Unknown provider:[/] {provider_name}")
-        console.print("[dim]Options: ollama, mlx, remote[/]")
+def _handle_provider_switch_interactive(operator: Operator, status_bar: StatusBar) -> None:
+    """Interactive provider picker."""
+    provider_id = interactive_provider_picker()
+    if not provider_id:
         return
 
-    # Parse optional flags for remote
-    if provider_name == "remote":
-        url = ""
-        key = ""
-        i = 1
-        while i < len(parts):
-            if parts[i] == "--url" and i + 1 < len(parts):
-                url = parts[i + 1]
-                i += 2
-            elif parts[i] == "--key" and i + 1 < len(parts):
-                key = parts[i + 1]
-                i += 2
-            else:
-                i += 1
+    prov_info = PROVIDERS.get(provider_id, {})
 
-        if url:
-            set_value("remote_url", url)
-        if key:
-            set_value("remote_api_key", key)
+    # Check if API key is needed and available
+    if prov_info.get("needs_key"):
+        key = get_api_key(provider_id)
+        if not key:
+            console.print(
+                f"[yellow]No API key for {prov_info['name']}.[/] "
+                f"[dim]Run /auth to configure.[/]"
+            )
+            return
 
-    new_config = ProviderConfig.from_config(provider_override=provider_name)
+    new_config = ProviderConfig(
+        name=provider_id,
+        base_url=get_base_url(provider_id),
+        model=operator.provider.config.model,
+        api_key=get_api_key(provider_id),
+        temperature=operator.provider.config.temperature,
+        max_tokens=operator.provider.config.max_tokens,
+    )
     operator.provider = Provider(new_config)
-    set_value("provider", provider_name)
-    console.print(f"[green]Provider switched to:[/] {operator.provider.display_name}")
+    set_value("provider", provider_id)
+    status_bar.update(provider=provider_id)
+    console.print(f"[green]Provider switched to:[/] {prov_info.get('name', provider_id)}")
 
 
 async def handle_slash_command(
     cmd: str,
     operator: Operator,
     memory: MemoryManager,
-    provider_config: ProviderConfig,
+    status_bar: StatusBar,
 ) -> bool:
     """Handle a slash command. Returns True if the REPL should continue."""
     parts = cmd.strip().split(maxsplit=1)
@@ -255,22 +346,53 @@ async def handle_slash_command(
 
     elif command == "/model":
         if not arg:
-            # No arg — list models
-            _handle_models_list(operator.provider)
+            # No arg — interactive picker
+            _handle_model_switch_interactive(operator, status_bar)
         else:
-            _handle_model_switch(arg, operator)
+            _handle_model_switch(arg, operator, status_bar)
 
     elif command == "/provider":
         if not arg:
-            console.print(f"[yellow]Current provider:[/] {operator.provider.config.name}")
-            console.print("[dim]Usage: /provider <ollama|mlx|remote> [--url URL] [--key KEY][/]")
+            _handle_provider_switch_interactive(operator, status_bar)
         else:
-            _handle_provider_switch(arg, operator, provider_config)
+            # Direct provider switch by name
+            if arg in PROVIDERS:
+                prov_info = PROVIDERS[arg]
+                if prov_info.get("needs_key") and not get_api_key(arg):
+                    console.print(
+                        f"[yellow]No API key for {prov_info['name']}.[/] "
+                        f"[dim]Run /auth to configure.[/]"
+                    )
+                else:
+                    new_config = ProviderConfig(
+                        name=arg,
+                        base_url=get_base_url(arg),
+                        model=operator.provider.config.model,
+                        api_key=get_api_key(arg),
+                        temperature=operator.provider.config.temperature,
+                        max_tokens=operator.provider.config.max_tokens,
+                    )
+                    operator.provider = Provider(new_config)
+                    set_value("provider", arg)
+                    status_bar.update(provider=arg)
+                    console.print(f"[green]Provider switched to:[/] {prov_info['name']}")
+            else:
+                console.print(f"[red]Unknown provider:[/] {arg}")
+                names = ", ".join(PROVIDERS.keys())
+                console.print(f"[dim]Options: {names}[/]")
+
+    elif command == "/auth":
+        interactive_auth()
+        # Reload provider after auth
+        cfg = load_config()
+        provider_id = cfg.get("provider", "ollama")
+        status_bar.update(provider=provider_id)
 
     elif command == "/auto":
         cfg = load_config()
         new_val = not cfg.get("auto_accept", False)
         set_value("auto_accept", new_val)
+        status_bar.update(auto_accept=new_val)
         state = "ON" if new_val else "OFF"
         console.print(f"[green]Auto-accept:[/] {state}")
 
@@ -410,23 +532,37 @@ async def run_repl(
     elif msg:
         console.print(f"[dim]{msg}[/]")
 
-    # Initialize operator
-    operator = Operator(llm, bypass_rlhf=bypass_rlhf, raw=raw)
+    # Initialize operator with model-aware system prompt
+    operator = Operator(llm, bypass_rlhf=bypass_rlhf, raw=raw, model=llm.config.model)
 
     # Initialize memory
     memory = MemoryManager()
 
+    # Initialize buddy and status bar
+    buddy = get_buddy()
+    status_bar = StatusBar(buddy)
+    status_bar.update(
+        model=llm.config.model,
+        provider=llm.config.name,
+        token_count=0,
+        auto_accept=cfg.get("auto_accept", False),
+        uncensored=is_uncensored_model(llm.config.model) or bypass_rlhf,
+    )
+
     # Print banner
     print_banner(llm)
 
-    # Set up prompt toolkit session
+    # Set up prompt toolkit session with FIXED bottom toolbar
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(HISTORY_FILE)),
         auto_suggest=AutoSuggestFromHistory(),
+        bottom_toolbar=status_bar.render,
     )
 
     while True:
         try:
+            buddy.set_mood("idle")
+
             user_input = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: session.prompt(
@@ -447,7 +583,7 @@ async def run_repl(
         # Slash commands
         if user_input.startswith("/"):
             should_continue = await handle_slash_command(
-                user_input, operator, memory, provider_config
+                user_input, operator, memory, status_bar
             )
             if not should_continue:
                 break
@@ -462,6 +598,8 @@ async def run_repl(
             if not raw:
                 console.print()  # Spacing
 
+            buddy.set_mood("thinking")
+
             async for token in operator.send(user_input):
                 if raw:
                     sys.stdout.write(token)
@@ -475,23 +613,27 @@ async def run_repl(
             if full_response:
                 console.print()  # Newline after streaming
                 memory.add_session_message("assistant", full_response)
+                buddy.set_mood("success")
+            else:
+                buddy.set_mood("idle")
 
-            # Status bar after every response
-            current_cfg = load_config()
+            # Update status bar token count (toolbar auto-updates on next prompt)
             token_est = _estimate_tokens(operator.messages)
-            render_status_bar(
-                model=operator.provider.config.model,
-                provider=operator.provider.config.name,
+            current_cfg = load_config()
+            status_bar.update(
                 token_count=token_est,
                 auto_accept=current_cfg.get("auto_accept", False),
             )
 
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted.[/]")
+            buddy.set_mood("idle")
         except ConnectionError as e:
             console.print(f"\n[red]{e}[/]")
+            buddy.set_mood("error")
         except Exception as e:
             console.print(f"\n[red]Error:[/] {e}")
+            buddy.set_mood("error")
 
     await llm.close()
 
@@ -518,7 +660,7 @@ async def run_oneshot(
     elif msg:
         console.print(f"[dim]{msg}[/]")
 
-    operator = Operator(llm, bypass_rlhf=bypass_rlhf, raw=raw)
+    operator = Operator(llm, bypass_rlhf=bypass_rlhf, raw=raw, model=llm.config.model)
 
     try:
         async for token in operator.send(prompt):

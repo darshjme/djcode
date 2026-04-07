@@ -47,26 +47,33 @@ class ProviderConfig:
         model_override: str | None = None,
     ) -> ProviderConfig:
         """Build provider config from saved config + CLI overrides."""
+        from djcode.auth import PROVIDERS, get_api_key, get_base_url
+
         cfg = load_config()
         provider = provider_override or cfg["provider"]
         model = model_override or cfg["model"]
 
-        url_map = {
-            "ollama": cfg.get("ollama_url", "http://localhost:11434"),
-            "mlx": cfg.get("mlx_url", "http://localhost:8080"),
-            "remote": cfg.get("remote_url", ""),
-        }
-
-        # For remote, also check env vars for API key
-        api_key = cfg.get("remote_api_key", "")
-        if provider == "remote" and not api_key:
-            api_key = os.environ.get("OPENAI_API_KEY", "")
-            if not api_key:
-                api_key = os.environ.get("DJCODE_API_KEY", "")
+        # Use auth registry for known providers, fall back to legacy config
+        if provider in PROVIDERS:
+            base_url = get_base_url(provider)
+            api_key = get_api_key(provider)
+        else:
+            # Legacy fallback for "remote" or unknown providers
+            url_map = {
+                "ollama": cfg.get("ollama_url", "http://localhost:11434"),
+                "mlx": cfg.get("mlx_url", "http://localhost:8080"),
+                "remote": cfg.get("remote_url", ""),
+            }
+            base_url = url_map.get(provider, cfg.get("ollama_url", "http://localhost:11434"))
+            api_key = cfg.get("remote_api_key", "")
+            if provider == "remote" and not api_key:
+                api_key = os.environ.get("OPENAI_API_KEY", "")
+                if not api_key:
+                    api_key = os.environ.get("DJCODE_API_KEY", "")
 
         return cls(
             name=provider,
-            base_url=url_map.get(provider, cfg.get("ollama_url", "http://localhost:11434")),
+            base_url=base_url,
             model=model,
             api_key=api_key,
             temperature=cfg.get("temperature", 0.7),
@@ -494,6 +501,8 @@ class Provider:
             async for chunk in self.chat_ollama(messages, stream=stream):
                 yield chunk
         else:
+            # All other providers (openai, anthropic, nvidia, google, groq,
+            # together, openrouter, mlx, remote) use OpenAI-compatible API
             async for chunk in self.chat_openai_compat(messages, stream=stream):
                 yield chunk
 
