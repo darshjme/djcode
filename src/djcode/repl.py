@@ -35,6 +35,7 @@ from djcode.auth import (
     is_uncensored_model,
 )
 from djcode.buddy import BODIES, SPECIES_EMOJI, get_buddy
+from djcode.errors import classify_error, format_error, get_fallback_model
 from djcode.prompt_enhancer import enhance_prompt, describe_enhancement
 from djcode.stats import record_session_start, record_session_update, record_session_end, render_stats
 from djcode.config import (
@@ -775,14 +776,18 @@ async def run_repl(
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted.[/]")
             buddy.set_mood("idle")
-        except ConnectionError as e:
-            console.print(f"\n[red]{e}[/]")
-            buddy.observe(user_input, "", success=False)
-            buddy.set_mood("error")
+        except KeyboardInterrupt:
+            raise  # Re-raise to be caught by outer handler
         except Exception as e:
-            console.print(f"\n[red]Error:[/] {e}")
             buddy.observe(user_input, "", success=False)
             buddy.set_mood("error")
+            err = classify_error(e)
+            console.print(f"\n{format_error(err)}")
+            # Auto-fallback: suggest smaller model on OOM/timeout
+            if err.fallback == "retry_with_smaller_model":
+                fb = get_fallback_model(llm.config.model)
+                if fb:
+                    console.print(f"  [dim]Try: /model {fb}[/]")
 
     record_session_end(session_id)
     await llm.close()
