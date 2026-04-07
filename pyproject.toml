@@ -1,14 +1,14 @@
 [project]
-name = "djcode-python"
-version = "0.1.0"
-description = "DJcode — Local-first AI coding CLI by DarshJ.AI"
+name = "djcode"
+version = "1.3.0"
+description = "DJcode — Local-first AI coding CLI. No cloud. No subscription. Your code stays yours."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 authors = [
     { name = "DarshJ", email = "darsh@darshj.ai" },
 ]
-keywords = ["ai", "cli", "coding", "ollama", "local-first"]
+keywords = ["ai", "cli", "coding", "ollama", "local-first", "agent", "apple-silicon"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
