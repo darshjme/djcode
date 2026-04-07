@@ -39,6 +39,8 @@ from djcode.errors import classify_error, format_error, get_fallback_model
 from djcode.orchestrator import Orchestrator
 from djcode.agents.registry import AgentRole
 from djcode.agents.content_registry import ContentRole, list_content_agents, get_content_spec
+from djcode.context_file import save_context, inject_context_into_prompt
+from djcode.permissions import PermissionManager
 from djcode.prompt_enhancer import enhance_prompt, describe_enhancement
 from djcode.stats import record_session_start, record_session_update, record_session_end, render_stats
 from djcode.config import (
@@ -58,6 +60,14 @@ from djcode.provider import (
     get_ollama_model_names,
 )
 from djcode.status import StatusBar
+from djcode.tui import (
+    get_mode_state,
+    register_keybindings,
+    show_command_picker,
+    show_shortcuts,
+    render_inline_diff,
+    ProgressTracker,
+)
 
 console = Console()
 
@@ -184,7 +194,18 @@ HELP_TEXT = f"""\
   [cyan]/buddy pet[/]         Pet your buddy
   [cyan]/buddy species[/]     Show all species
   [cyan]/raw[/]               Toggle raw mode (no formatting)
+  [cyan]/shortcuts[/]         Show keyboard shortcuts
   [cyan]/exit[/]              Exit DJcode
+
+[bold {GOLD}]Keyboard Shortcuts[/]
+
+  [cyan]Ctrl+O[/]   Toggle thinking verbose
+  [cyan]Ctrl+L[/]   Clear screen
+  [cyan]Ctrl+T[/]   Toggle auto-accept
+  [cyan]Ctrl+P[/]   Toggle plan/act mode
+  [cyan]Ctrl+R[/]   Rerun last command
+  [cyan]Ctrl+K[/]   Kill generation
+  [cyan]  /   [/]   Interactive command picker
 """
 
 
@@ -725,6 +746,9 @@ async def handle_slash_command(
         console.print("[dim]Goodbye.[/]")
         return False
 
+    elif command == "/shortcuts":
+        show_shortcuts()
+
     else:
         console.print(f"[yellow]Unknown command:[/] {command}")
         console.print("[dim]Type /help for available commands[/]")
@@ -803,11 +827,16 @@ async def run_repl(
         uncensored=is_uncensored_model(llm.config.model) or bypass_rlhf,
     )
 
+    # Permission system
+    permissions = PermissionManager(auto_accept=effective_auto_accept)
+
     # Track session
     session_id = record_session_start(llm.config.model, llm.config.name)
+    files_touched: list[str] = []
 
-    # Print banner + buddy greeting
+    # Print banner + permissions warning + buddy greeting
     print_banner(llm)
+    permissions.show_startup_warning()
     buddy.react("greeting")
     buddy.render_full(console)
 
@@ -826,6 +855,12 @@ async def run_repl(
         auto_suggest=AutoSuggestFromHistory(),
         bottom_toolbar=status_bar.render,
     )
+
+    # Wire up TUI keybindings (Ctrl+O, Ctrl+L, Ctrl+T, Ctrl+P, etc.)
+    tui_mode = get_mode_state()
+    tui_mode.auto_accept = effective_auto_accept
+    tui_mode.verbose_thinking = show_thinking
+    register_keybindings(session, operator, status_bar)
 
     while True:
         try:
@@ -848,6 +883,21 @@ async def run_repl(
         if not user_input:
             continue
 
+        # Interactive command picker: bare "/" triggers fuzzy picker
+        if user_input == "/":
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                picked = await asyncio.get_event_loop().run_in_executor(
+                    pool, show_command_picker
+                )
+            if picked:
+                should_continue = await handle_slash_command(
+                    picked, operator, memory, status_bar, orchestrator
+                )
+                if not should_continue:
+                    break
+            continue
+
         # Slash commands
         if user_input.startswith("/"):
             should_continue = await handle_slash_command(
@@ -857,12 +907,20 @@ async def run_repl(
                 break
             continue
 
+        # Track last input for Ctrl+R rerun
+        tui_mode.last_user_input = user_input
+        tui_mode.reset_cancel()
+
         # Track in memory
         memory.add_session_message("user", user_input)
 
         # Enhance the prompt with context before sending
         enhanced = enhance_prompt(user_input)
         send_text = enhanced.enhanced if enhanced.was_enhanced else user_input
+
+        # Plan mode: prepend planning instruction so the model never executes
+        if tui_mode.plan_mode:
+            send_text = f"{tui_mode.plan_mode_prompt_injection}\n\n{send_text}"
 
         # Send to operator and stream response
         full_response = ""
@@ -885,6 +943,11 @@ async def run_repl(
             first_token = True
 
             async for token in operator.send(send_text):
+                # Check if user hit Ctrl+K to cancel
+                if tui_mode.is_cancelled:
+                    console.print("\n[yellow]Generation cancelled.[/]")
+                    break
+
                 if first_token:
                     # Clear spinner line
                     sys.stdout.write("\r\033[K")
@@ -949,6 +1012,16 @@ async def run_repl(
                 fb = get_fallback_model(llm.config.model)
                 if fb:
                     console.print(f"  [dim]Try: /model {fb}[/]")
+
+    # Save project context on exit
+    msg_count = len([m for m in operator.messages if m.role in ("user", "assistant")])
+    save_context(
+        model=llm.config.model,
+        provider=llm.config.name,
+        messages_count=msg_count,
+        files_touched=files_touched,
+    )
+    console.print(f"  [dim]Saved djcode.md[/]")
 
     record_session_end(session_id)
     await llm.close()
