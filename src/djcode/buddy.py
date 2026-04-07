@@ -110,29 +110,6 @@ BODIES: dict[str, list[list[str]]] = {
             "    ~~~~~    ",
         ],
     ],
-    "chai": [
-        [  # frame 0: rest
-            "    ~~~~~~   ",
-            "    |    |   ",
-            "    | {E}{E} |   ",
-            "    |    |   ",
-            "    \\____/   ",
-        ],
-        [  # frame 1: steam left
-            "   ~  ~~~~   ",
-            "    |    |   ",
-            "    | {E}{E} |   ",
-            "    |    |   ",
-            "    \\____/   ",
-        ],
-        [  # frame 2: steam right
-            "    ~~~~  ~  ",
-            "    |    |   ",
-            "    | {E}{E} |   ",
-            "    |  . |   ",
-            "    \\____/   ",
-        ],
-    ],
     "peacock": [
         [  # frame 0: rest
             "   \\|/|\\|/   ",
@@ -201,7 +178,6 @@ SPECIES_EMOJI: dict[str, str] = {
     "diya": "\U0001fa94",
     "cobra": "\U0001f40d",
     "lotus": "\U0001fab7",
-    "chai": "\u2615",
     "peacock": "\U0001f99a",
     "om": "\U0001f549\ufe0f",
 }
@@ -226,11 +202,6 @@ QUIPS: dict[str, dict[str, list[str]]] = {
             "petals curl inward, focusing...",
             "roots draw from deep memory...",
             "pond ripples with thought...",
-        ],
-        "chai": [
-            "steam swirls with thought...",
-            "the brew is thinking...",
-            "stirring up an answer...",
         ],
         "peacock": [
             "feathers rustle, concentrating...",
@@ -259,11 +230,6 @@ QUIPS: dict[str, dict[str, list[str]]] = {
             "petals open with clarity.",
             "beauty in the answer.",
         ],
-        "chai": [
-            "perfectly brewed!",
-            "hot and ready to serve.",
-            "the best cup yet!",
-        ],
         "peacock": [
             "fans out in celebration!",
             "colors shine with pride!",
@@ -291,11 +257,6 @@ QUIPS: dict[str, dict[str, list[str]]] = {
             "muddy waters, but roots hold.",
             "a petal fell. Growing another.",
         ],
-        "chai": [
-            "went cold... reheating.",
-            "spilled a drop. Pouring fresh.",
-            "bitter batch. Adjusting.",
-        ],
         "peacock": [
             "ruffles feathers, undeterred.",
             "a feather fell. Still fabulous.",
@@ -311,7 +272,6 @@ QUIPS: dict[str, dict[str, list[str]]] = {
         "diya": ["sealed in flame. Committed."],
         "cobra": ["the code is marked. No escape."],
         "lotus": ["planted in the record."],
-        "chai": ["fresh batch committed."],
         "peacock": ["displayed for all to see."],
         "om": ["etched in the cosmic ledger."],
     },
@@ -319,7 +279,6 @@ QUIPS: dict[str, dict[str, list[str]]] = {
         "diya": ["lighting the way for tools..."],
         "cobra": ["striking at the filesystem..."],
         "lotus": ["reaching into the codebase..."],
-        "chai": ["brewing up a tool call..."],
         "peacock": ["fanning out the operation..."],
         "om": ["channeling through tools..."],
     },
@@ -336,10 +295,6 @@ QUIPS: dict[str, dict[str, list[str]]] = {
             "blooms beside you. Begin.",
             "the pond is calm. Let's flow.",
         ],
-        "chai": [
-            "brews fresh ideas. Sip up.",
-            "hot and ready. What's first?",
-        ],
         "peacock": [
             "displays with pride. Let's ship.",
             "feathers at the ready.",
@@ -353,7 +308,6 @@ QUIPS: dict[str, dict[str, list[str]]] = {
         "diya": ["the flame sways gently..."],
         "cobra": ["tongue flicks, waiting..."],
         "lotus": ["floating peacefully..."],
-        "chai": ["steam curls lazily..."],
         "peacock": ["preening quietly..."],
         "om": ["hums a low note..."],
     },
