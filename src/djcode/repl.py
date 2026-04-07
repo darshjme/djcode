@@ -36,6 +36,7 @@ from djcode.auth import (
 )
 from djcode.buddy import BODIES, SPECIES_EMOJI, get_buddy
 from djcode.prompt_enhancer import enhance_prompt, describe_enhancement
+from djcode.stats import record_session_start, record_session_update, record_session_end, render_stats
 from djcode.config import (
     HISTORY_FILE,
     ensure_dirs,
@@ -159,6 +160,9 @@ HELP_TEXT = f"""\
   [cyan]/save[/]              Save conversation to disk
   [cyan]/config[/]            Show current config
   [cyan]/set[/] k=v           Set a config value
+  [cyan]/stats[/]             Usage dashboard with activity heatmap
+  [cyan]/stats 7d[/]          Last 7 days stats
+  [cyan]/stats 30d[/]         Last 30 days stats
   [cyan]/buddy[/]             Show your buddy + speech bubble
   [cyan]/buddy pet[/]         Pet your buddy
   [cyan]/buddy species[/]     Show all species
@@ -530,6 +534,12 @@ async def handle_slash_command(
             border_style=GOLD,
         ))
 
+    elif command == "/stats":
+        period = arg.strip().lower() if arg.strip() else "all"
+        if period not in ("all", "7d", "30d"):
+            period = "all"
+        render_stats(console, period=period)
+
     elif command == "/buddy":
         buddy = get_buddy()
         sub = arg.strip().lower()
@@ -630,6 +640,9 @@ async def run_repl(
         auto_accept=cfg.get("auto_accept", False),
         uncensored=is_uncensored_model(llm.config.model) or bypass_rlhf,
     )
+
+    # Track session
+    session_id = record_session_start(llm.config.model, llm.config.name)
 
     # Print banner + buddy greeting
     print_banner(llm)
@@ -734,7 +747,10 @@ async def run_repl(
                 buddy.observe(user_input, full_response, success=True)
                 buddy.set_mood("success")
                 buddy.tick()
-                # Buddy stays in status bar only — no inline quips per response
+
+                # Track usage stats
+                token_est = len(full_response) // 4
+                record_session_update(session_id, tokens=token_est, messages=1)
 
                 # Censorship detection — warn if aligned model refuses
                 from djcode.prompt import CENSORED_WARNING, detect_refusal
@@ -768,6 +784,7 @@ async def run_repl(
             buddy.observe(user_input, "", success=False)
             buddy.set_mood("error")
 
+    record_session_end(session_id)
     await llm.close()
 
 
