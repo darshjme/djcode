@@ -15,7 +15,6 @@ from typing import Any, AsyncIterator
 import questionary
 from rich.console import Console
 from rich.panel import Panel
-from rich.syntax import Syntax
 
 from djcode.provider import Message, Provider
 from djcode.prompt import build_system_prompt
@@ -71,7 +70,7 @@ class ThinkingStreamProcessor:
                 # Print thinking header
                 if self.show_thinking and not self.raw:
                     if not self._think_started:
-                        sys.stderr.write(f"\n{THINK_LABEL}  \u2728 thinking...{THINK_RESET}\n")
+                        sys.stderr.write(f"\n{THINK_LABEL}  \u23fa reasoning...{THINK_RESET}\n")
                         self._think_started = True
                     # Flush any buffered thinking content
                     if self._buffer:
@@ -114,7 +113,7 @@ class ThinkingStreamProcessor:
             if self.show_thinking and not self.raw and before:
                 sys.stderr.write(f"{THINK_PREFIX}  {before}{THINK_RESET}\n")
             if self.show_thinking and not self.raw:
-                sys.stderr.write(f"{THINK_LABEL}  \u2728 done thinking{THINK_RESET}\n\n")
+                sys.stderr.write(f"{THINK_LABEL}  \u23fa done{THINK_RESET}\n\n")
                 sys.stderr.flush()
 
             # Anything after </think> is response
@@ -380,60 +379,74 @@ class Operator:
             elif finish == "stop":
                 break
 
-    # Tool icons for compact display
-    TOOL_ICONS: dict[str, str] = {
-        "bash": "\u2699",       # gear
-        "file_read": "\U0001f4c4",   # page
-        "file_write": "\u270f",  # pencil
-        "file_edit": "\u2702",   # scissors
-        "grep": "\U0001f50d",    # magnifier
-        "glob": "\U0001f4c2",    # folder
-        "git": "\U0001f500",     # shuffle arrows
-        "web_fetch": "\U0001f310",  # globe
+    # ── Clean tool display (Claude Code style) ─────────────────────────
+
+    # Canonical display names for tools
+    TOOL_DISPLAY: dict[str, str] = {
+        "bash": "Bash",
+        "file_read": "Read",
+        "file_write": "Write",
+        "file_edit": "Edit",
+        "grep": "Grep",
+        "glob": "Glob",
+        "git": "Git",
+        "web_fetch": "WebFetch",
     }
 
     def _display_tool_call(self, name: str, args: dict) -> None:
-        """Render a tool call as a compact one-line indicator."""
-        icon = self.TOOL_ICONS.get(name, "\u26a1")
+        """Render a tool call as a clean one-liner: ⏺ ToolName(arg)"""
+        display_name = self.TOOL_DISPLAY.get(name, name.title())
 
         if name == "bash":
             cmd = args.get("command", "")
-            # Show command inline, truncated
-            display = cmd if len(cmd) < 80 else cmd[:77] + "..."
-            console.print(f"  {icon} [bold yellow]{name}[/] [dim]{display}[/]")
+            arg_display = cmd if len(cmd) < 72 else cmd[:69] + "..."
         elif name in ("file_read", "file_write", "file_edit"):
-            path = args.get("path", "")
-            console.print(f"  {icon} [bold cyan]{name}[/] [white]{path}[/]")
+            arg_display = args.get("path", "")
         elif name == "grep":
             pattern = args.get("pattern", "")
             path = args.get("path", ".")
-            console.print(f"  {icon} [bold cyan]grep[/] [white]{pattern}[/] [dim]in {path}[/]")
+            arg_display = f'"{pattern}" in {path}'
         elif name == "glob":
-            pattern = args.get("pattern", "")
-            console.print(f"  {icon} [bold cyan]glob[/] [white]{pattern}[/]")
+            arg_display = args.get("pattern", "")
         elif name == "git":
             sub = args.get("subcommand", "")
             git_args = args.get("args", "")
-            console.print(f"  {icon} [bold cyan]git {sub}[/] [dim]{git_args}[/]")
+            arg_display = f"{sub} {git_args}".strip()
         else:
-            brief = json.dumps(args)[:100]
-            console.print(f"  {icon} [bold cyan]{name}[/] [dim]{brief}[/]")
+            # Generic: show first meaningful arg value
+            vals = [str(v) for v in args.values() if v]
+            arg_display = vals[0][:72] if vals else ""
+
+        console.print(f"[#FFD700]\u23fa[/] [bold white]{display_name}[/][dim]({arg_display})[/]")
 
     def _display_tool_result(self, name: str, result: str) -> None:
-        """Render a tool result — compact, dimmed, truncated."""
+        """Render a tool result — indented dim summary."""
         lines = result.strip().splitlines()
         if not lines:
             return
 
-        # Show first few lines dimmed and indented
-        max_show = 8
-        for line in lines[:max_show]:
-            truncated = line[:120] + "..." if len(line) > 120 else line
-            console.print(f"    [dim]{truncated}[/]")
+        total = len(lines)
 
-        remaining = len(lines) - max_show
-        if remaining > 0:
-            console.print(f"    [dim italic]... {remaining} more lines[/]")
+        # Check for errors
+        first = lines[0].strip().lower()
+        if first.startswith("error") or first.startswith("traceback"):
+            # Show error in red
+            err_msg = lines[0][:120]
+            console.print(f"  [dim]\u21b3[/] [red]Error: {err_msg}[/]")
+            return
+
+        # Short output: just show line count
+        if total <= 3:
+            for line in lines:
+                truncated = line[:120] + "..." if len(line) > 120 else line
+                console.print(f"  [dim]  {truncated}[/]")
+        else:
+            # Show first 3 lines + summary
+            for line in lines[:3]:
+                truncated = line[:120] + "..." if len(line) > 120 else line
+                console.print(f"  [dim]  {truncated}[/]")
+            remaining = total - 3
+            console.print(f"  [dim]  ... ({remaining} more lines)[/]")
 
     def reset(self) -> None:
         """Clear conversation history, keeping system prompt."""
