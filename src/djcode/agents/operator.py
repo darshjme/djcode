@@ -6,6 +6,8 @@ calls tools, and produces results. It manages the tool-calling loop.
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import json
 from typing import Any, AsyncIterator
 
@@ -107,7 +109,14 @@ class Operator:
                             title="[yellow]Tool Call[/]",
                             border_style="yellow",
                         ))
-                        confirm = questionary.confirm("Execute this tool?", default=True).ask()
+                        # Run questionary in thread to avoid asyncio.run() conflict
+                        with concurrent.futures.ThreadPoolExecutor() as pool:
+                            confirm = await asyncio.get_event_loop().run_in_executor(
+                                pool,
+                                lambda: questionary.confirm(
+                                    "Execute this tool?", default=True
+                                ).ask(),
+                            )
                         if not confirm:
                             self.messages.append(
                                 Message(
