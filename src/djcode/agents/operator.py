@@ -216,41 +216,60 @@ class Operator:
             elif finish == "stop":
                 break
 
+    # Tool icons for compact display
+    TOOL_ICONS: dict[str, str] = {
+        "bash": "\u2699",       # gear
+        "file_read": "\U0001f4c4",   # page
+        "file_write": "\u270f",  # pencil
+        "file_edit": "\u2702",   # scissors
+        "grep": "\U0001f50d",    # magnifier
+        "glob": "\U0001f4c2",    # folder
+        "git": "\U0001f500",     # shuffle arrows
+        "web_fetch": "\U0001f310",  # globe
+    }
+
     def _display_tool_call(self, name: str, args: dict) -> None:
-        """Render a tool call in the terminal."""
+        """Render a tool call as a compact one-line indicator."""
+        icon = self.TOOL_ICONS.get(name, "\u26a1")
+
         if name == "bash":
             cmd = args.get("command", "")
-            console.print(
-                Panel(
-                    Syntax(cmd, "bash", theme="monokai"),
-                    title=f"[bold yellow]bash[/]",
-                    border_style="yellow",
-                    padding=(0, 1),
-                )
-            )
+            # Show command inline, truncated
+            display = cmd if len(cmd) < 80 else cmd[:77] + "..."
+            console.print(f"  {icon} [bold yellow]{name}[/] [dim]{display}[/]")
         elif name in ("file_read", "file_write", "file_edit"):
             path = args.get("path", "")
-            console.print(f"  [dim cyan]{name}[/] [white]{path}[/]")
+            console.print(f"  {icon} [bold cyan]{name}[/] [white]{path}[/]")
         elif name == "grep":
             pattern = args.get("pattern", "")
-            console.print(f"  [dim cyan]grep[/] [white]{pattern}[/]")
+            path = args.get("path", ".")
+            console.print(f"  {icon} [bold cyan]grep[/] [white]{pattern}[/] [dim]in {path}[/]")
         elif name == "glob":
             pattern = args.get("pattern", "")
-            console.print(f"  [dim cyan]glob[/] [white]{pattern}[/]")
+            console.print(f"  {icon} [bold cyan]glob[/] [white]{pattern}[/]")
         elif name == "git":
             sub = args.get("subcommand", "")
-            console.print(f"  [dim cyan]git[/] [white]{sub}[/]")
+            git_args = args.get("args", "")
+            console.print(f"  {icon} [bold cyan]git {sub}[/] [dim]{git_args}[/]")
         else:
-            console.print(f"  [dim cyan]{name}[/] {json.dumps(args, indent=2)[:200]}")
+            brief = json.dumps(args)[:100]
+            console.print(f"  {icon} [bold cyan]{name}[/] [dim]{brief}[/]")
 
     def _display_tool_result(self, name: str, result: str) -> None:
-        """Render a tool result in the terminal."""
-        lines = result.splitlines()
-        preview = "\n".join(lines[:15])
-        if len(lines) > 15:
-            preview += f"\n... ({len(lines)} lines total)"
+        """Render a tool result — compact, dimmed, truncated."""
+        lines = result.strip().splitlines()
+        if not lines:
+            return
 
-        console.print(f"[dim]{preview}[/]")
+        # Show first few lines dimmed and indented
+        max_show = 8
+        for line in lines[:max_show]:
+            truncated = line[:120] + "..." if len(line) > 120 else line
+            console.print(f"    [dim]{truncated}[/]")
+
+        remaining = len(lines) - max_show
+        if remaining > 0:
+            console.print(f"    [dim italic]... {remaining} more lines[/]")
 
     def reset(self) -> None:
         """Clear conversation history, keeping system prompt."""

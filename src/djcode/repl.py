@@ -702,7 +702,17 @@ async def run_repl(
             else:
                 buddy.react("thinking", response=user_input)
 
+            # Show thinking spinner until first token arrives
+            spinner_frames = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"]
+            spinner_idx = 0
+            first_token = True
+
             async for token in operator.send(send_text):
+                if first_token:
+                    # Clear spinner line
+                    sys.stdout.write("\r\033[K")
+                    first_token = False
+
                 if raw:
                     sys.stdout.write(token)
                     sys.stdout.flush()
@@ -711,6 +721,10 @@ async def run_repl(
                     sys.stdout.flush()
 
                 full_response += token
+
+            if first_token:
+                # Never got a token — clear spinner
+                sys.stdout.write("\r\033[K")
 
             if full_response:
                 console.print()  # Newline after streaming
