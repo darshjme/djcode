@@ -36,6 +36,8 @@ from djcode.auth import (
 )
 from djcode.buddy import BODIES, SPECIES_EMOJI, get_buddy
 from djcode.errors import classify_error, format_error, get_fallback_model
+from djcode.orchestrator import Orchestrator
+from djcode.agents.registry import AgentRole
 from djcode.prompt_enhancer import enhance_prompt, describe_enhancement
 from djcode.stats import record_session_start, record_session_update, record_session_end, render_stats
 from djcode.config import (
@@ -161,6 +163,14 @@ HELP_TEXT = f"""\
   [cyan]/save[/]              Save conversation to disk
   [cyan]/config[/]            Show current config
   [cyan]/set[/] k=v           Set a config value
+  [cyan]/orchestra[/] <task>  Multi-agent orchestration (auto-dispatch)
+  [cyan]/review[/] <code>     Code review (Dharma agent)
+  [cyan]/debug[/] <issue>     Root cause analysis (Sherlock agent)
+  [cyan]/test[/] <target>     Write tests (Agni agent)
+  [cyan]/refactor[/] <code>   Restructure code (Shiva agent)
+  [cyan]/devops[/] <task>     Docker/CI/CD (Vayu agent)
+  [cyan]/docs[/] <target>     Generate docs (Saraswati agent)
+  [cyan]/agents[/]            Show all 10 agents roster
   [cyan]/stats[/]             Usage dashboard with activity heatmap
   [cyan]/stats 7d[/]          Last 7 days stats
   [cyan]/stats 30d[/]         Last 30 days stats
@@ -350,6 +360,7 @@ async def handle_slash_command(
     operator: Operator,
     memory: MemoryManager,
     status_bar: StatusBar,
+    orchestrator: Orchestrator | None = None,
 ) -> bool:
     """Handle a slash command. Returns True if the REPL should continue."""
     parts = cmd.strip().split(maxsplit=1)
@@ -535,6 +546,60 @@ async def handle_slash_command(
             border_style=GOLD,
         ))
 
+    elif command == "/orchestra":
+        if not arg:
+            console.print(f"[yellow]Usage: /orchestra <task>[/]")
+        else:
+            async for token in orchestrator.execute(arg):
+                sys.stdout.write(token)
+                sys.stdout.flush()
+            console.print()
+
+    elif command == "/review":
+        task = arg or "review the recent changes in this codebase"
+        async for token in orchestrator.run_single_agent_streaming(AgentRole.REVIEWER, task):
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        console.print()
+
+    elif command == "/debug":
+        task = arg or "investigate recent errors in this codebase"
+        async for token in orchestrator.run_single_agent_streaming(AgentRole.DEBUGGER, task):
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        console.print()
+
+    elif command == "/test":
+        task = arg or "write tests for the most recently changed files"
+        async for token in orchestrator.run_single_agent_streaming(AgentRole.TESTER, task):
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        console.print()
+
+    elif command == "/refactor":
+        task = arg or "identify refactoring opportunities in this codebase"
+        async for token in orchestrator.run_single_agent_streaming(AgentRole.REFACTORER, task):
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        console.print()
+
+    elif command == "/devops":
+        task = arg or "check deployment and CI/CD configuration"
+        async for token in orchestrator.run_single_agent_streaming(AgentRole.DEVOPS, task):
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        console.print()
+
+    elif command == "/docs":
+        task = arg or "generate documentation for this project"
+        async for token in orchestrator.run_single_agent_streaming(AgentRole.DOCS, task):
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        console.print()
+
+    elif command == "/agents":
+        orchestrator.render_roster()
+
     elif command == "/stats":
         period = arg.strip().lower() if arg.strip() else "all"
         if period not in ("all", "7d", "30d"):
@@ -631,6 +696,9 @@ async def run_repl(
     # Initialize memory
     memory = MemoryManager()
 
+    # Initialize orchestrator
+    orchestrator = Orchestrator(llm, auto_accept=effective_auto_accept)
+
     # Initialize buddy and status bar
     buddy = get_buddy()
     status_bar = StatusBar(buddy)
@@ -690,7 +758,7 @@ async def run_repl(
         # Slash commands
         if user_input.startswith("/"):
             should_continue = await handle_slash_command(
-                user_input, operator, memory, status_bar
+                user_input, operator, memory, status_bar, orchestrator
             )
             if not should_continue:
                 break
