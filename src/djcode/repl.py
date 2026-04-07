@@ -34,7 +34,7 @@ from djcode.auth import (
     interactive_provider_picker,
     is_uncensored_model,
 )
-from djcode.buddy import get_buddy
+from djcode.buddy import BODIES, SPECIES_EMOJI, get_buddy
 from djcode.config import (
     HISTORY_FILE,
     ensure_dirs,
@@ -158,6 +158,9 @@ HELP_TEXT = f"""\
   [cyan]/save[/]              Save conversation to disk
   [cyan]/config[/]            Show current config
   [cyan]/set[/] k=v           Set a config value
+  [cyan]/buddy[/]             Show your buddy + speech bubble
+  [cyan]/buddy pet[/]         Pet your buddy
+  [cyan]/buddy species[/]     Show all species
   [cyan]/raw[/]               Toggle raw mode (no formatting)
   [cyan]/exit[/]              Exit DJcode
 """
@@ -526,6 +529,23 @@ async def handle_slash_command(
             border_style=GOLD,
         ))
 
+    elif command == "/buddy":
+        buddy = get_buddy()
+        sub = arg.strip().lower()
+        if sub == "pet":
+            buddy.speak("success", custom_text=f"*purrs* {buddy.name} loves that!")
+            buddy.set_mood("success")
+            buddy.render_full(console)
+        elif sub == "species":
+            console.print(f"\n[bold {GOLD}]Available Species[/]\n")
+            for sp in BODIES:
+                emoji = SPECIES_EMOJI.get(sp, "")
+                console.print(f"  {emoji}  [white]{sp}[/]")
+            console.print(f"\n[dim]Your buddy: {buddy.emoji} {buddy.display_name} ({buddy.species})[/]\n")
+        else:
+            buddy.speak("idle")
+            buddy.render_full(console)
+
     elif command == "/raw":
         operator.raw = not operator.raw
         state = "on" if operator.raw else "off"
@@ -608,8 +628,10 @@ async def run_repl(
         uncensored=is_uncensored_model(llm.config.model) or bypass_rlhf,
     )
 
-    # Print banner
+    # Print banner + buddy greeting
     print_banner(llm)
+    buddy.react("greeting")
+    buddy.render_full(console)
 
     # Check for updates (non-blocking, once per 24h)
     try:
@@ -666,7 +688,8 @@ async def run_repl(
             if not raw:
                 console.print()  # Spacing
 
-            buddy.set_mood("thinking")
+            buddy.ctx.last_user_query = user_input
+            buddy.react("thinking", response=user_input)
 
             async for token in operator.send(user_input):
                 if raw:
@@ -681,7 +704,10 @@ async def run_repl(
             if full_response:
                 console.print()  # Newline after streaming
                 memory.add_session_message("assistant", full_response)
-                buddy.set_mood("success")
+                buddy.observe(user_input, full_response, success=True)
+                buddy.react("success", response=full_response)
+                buddy.tick()
+                buddy.render_full(console)
 
                 # Censorship detection — warn if aligned model refuses
                 from djcode.prompt import CENSORED_WARNING, detect_refusal
@@ -708,10 +734,14 @@ async def run_repl(
             buddy.set_mood("idle")
         except ConnectionError as e:
             console.print(f"\n[red]{e}[/]")
-            buddy.set_mood("error")
+            buddy.observe(user_input, "", success=False)
+            buddy.react("error", error_msg=str(e))
+            buddy.render_full(console)
         except Exception as e:
             console.print(f"\n[red]Error:[/] {e}")
-            buddy.set_mood("error")
+            buddy.observe(user_input, "", success=False)
+            buddy.react("error", error_msg=str(e))
+            buddy.render_full(console)
 
     await llm.close()
 
