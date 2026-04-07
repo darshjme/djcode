@@ -764,6 +764,13 @@ async def handle_slash_command(
     elif command == "/shortcuts":
         show_shortcuts()
 
+    elif command == "/docs":
+        from djcode.docs import render_docs, render_docs_index
+        if arg.strip():
+            render_docs(console, arg.strip().lower())
+        else:
+            render_docs_index(console)
+
     # ── MCP Extensions ────────────────────────────────────────────────
     elif command == "/extension":
         ext_mgr = ExtensionManager()
@@ -1342,6 +1349,9 @@ async def run_repl(
     console.print(f"  [dim]Saved djcode.md[/]")
 
     record_session_end(session_id)
+    session_db.end_session(sqlite_session_id)
+    session_db.save_conversation(sqlite_session_id, operator.messages)
+    await ext_manager.shutdown()
     await llm.close()
 
 
