@@ -8,10 +8,13 @@ Fixed bottom toolbar via prompt_toolkit's bottom_toolbar feature.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 import uuid
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import questionary
 from prompt_toolkit import PromptSession
@@ -976,6 +979,35 @@ async def run_repl(
                 # Track usage stats
                 token_est = len(full_response) // 4
                 record_session_update(session_id, tokens=token_est, messages=1)
+
+                # Tool extraction router — for models without native tool calling
+                # If the model produced text but didn't use any native tool_calls,
+                # scan the output for tool intents and execute them.
+                if not operator.last_had_tool_calls:
+                    try:
+                        from djcode.tool_router import ToolExtractionRouter
+
+                        router = ToolExtractionRouter()
+                        extracted_intents = router.extract_intents(full_response)
+                        if extracted_intents:
+                            current_cfg_for_auto = load_config()
+                            effective_auto = operator.auto_accept or current_cfg_for_auto.get("auto_accept", False)
+                            tool_results = await router.extract_and_execute(
+                                full_response, auto_accept=effective_auto
+                            )
+                            # Feed results back as context for the next turn
+                            if tool_results:
+                                result_context = router.format_results_for_context(tool_results)
+                                if result_context:
+                                    from djcode.provider import Message as _Msg
+                                    operator.messages.append(
+                                        _Msg(
+                                            role="user",
+                                            content=result_context,
+                                        )
+                                    )
+                    except Exception as tr_err:
+                        logger.debug("Tool router error: %s", tr_err)
 
                 # Censorship detection — warn if aligned model refuses
                 from djcode.prompt import CENSORED_WARNING, detect_refusal

@@ -186,6 +186,7 @@ class Operator:
         ]
         self.max_tool_rounds = 20  # Safety limit on tool-calling loops
         self.last_had_thinking = False  # Track if last response had thinking
+        self.last_had_tool_calls = False  # Track if last response used native tool calling
 
     async def send(self, user_input: str) -> AsyncIterator[str]:
         """Send a user message and yield streamed response tokens.
@@ -238,6 +239,7 @@ class Operator:
 
             # If there are tool calls, execute them and loop
             if tool_calls:
+                self.last_had_tool_calls = True
                 # Record assistant message with tool calls
                 self.messages.append(
                     Message(role="assistant", content=full_response, tool_calls=tool_calls)
@@ -309,6 +311,9 @@ class Operator:
                 continue
 
             # No tool calls — final response
+            # Only mark as no-tool-calls if we never saw any in this entire send()
+            if not tool_calls and _round == 0:
+                self.last_had_tool_calls = False
             if full_response:
                 self.messages.append(Message(role="assistant", content=full_response))
             break
