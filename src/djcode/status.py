@@ -78,6 +78,15 @@ class StatusBar:
         """
         emoji = self.buddy.emoji
         name = self.buddy.name
+        mood = self.buddy.mood
+        # Mood indicators
+        mood_icons = {
+            "idle": "",
+            "thinking": " \u23f3",
+            "success": " \u2713",
+            "error": " \u2717",
+        }
+        mood_suffix = mood_icons.get(mood, "")
         cwd = _shorten_cwd()
         tokens = _format_tokens(self.token_count)
 
@@ -88,7 +97,7 @@ class StatusBar:
         auto_str = "on" if self.auto_accept else "off"
 
         return HTML(
-            f'<b><style fg="{GOLD}">{emoji} {name}</style></b>'
+            f'<b><style fg="{GOLD}">{emoji} {name}{mood_suffix}</style></b>'
             f' <style fg="#666666">\u2502</style> '
             f'<style fg="#FFFFFF">{model_display}</style>'
             f' <style fg="#666666">\u2502</style> '
