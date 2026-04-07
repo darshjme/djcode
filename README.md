@@ -495,6 +495,25 @@ Override anything with CLI flags or `/set` in the REPL.
 
 ---
 
+## How We Stack Up
+
+| Feature | **DJcode** | Claude Code | Gemini CLI | Aider | OpenCode |
+|---------|:----------:|:-----------:|:----------:|:-----:|:--------:|
+| **Price** | **Free** | $20–200/mo | Free tier | Free + API | Free + API |
+| **Local inference** | **Native** | No | No | Workaround | Workaround |
+| **Apple Silicon / MLX** | **Native** | No | No | No | No |
+| **Smart buddy** | **Yes** | Fenwick | No | No | No |
+| **Prompt enhancer** | **Yes** | No | No | Repo map | No |
+| **Zero telemetry** | **By design** | Opt-out | Opt-out | Opt-in | Opt-out |
+| **Works offline** | **Yes** | No | No | No | No |
+| **No API key needed** | **Yes** | No | No | No | No |
+| **Open source** | **MIT** | Source-avail | Apache 2.0 | Apache 2.0 | FSL-1.1 |
+| **3-tier memory** | **Yes** | CLAUDE.md | GEMINI.md | No | SQLite |
+
+> DJcode is the only AI coding CLI built from the ground up for local-first, offline, zero-telemetry operation on Apple Silicon.
+
+---
+
 ## Development
 
 ```bash
