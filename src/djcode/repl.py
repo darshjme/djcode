@@ -200,7 +200,7 @@ def _handle_models_list(provider: Provider) -> None:
     console.print(f"\n[dim]Switch with: /model (interactive) or /model <name>[/]")
 
 
-def _handle_model_switch_interactive(operator: Operator, status_bar: StatusBar) -> None:
+async def _handle_model_switch_interactive(operator: Operator, status_bar: StatusBar) -> None:
     """Interactive model picker using questionary arrow keys."""
     provider = operator.provider
 
@@ -228,11 +228,17 @@ def _handle_model_switch_interactive(operator: Operator, status_bar: StatusBar) 
             label += " \U0001f513 uncensored"
         choices.append(questionary.Choice(label, value=name))
 
-    selected = questionary.select(
-        "Select model:",
-        choices=choices,
-        style=Q_STYLE,
-    ).ask()
+    # Run questionary in a thread to avoid blocking the async event loop
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        selected = await asyncio.get_event_loop().run_in_executor(
+            pool,
+            lambda: questionary.select(
+                "Select model:",
+                choices=choices,
+                style=Q_STYLE,
+            ).ask()
+        )
 
     if selected:
         provider.config.model = selected
@@ -350,7 +356,7 @@ async def handle_slash_command(
     elif command == "/model":
         if not arg:
             # No arg — interactive picker
-            _handle_model_switch_interactive(operator, status_bar)
+            await _handle_model_switch_interactive(operator, status_bar)
         else:
             _handle_model_switch(arg, operator, status_bar)
 
