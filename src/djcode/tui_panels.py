@@ -166,7 +166,7 @@ class ProjectPanel(Vertical):
     DEFAULT_CSS = """
     ProjectPanel {
         width: 100%;
-        height: 100%;
+        height: 1fr;
         background: #101010;
     }
 
@@ -1294,6 +1294,7 @@ class SidePanel(Vertical):
 
     SidePanel TabPane {
         padding: 0;
+        height: 1fr;
         background: #101010;
     }
 

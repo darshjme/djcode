@@ -942,12 +942,57 @@ class DJcodeApp(App):
                     highlight=True,
                     auto_scroll=True,
                 )
+                yield OptionList(id="cmd-suggest")
                 yield Input(
                     id="prompt-input",
                     placeholder="\u276f Type a message... (/help for commands, / for palette)",
                 )
             yield SidePanel(project_path=Path.cwd(), id="side-panel")
+        yield Static(self._build_status_text(), id="status-bar")
         yield Footer()
+
+    # ── Status bar helpers ────────────────────────────────────────────────
+
+    def _build_status_text(self) -> str:
+        """Build the status bar content string."""
+        if self._provider and hasattr(self._provider, "config"):
+            model = getattr(self._provider.config, "model", None) or self._model_name or "no model"
+            provider = getattr(self._provider.config, "name", None) or self._provider_name or "none"
+        else:
+            model = self._model_name or "loading..."
+            provider = self._provider_name or "..."
+
+        tokens_in = self._tokens_in
+        tokens_out = self._tokens_out
+        in_str = f"{tokens_in / 1000:.1f}k" if tokens_in >= 1000 else str(tokens_in)
+        out_str = f"{tokens_out / 1000:.1f}k" if tokens_out >= 1000 else str(tokens_out)
+
+        elapsed = int(time.time() - self._session_start)
+        mins, secs = divmod(elapsed, 60)
+        hrs, mins = divmod(mins, 60)
+        if hrs:
+            duration = f"{hrs}h {mins:02d}m {secs:02d}s"
+        else:
+            duration = f"{mins}m {secs:02d}s"
+
+        mode = "PLAN" if self._plan_mode else "ACT"
+        think = "ON" if self._show_thinking else "OFF"
+        auto = "ON" if self._auto_accept else "OFF"
+
+        return (
+            f"  {model} | {provider} | "
+            f"\u2191{in_str} \u2193{out_str} tokens | "
+            f"{duration} | {mode} | "
+            f"Think: {think} | Auto: {auto}"
+        )
+
+    def _refresh_status_bar(self) -> None:
+        """Update the status bar widget text."""
+        try:
+            bar = self.query_one("#status-bar", Static)
+            bar.update(self._build_status_text())
+        except Exception:
+            pass
 
     async def on_mount(self) -> None:
         """Initialize provider, operator, and welcome message on mount."""
@@ -959,6 +1004,9 @@ class DJcodeApp(App):
 
         # Focus the input by default
         self.query_one("#prompt-input", Input).focus()
+
+        # Start status bar refresh timer (every 1 second)
+        self.set_interval(1.0, self._refresh_status_bar)
 
         # Initialize everything in background
         self.run_worker(self._initialize(), exclusive=True)
@@ -1115,12 +1163,88 @@ class DJcodeApp(App):
         """Focus the prompt input (Escape / i)."""
         self.query_one("#prompt-input", Input).focus()
 
+    # ── Slash command autocomplete ──────────────────────────────────────
+
+    @on(Input.Changed, "#prompt-input")
+    def _on_prompt_changed(self, event: Input.Changed) -> None:
+        """Show/hide slash command suggestions as user types."""
+        text = event.value
+        suggest = self.query_one("#cmd-suggest", OptionList)
+
+        if text.startswith("/") and len(text) > 0:
+            query = text.lower()
+            matches = [
+                (cmd, desc)
+                for cmd, desc in COMMAND_REGISTRY
+                if query in cmd.lower() or query[1:] in desc.lower()
+            ]
+            suggest.clear_options()
+            if matches:
+                for cmd, desc in matches:
+                    suggest.add_option(Option(f"{cmd:<16} {desc}", id=cmd))
+                suggest.styles.display = "block"
+                # Highlight first option
+                if suggest.option_count > 0:
+                    suggest.highlighted = 0
+            else:
+                suggest.styles.display = "none"
+        else:
+            suggest.styles.display = "none"
+
+    def _select_suggestion(self) -> None:
+        """Fill the input with the currently highlighted suggestion."""
+        suggest = self.query_one("#cmd-suggest", OptionList)
+        if suggest.highlighted is not None and suggest.option_count > 0:
+            option = suggest.get_option_at_index(suggest.highlighted)
+            inp = self.query_one("#prompt-input", Input)
+            # option.id holds the command string like "/help"
+            cmd = str(option.id) if option.id else ""
+            if cmd:
+                inp.value = cmd + " "
+                inp.cursor_position = len(inp.value)
+        suggest.styles.display = "none"
+
+    def on_key(self, event) -> None:
+        """Intercept keys when suggestion list is visible."""
+        suggest = self.query_one("#cmd-suggest", OptionList)
+        if suggest.styles.display == "none":
+            return
+
+        if event.key == "up":
+            event.prevent_default()
+            event.stop()
+            if suggest.highlighted is not None and suggest.highlighted > 0:
+                suggest.highlighted = suggest.highlighted - 1
+            elif suggest.option_count > 0:
+                suggest.highlighted = suggest.option_count - 1
+
+        elif event.key == "down":
+            event.prevent_default()
+            event.stop()
+            if suggest.highlighted is not None and suggest.highlighted < suggest.option_count - 1:
+                suggest.highlighted = suggest.highlighted + 1
+            elif suggest.option_count > 0:
+                suggest.highlighted = 0
+
+        elif event.key in ("enter", "tab"):
+            event.prevent_default()
+            event.stop()
+            self._select_suggestion()
+
+        elif event.key == "escape":
+            event.prevent_default()
+            event.stop()
+            suggest.styles.display = "none"
+
     # ── Input handling ───────────────────────────────────────────────────
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle user input submission."""
         if event.input.id != "prompt-input":
             return
+
+        # Hide suggestion list on submit
+        self.query_one("#cmd-suggest", OptionList).styles.display = "none"
 
         text = event.value.strip()
         if not text:
