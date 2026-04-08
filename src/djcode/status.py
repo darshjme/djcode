@@ -95,7 +95,8 @@ class StatusBar:
         sep = ' <style fg="#444444">\u00b7</style> '
 
         return HTML(
-            f'<style fg="{GOLD}">\u23fa</style> '
+            f'<style bg="#111111">'
+            f' <style fg="{GOLD}">\u23fa</style> '
             f'<b><style fg="{GOLD}">{name}</style></b>'
             f'{sep}'
             f'{mode_segment}'
@@ -109,6 +110,7 @@ class StatusBar:
             f'<style fg="#555555">{cwd}</style>'
             f'{sep}'
             f'<style fg="#444444">Ctrl+? help</style>'
+            f' </style>'
         )
 
 
