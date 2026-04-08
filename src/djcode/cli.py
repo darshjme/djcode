@@ -64,6 +64,12 @@ console = Console()
     help="Show model thinking process (verbose reasoning)",
 )
 @click.option(
+    "--tui",
+    is_flag=True,
+    default=False,
+    help="Launch Textual TUI (split-pane interface)",
+)
+@click.option(
     "--config",
     "show_config",
     is_flag=True,
@@ -79,6 +85,7 @@ def main(
     raw: bool,
     auto_accept: bool,
     thinking: bool,
+    tui: bool,
     show_config: bool,
 ) -> None:
     """DJcode — Local-first AI coding CLI by DarshJ.AI
@@ -97,6 +104,19 @@ def main(
             display = "***" if "key" in k.lower() and v else str(v)
             table.add_row(k, display)
         console.print(table)
+        return
+
+    # TUI mode — launch Textual split-pane interface
+    if tui:
+        from djcode.app import run_tui
+
+        run_tui(
+            provider=provider,
+            model=model,
+            bypass_rlhf=bypass_rlhf,
+            auto_accept=auto_accept,
+            show_thinking=thinking,
+        )
         return
 
     from djcode.repl import run_oneshot, run_repl
