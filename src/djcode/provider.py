@@ -46,19 +46,45 @@ class ProviderConfig:
         provider_override: str | None = None,
         model_override: str | None = None,
     ) -> ProviderConfig:
-        """Build provider config from saved config + CLI overrides."""
+        """Build provider config from saved config + CLI overrides.
+
+        Supports:
+        - Known providers from the auth registry (ollama, openai, anthropic, etc.)
+        - Custom providers defined in config["custom_providers"]
+        - URL-as-provider: passing a URL (http/https) as the provider name
+        - base_url override via config or DJCODE_BASE_URL env var
+        """
         from djcode.auth import PROVIDERS, get_api_key, get_base_url
 
         cfg = load_config()
         provider = provider_override or cfg["provider"]
         model = model_override or cfg["model"]
 
-        # Use auth registry for known providers, fall back to legacy config
-        if provider in PROVIDERS:
+        # 1. URL-as-provider: treat http(s) URLs as custom OpenAI-compatible endpoints
+        if provider.startswith("http://") or provider.startswith("https://"):
+            base_url = provider.rstrip("/")
+            api_key = (
+                os.environ.get("DJCODE_API_KEY", "")
+                or os.environ.get("OPENAI_API_KEY", "")
+                or cfg.get("remote_api_key", "")
+            )
+            provider = "custom"
+
+        # 2. Check custom_providers from config
+        elif provider in cfg.get("custom_providers", {}):
+            custom = cfg["custom_providers"][provider]
+            base_url = custom.get("base_url", "")
+            api_key = custom.get("api_key", "") or os.environ.get("DJCODE_API_KEY", "")
+            model = model_override or custom.get("model", model)
+            provider = "custom"
+
+        # 3. Known provider from auth registry
+        elif provider in PROVIDERS:
             base_url = get_base_url(provider)
             api_key = get_api_key(provider)
+
+        # 4. Legacy fallback for "remote" or unknown providers
         else:
-            # Legacy fallback for "remote" or unknown providers
             url_map = {
                 "ollama": cfg.get("ollama_url", "http://localhost:11434"),
                 "mlx": cfg.get("mlx_url", "http://localhost:8080"),
@@ -70,6 +96,14 @@ class ProviderConfig:
                 api_key = os.environ.get("OPENAI_API_KEY", "")
                 if not api_key:
                     api_key = os.environ.get("DJCODE_API_KEY", "")
+
+        # Apply base_url override from config or env (takes precedence over everything)
+        env_base_url = os.environ.get("DJCODE_BASE_URL", "")
+        config_base_url = cfg.get("base_url", "")
+        if env_base_url:
+            base_url = env_base_url.rstrip("/")
+        elif config_base_url:
+            base_url = config_base_url.rstrip("/")
 
         return cls(
             name=provider,
@@ -467,7 +501,12 @@ class Provider:
             "tools": TOOL_DEFINITIONS,
         }
 
-        url = f"{self.config.base_url}/v1/chat/completions"
+        base = self.config.base_url.rstrip("/")
+        # If base_url already ends with /v1, don't double it
+        if base.endswith("/v1"):
+            url = f"{base}/chat/completions"
+        else:
+            url = f"{base}/v1/chat/completions"
 
         try:
             if stream:

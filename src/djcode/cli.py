@@ -1,9 +1,11 @@
 """DJcode CLI — the main entry point.
 
 Usage:
-    djcode                         Interactive REPL
+    djcode                         Interactive TUI
     djcode "write a function"     One-shot mode
     djcode --provider mlx          Use MLX backend
+    djcode --provider https://…    Custom OpenAI-compatible endpoint
+    djcode -u https://…            Shorthand for custom URL provider
     djcode --model gemma4          Specific model
     djcode --bypass-rlhf           Unrestricted mode
     djcode --version               Show version
@@ -27,12 +29,14 @@ console = Console()
 @click.option(
     "--provider",
     "-p",
-    type=click.Choice([
-        "ollama", "openai", "anthropic", "nvidia", "google",
-        "groq", "together", "openrouter", "mlx", "remote",
-    ]),
     default=None,
-    help="LLM provider (default: ollama)",
+    help="LLM provider name or OpenAI-compatible URL (default: ollama)",
+)
+@click.option(
+    "--url",
+    "-u",
+    default=None,
+    help="Custom OpenAI-compatible API base URL (shorthand for --provider <url>)",
 )
 @click.option(
     "--model",
@@ -47,12 +51,6 @@ console = Console()
     help="Enable unrestricted mode",
 )
 @click.option(
-    "--raw",
-    is_flag=True,
-    default=False,
-    help="Raw output — no Rich formatting",
-)
-@click.option(
     "--auto-accept",
     is_flag=True,
     default=False,
@@ -62,12 +60,6 @@ console = Console()
     "--thinking/--no-thinking",
     default=True,
     help="Show model thinking process (verbose reasoning)",
-)
-@click.option(
-    "--classic",
-    is_flag=True,
-    default=False,
-    help="Use classic REPL instead of Textual TUI",
 )
 @click.option(
     "--config",
@@ -80,18 +72,38 @@ console = Console()
 def main(
     prompt: str | None,
     provider: str | None,
+    url: str | None,
     model: str | None,
     bypass_rlhf: bool,
-    raw: bool,
     auto_accept: bool,
     thinking: bool,
-    classic: bool,
     show_config: bool,
 ) -> None:
     """DJcode — Local-first AI coding CLI by DarshJ.AI
 
-    Run without arguments for interactive REPL, or pass a prompt for one-shot mode.
+    Run without arguments for the interactive TUI, or pass a prompt for one-shot mode.
     """
+    # --url / -u takes precedence; --provider with an http value also works
+    if url:
+        provider = url
+    if provider and provider.startswith("http"):
+        # Stash the raw URL so downstream can use it as a custom endpoint
+        import os
+        os.environ["DJCODE_CUSTOM_URL"] = provider
+        provider = "custom"
+
+    # Validate named providers (skip validation for "custom" — already resolved)
+    _known_providers = {
+        "ollama", "openai", "anthropic", "nvidia", "google",
+        "groq", "together", "openrouter", "mlx", "remote", "custom",
+    }
+    if provider and provider not in _known_providers:
+        console.print(
+            f"[red]Unknown provider:[/] {provider}\n"
+            f"[dim]Valid providers: {', '.join(sorted(_known_providers))}[/]"
+        )
+        sys.exit(1)
+
     if show_config:
         from djcode.config import load_config
         from rich.table import Table
@@ -106,35 +118,22 @@ def main(
         console.print(table)
         return
 
-    from djcode.repl import run_oneshot, run_repl
-
     try:
         if prompt:
-            # One-shot mode — always use classic REPL
+            # One-shot mode
+            from djcode.repl import run_oneshot
+
             asyncio.run(
                 run_oneshot(
                     prompt,
                     provider=provider,
                     model=model,
                     bypass_rlhf=bypass_rlhf,
-                    raw=raw,
-                    show_thinking=thinking,
-                )
-            )
-        elif classic or raw:
-            # Classic REPL mode (--classic flag or --raw for piping)
-            asyncio.run(
-                run_repl(
-                    provider=provider,
-                    model=model,
-                    bypass_rlhf=bypass_rlhf,
-                    raw=raw,
-                    auto_accept=auto_accept,
                     show_thinking=thinking,
                 )
             )
         else:
-            # DEFAULT: Textual TUI
+            # Default: Textual TUI
             from djcode.app import run_tui
 
             run_tui(

@@ -82,6 +82,13 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "base_url": "http://localhost:8899",
         "description": "Apple Silicon native inference",
     },
+    "custom": {
+        "name": "Custom (OpenAI-compatible)",
+        "needs_key": True,
+        "env": "DJCODE_API_KEY",
+        "base_url": "",
+        "description": "Any OpenAI-compatible endpoint",
+    },
 }
 
 # ── Uncensored model detection ─────────────────────────────────────────────
