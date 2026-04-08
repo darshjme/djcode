@@ -93,6 +93,18 @@ FooterKey {
     color: #FFD700;
 }
 
+/* ── Status bar ───────────────────────────────────────────────── */
+
+#status-bar {
+    dock: bottom;
+    height: 1;
+    background: #1a1a1a;
+    color: #a0a0a0;
+    padding: 0 1;
+    border-top: solid #2a2a2a;
+    content-align: left middle;
+}
+
 /* ── Layout containers ────────────────────────────────────────── */
 
 #main-layout {
@@ -143,6 +155,7 @@ SidePanel ContentSwitcher {
 
 SidePanel TabPane {
     padding: 0;
+    height: 1fr;
     background: #141414;
 }
 
@@ -219,6 +232,30 @@ SidePanel Underline {
 }
 
 /* ── Input ────────────────────────────────────────────────────── */
+
+#cmd-suggest {
+    dock: bottom;
+    height: auto;
+    max-height: 12;
+    background: #141414;
+    color: #e0e0e0;
+    border: solid #2a2a2a;
+    margin: 0 1;
+    display: none;
+}
+
+#cmd-suggest:focus {
+    border: solid #FFD700;
+}
+
+#cmd-suggest > .option-list--option-highlighted {
+    background: #FFD700 20%;
+    color: #FFD700;
+}
+
+#cmd-suggest > .option-list--option {
+    padding: 0 1;
+}
 
 #prompt-input {
     dock: bottom;
