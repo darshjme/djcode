@@ -1,10 +1,12 @@
 """Textual TUI side-panel widgets for DJcode.
 
-Provides a tabbed side panel with four views:
+Provides a tabbed side panel with six views:
   - ProjectPanel  — directory tree file browser
   - AgentPanel    — live agent status dashboard
   - StatsPanel    — session statistics
   - MCPPanel      — MCP extension status
+  - TodoPanel     — per-session todo list
+  - CostPanel     — token usage with cost estimates
   - SidePanel     — tabbed container that hosts them all
 
 Uses Textual 8.x API with reactive() properties and message passing.
@@ -42,12 +44,14 @@ from textual.widgets import (
 # ---------------------------------------------------------------------------
 
 GOLD = "#FFD700"
-BG = "#0a0a0a"
-BG_HEADER = "#111111"
-BORDER = "#222222"
-DIM = "#666666"
-TEXT = "#999999"
-TEXT_BRIGHT = "#ffffff"
+BG = "#101010"
+BG_HEADER = "#141414"
+BORDER = "#2a2a2a"
+DIM = "#6f6f6f"
+TEXT = "#a0a0a0"
+TEXT_BRIGHT = "#ededed"
+SUCCESS = "#12c905"
+ERROR = "#fc533a"
 
 # File extensions -> type icons
 FILE_ICONS: dict[str, str] = {
@@ -163,12 +167,12 @@ class ProjectPanel(Vertical):
     ProjectPanel {
         width: 100%;
         height: 100%;
-        background: #0a0a0a;
+        background: #101010;
     }
 
     ProjectPanel .project-header {
         height: 3;
-        background: #111111;
+        background: #141414;
         color: #FFD700;
         text-align: center;
         padding: 1;
@@ -177,17 +181,17 @@ class ProjectPanel(Vertical):
 
     ProjectPanel .project-path {
         height: 1;
-        background: #0a0a0a;
-        color: #666666;
+        background: #101010;
+        color: #6f6f6f;
         padding: 0 1;
         text-style: italic;
     }
 
     ProjectPanel FilteredDirectoryTree {
         height: 1fr;
-        background: #0a0a0a;
-        color: #999999;
-        scrollbar-color: #333333;
+        background: #101010;
+        color: #a0a0a0;
+        scrollbar-color: #2a2a2a;
         scrollbar-color-hover: #FFD700;
         scrollbar-color-active: #FFD700;
         padding: 0 1;
@@ -203,7 +207,7 @@ class ProjectPanel(Vertical):
     }
 
     ProjectPanel FilteredDirectoryTree .tree--guides {
-        color: #333333;
+        color: #2a2a2a;
     }
 
     ProjectPanel FilteredDirectoryTree .directory-tree--folder {
@@ -212,13 +216,13 @@ class ProjectPanel(Vertical):
     }
 
     ProjectPanel FilteredDirectoryTree .directory-tree--file {
-        color: #999999;
+        color: #a0a0a0;
     }
 
     ProjectPanel .file-info {
         height: 2;
-        background: #111111;
-        color: #666666;
+        background: #141414;
+        color: #6f6f6f;
         padding: 0 1;
     }
     """
@@ -302,13 +306,13 @@ class ToolHistoryItem(Static):
     ToolHistoryItem {
         height: 1;
         padding: 0 1;
-        color: #999999;
+        color: #a0a0a0;
     }
     """
 
     def __init__(self, tool_name: str, status: str = "ok", **kwargs: Any) -> None:
         icon = "✓" if status == "ok" else "✗" if status == "error" else "⟳"
-        color = "#4ade80" if status == "ok" else "#f87171" if status == "error" else "#FFD700"
+        color = SUCCESS if status == "ok" else ERROR if status == "error" else GOLD
         markup = f"[{color}]{icon}[/] [{TEXT}]{tool_name}[/]"
         super().__init__(markup, **kwargs)
 
@@ -320,13 +324,13 @@ class AgentPanel(Vertical):
     AgentPanel {
         width: 100%;
         height: 100%;
-        background: #0a0a0a;
+        background: #101010;
         padding: 1;
     }
 
     AgentPanel .agent-header {
         height: 3;
-        background: #111111;
+        background: #141414;
         color: #FFD700;
         text-align: center;
         padding: 1;
@@ -340,24 +344,24 @@ class AgentPanel(Vertical):
     }
 
     AgentPanel .agent-stat {
-        color: #999999;
+        color: #a0a0a0;
         padding: 0 1;
     }
 
     AgentPanel .agent-stat-value {
-        color: #ffffff;
+        color: #ededed;
         text-style: bold;
     }
 
     AgentPanel .tool-history-container {
         height: auto;
         max-height: 14;
-        background: #0a0a0a;
+        background: #101010;
         padding: 0;
     }
 
     AgentPanel .memory-stats {
-        color: #666666;
+        color: #6f6f6f;
         padding: 1 1;
     }
     """
@@ -379,7 +383,7 @@ class AgentPanel(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Label("🎯 Agent Dashboard", classes="agent-header")
-        yield Rule(style="dark")
+        yield Rule()
 
         # Active agent
         yield Label("ACTIVE AGENT", classes="agent-section-title")
@@ -387,22 +391,22 @@ class AgentPanel(Vertical):
             f"  🎯 [bold {GOLD}]{self.active_agent}[/] ([{TEXT}]{self.active_role}[/])",
             id="agent-active-display",
         )
-        yield Rule(style="dark")
+        yield Rule()
 
         # Token counter
         yield Label("TOKENS", classes="agent-section-title")
         yield Static("  ↑ 0  ↓ 0", id="agent-token-display", classes="agent-stat")
-        yield Rule(style="dark")
+        yield Rule()
 
         # Session timer
         yield Label("SESSION", classes="agent-section-title")
         yield Static("  0m 0s", id="agent-timer-display", classes="agent-stat")
-        yield Rule(style="dark")
+        yield Rule()
 
         # Tool history
         yield Label("TOOL HISTORY", classes="agent-section-title")
         yield ScrollableContainer(id="tool-history-scroll", classes="tool-history-container")
-        yield Rule(style="dark")
+        yield Rule()
 
         # Memory stats
         yield Label("MEMORY", classes="agent-section-title")
@@ -459,8 +463,8 @@ class AgentPanel(Vertical):
         try:
             display = self.query_one("#agent-token-display", Static)
             display.update(
-                f"  [#4ade80]↑ {self._fmt_tokens(self.tokens_in)}[/]"
-                f"  [#f87171]↓ {self._fmt_tokens(self.tokens_out)}[/]"
+                f"  [{SUCCESS}]↑ {self._fmt_tokens(self.tokens_in)}[/]"
+                f"  [{ERROR}]↓ {self._fmt_tokens(self.tokens_out)}[/]"
             )
         except Exception:
             pass
@@ -538,13 +542,13 @@ class StatsPanel(Vertical):
     StatsPanel {
         width: 100%;
         height: 100%;
-        background: #0a0a0a;
+        background: #101010;
         padding: 1;
     }
 
     StatsPanel .stats-header {
         height: 3;
-        background: #111111;
+        background: #141414;
         color: #FFD700;
         text-align: center;
         padding: 1;
@@ -558,7 +562,7 @@ class StatsPanel(Vertical):
     }
 
     StatsPanel .stats-row {
-        color: #999999;
+        color: #a0a0a0;
         padding: 0 1;
     }
 
@@ -568,17 +572,17 @@ class StatsPanel(Vertical):
     }
 
     StatsPanel .stats-bar-in {
-        color: #4ade80;
+        color: #12c905;
     }
 
     StatsPanel .stats-bar-out {
-        color: #f87171;
+        color: #fc533a;
     }
 
     StatsPanel .files-list {
         height: auto;
         max-height: 10;
-        background: #0a0a0a;
+        background: #101010;
         padding: 0 1;
     }
     """
@@ -596,34 +600,34 @@ class StatsPanel(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Label("📊 Session Stats", classes="stats-header")
-        yield Rule(style="dark")
+        yield Rule()
 
         # Token usage with bar
         yield Label("TOKEN USAGE", classes="stats-section-title")
         yield Static("  ↑ In:  0", id="stats-tokens-in", classes="stats-row")
         yield Static(
-            f"  [#4ade80]{'█' * 0}{'░' * 30}[/]",
+            f"  [{SUCCESS}]{'█' * 0}{'░' * 30}[/]",
             id="stats-bar-in",
             classes="stats-bar-container",
         )
         yield Static("  ↓ Out: 0", id="stats-tokens-out", classes="stats-row")
         yield Static(
-            f"  [#f87171]{'█' * 0}{'░' * 30}[/]",
+            f"  [{ERROR}]{'█' * 0}{'░' * 30}[/]",
             id="stats-bar-out",
             classes="stats-bar-container",
         )
-        yield Rule(style="dark")
+        yield Rule()
 
         # Performance
         yield Label("PERFORMANCE", classes="stats-section-title")
         yield Static("  Response: --", id="stats-response-time", classes="stats-row")
         yield Static("  Tools used: 0", id="stats-tools-count", classes="stats-row")
-        yield Rule(style="dark")
+        yield Rule()
 
         # Model info
         yield Label("MODEL", classes="stats-section-title")
         yield Static("  --", id="stats-model-display", classes="stats-row")
-        yield Rule(style="dark")
+        yield Rule()
 
         # Modified files
         yield Label("MODIFIED FILES", classes="stats-section-title")
@@ -632,18 +636,18 @@ class StatsPanel(Vertical):
     def watch_tokens_in(self, value: int) -> None:
         try:
             self.query_one("#stats-tokens-in", Static).update(
-                f"  [#4ade80]↑[/] In:  [{TEXT_BRIGHT}]{self._fmt(value)}[/]"
+                f"  [{SUCCESS}]↑[/] In:  [{TEXT_BRIGHT}]{self._fmt(value)}[/]"
             )
-            self._update_bar("#stats-bar-in", value, "#4ade80")
+            self._update_bar("#stats-bar-in", value, SUCCESS)
         except Exception:
             pass
 
     def watch_tokens_out(self, value: int) -> None:
         try:
             self.query_one("#stats-tokens-out", Static).update(
-                f"  [#f87171]↓[/] Out: [{TEXT_BRIGHT}]{self._fmt(value)}[/]"
+                f"  [{ERROR}]↓[/] Out: [{TEXT_BRIGHT}]{self._fmt(value)}[/]"
             )
-            self._update_bar("#stats-bar-out", value, "#f87171")
+            self._update_bar("#stats-bar-out", value, ERROR)
         except Exception:
             pass
 
@@ -749,34 +753,34 @@ class ExtensionRow(Horizontal):
     ExtensionRow {
         height: 3;
         padding: 0 1;
-        background: #0a0a0a;
+        background: #101010;
     }
 
     ExtensionRow .ext-status-dot {
         width: 3;
-        color: #f87171;
+        color: #fc533a;
         padding: 0;
     }
 
     ExtensionRow .ext-status-dot.connected {
-        color: #4ade80;
+        color: #12c905;
     }
 
     ExtensionRow .ext-name {
         width: 1fr;
-        color: #999999;
+        color: #a0a0a0;
         padding: 0 1;
     }
 
     ExtensionRow .ext-tools-count {
         width: 6;
-        color: #666666;
+        color: #6f6f6f;
         text-align: right;
     }
 
     ExtensionRow Switch {
         width: 8;
-        background: #0a0a0a;
+        background: #101010;
     }
     """
 
@@ -815,13 +819,13 @@ class MCPPanel(Vertical):
     MCPPanel {
         width: 100%;
         height: 100%;
-        background: #0a0a0a;
+        background: #101010;
         padding: 1;
     }
 
     MCPPanel .mcp-header {
         height: 3;
-        background: #111111;
+        background: #141414;
         color: #FFD700;
         text-align: center;
         padding: 1;
@@ -835,19 +839,19 @@ class MCPPanel(Vertical):
     }
 
     MCPPanel .mcp-empty {
-        color: #666666;
+        color: #6f6f6f;
         padding: 1;
         text-align: center;
     }
 
     MCPPanel .ext-list {
         height: 1fr;
-        background: #0a0a0a;
+        background: #101010;
     }
 
     MCPPanel .mcp-summary {
         height: 2;
-        color: #666666;
+        color: #6f6f6f;
         padding: 0 1;
     }
     """
@@ -861,10 +865,10 @@ class MCPPanel(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Label("🔌 MCP Extensions", classes="mcp-header")
-        yield Rule(style="dark")
+        yield Rule()
         yield Label("EXTENSIONS", classes="mcp-section-title")
         yield ScrollableContainer(id="mcp-ext-list", classes="ext-list")
-        yield Rule(style="dark")
+        yield Rule()
         yield Static(
             "  0 connected / 0 registered",
             id="mcp-summary-display",
@@ -924,7 +928,7 @@ class MCPPanel(Vertical):
         """Update the summary line at the bottom."""
         try:
             display = self.query_one("#mcp-summary-display", Static)
-            conn_color = "#4ade80" if self.connected_count > 0 else "#f87171"
+            conn_color = SUCCESS if self.connected_count > 0 else ERROR
             display.update(
                 f"  [{conn_color}]{self.connected_count} connected[/] / "
                 f"[{TEXT}]{self.total_extensions} registered[/]"
@@ -946,50 +950,368 @@ class MCPPanel(Vertical):
 
 
 # ---------------------------------------------------------------------------
-# 5. SidePanel — Tabbed container for all panels
+# 5. TodoPanel — Per-session todo list
+# ---------------------------------------------------------------------------
+
+class TodoItem(Horizontal):
+    """A single todo entry with checkbox and label."""
+
+    DEFAULT_CSS = """
+    TodoItem {
+        height: 1;
+        padding: 0 1;
+        color: #a0a0a0;
+    }
+    TodoItem .todo-check {
+        width: 3;
+        color: #6f6f6f;
+    }
+    TodoItem .todo-check.done {
+        color: #12c905;
+    }
+    TodoItem .todo-label {
+        width: 1fr;
+        color: #a0a0a0;
+    }
+    TodoItem .todo-label.done {
+        color: #6f6f6f;
+        text-style: strike;
+    }
+    """
+
+    def __init__(self, text: str, done: bool = False, todo_id: int = 0, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._text = text
+        self._done = done
+        self._todo_id = todo_id
+
+    def compose(self) -> ComposeResult:
+        check_cls = "todo-check done" if self._done else "todo-check"
+        label_cls = "todo-label done" if self._done else "todo-label"
+        check_char = "[x]" if self._done else "[ ]"
+        yield Static(check_char, classes=check_cls)
+        yield Label(self._text, classes=label_cls)
+
+
+class TodoPanel(Vertical):
+    """Per-session todo list panel."""
+
+    DEFAULT_CSS = """
+    TodoPanel {
+        width: 100%;
+        height: 100%;
+        background: #101010;
+        padding: 1;
+    }
+    TodoPanel .todo-header {
+        height: 3;
+        background: #141414;
+        color: #FFD700;
+        text-align: center;
+        padding: 1;
+        text-style: bold;
+    }
+    TodoPanel .todo-count {
+        height: 1;
+        color: #6f6f6f;
+        padding: 0 1;
+    }
+    TodoPanel .todo-list {
+        height: 1fr;
+        background: #101010;
+    }
+    TodoPanel .todo-empty {
+        color: #6f6f6f;
+        padding: 1;
+        text-align: center;
+    }
+    """
+
+    total: reactive[int] = reactive(0)
+    done: reactive[int] = reactive(0)
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._todos: list[dict[str, Any]] = []
+        self._next_id = 1
+
+    def compose(self) -> ComposeResult:
+        yield Label("Todos", classes="todo-header")
+        yield Static("  0 / 0 done", id="todo-count-display", classes="todo-count")
+        yield ScrollableContainer(id="todo-list-scroll", classes="todo-list")
+
+    def on_mount(self) -> None:
+        self._show_empty()
+
+    def _show_empty(self) -> None:
+        try:
+            container = self.query_one("#todo-list-scroll", ScrollableContainer)
+            container.remove_children()
+            container.mount(
+                Static("[dim]No todos yet. Use /todo add <text>[/]", classes="todo-empty")
+            )
+        except Exception:
+            pass
+
+    def add_todo(self, text: str) -> int:
+        """Add a todo item. Returns the todo ID."""
+        todo_id = self._next_id
+        self._next_id += 1
+        self._todos.append({"id": todo_id, "text": text, "done": False})
+        self.total = len(self._todos)
+        self._refresh_list()
+        return todo_id
+
+    def toggle_todo(self, todo_id: int) -> None:
+        """Toggle a todo item's completion status."""
+        for t in self._todos:
+            if t["id"] == todo_id:
+                t["done"] = not t["done"]
+                break
+        self.done = sum(1 for t in self._todos if t["done"])
+        self._refresh_list()
+
+    def remove_todo(self, todo_id: int) -> None:
+        """Remove a todo item."""
+        self._todos = [t for t in self._todos if t["id"] != todo_id]
+        self.total = len(self._todos)
+        self.done = sum(1 for t in self._todos if t["done"])
+        self._refresh_list()
+
+    def _refresh_list(self) -> None:
+        try:
+            container = self.query_one("#todo-list-scroll", ScrollableContainer)
+            container.remove_children()
+            if not self._todos:
+                self._show_empty()
+                return
+            for t in self._todos:
+                container.mount(TodoItem(t["text"], t["done"], t["id"]))
+            # Update count
+            self.query_one("#todo-count-display", Static).update(
+                f"  {self.done} / {self.total} done"
+            )
+        except Exception:
+            pass
+
+    def get_todos(self) -> list[dict[str, Any]]:
+        """Return all todos."""
+        return list(self._todos)
+
+
+# ---------------------------------------------------------------------------
+# 6. CostPanel — Token usage and cost estimates
+# ---------------------------------------------------------------------------
+
+class CostPanel(Vertical):
+    """Token usage with cost estimates."""
+
+    DEFAULT_CSS = """
+    CostPanel {
+        width: 100%;
+        height: 100%;
+        background: #101010;
+        padding: 1;
+    }
+    CostPanel .cost-header {
+        height: 3;
+        background: #141414;
+        color: #FFD700;
+        text-align: center;
+        padding: 1;
+        text-style: bold;
+    }
+    CostPanel .cost-section-title {
+        color: #FFD700;
+        text-style: bold;
+        padding: 1 0 0 0;
+    }
+    CostPanel .cost-row {
+        color: #a0a0a0;
+        padding: 0 1;
+    }
+    CostPanel .cost-total {
+        color: #ededed;
+        text-style: bold;
+        padding: 1 1;
+    }
+    """
+
+    tokens_in: reactive[int] = reactive(0)
+    tokens_out: reactive[int] = reactive(0)
+    cost_per_1k_in: reactive[float] = reactive(0.0)
+    cost_per_1k_out: reactive[float] = reactive(0.0)
+    total_requests: reactive[int] = reactive(0)
+    avg_response_ms: reactive[float] = reactive(0.0)
+    session_start: reactive[float] = reactive(0.0)
+
+    def compose(self) -> ComposeResult:
+        yield Label("Cost", classes="cost-header")
+        yield Rule()
+
+        yield Label("TOKENS", classes="cost-section-title")
+        yield Static("  Input:  0", id="cost-tokens-in", classes="cost-row")
+        yield Static("  Output: 0", id="cost-tokens-out", classes="cost-row")
+        yield Static("  Total:  0", id="cost-tokens-total", classes="cost-row")
+        yield Rule()
+
+        yield Label("ESTIMATED COST", classes="cost-section-title")
+        yield Static("  Input:  $0.00", id="cost-dollars-in", classes="cost-row")
+        yield Static("  Output: $0.00", id="cost-dollars-out", classes="cost-row")
+        yield Static("  Total:  $0.00", id="cost-dollars-total", classes="cost-total")
+        yield Rule()
+
+        yield Label("PERFORMANCE", classes="cost-section-title")
+        yield Static("  Requests: 0", id="cost-requests", classes="cost-row")
+        yield Static("  Avg time: --", id="cost-avg-time", classes="cost-row")
+        yield Static("  Session:  0m 0s", id="cost-session-time", classes="cost-row")
+
+    def on_mount(self) -> None:
+        if self.session_start == 0.0:
+            self.session_start = time.time()
+        self.set_interval(5.0, self._update_session_time)
+
+    def _update_session_time(self) -> None:
+        elapsed = time.time() - self.session_start if self.session_start > 0 else 0
+        minutes = int(elapsed // 60)
+        seconds = int(elapsed % 60)
+        hours = int(minutes // 60)
+        minutes = minutes % 60
+        if hours > 0:
+            t = f"  Session:  {hours}h {minutes}m {seconds}s"
+        else:
+            t = f"  Session:  {minutes}m {seconds}s"
+        try:
+            self.query_one("#cost-session-time", Static).update(t)
+        except Exception:
+            pass
+
+    def watch_tokens_in(self, value: int) -> None:
+        self._refresh_display()
+
+    def watch_tokens_out(self, value: int) -> None:
+        self._refresh_display()
+
+    def watch_total_requests(self, value: int) -> None:
+        try:
+            self.query_one("#cost-requests", Static).update(f"  Requests: {value}")
+        except Exception:
+            pass
+
+    def watch_avg_response_ms(self, value: float) -> None:
+        try:
+            if value < 1000:
+                display = f"{value:.0f}ms"
+            else:
+                display = f"{value / 1000:.1f}s"
+            self.query_one("#cost-avg-time", Static).update(f"  Avg time: {display}")
+        except Exception:
+            pass
+
+    def _refresh_display(self) -> None:
+        total = self.tokens_in + self.tokens_out
+        cost_in = (self.tokens_in / 1000) * self.cost_per_1k_in
+        cost_out = (self.tokens_out / 1000) * self.cost_per_1k_out
+        cost_total = cost_in + cost_out
+        try:
+            self.query_one("#cost-tokens-in", Static).update(
+                f"  Input:  {self._fmt(self.tokens_in)}"
+            )
+            self.query_one("#cost-tokens-out", Static).update(
+                f"  Output: {self._fmt(self.tokens_out)}"
+            )
+            self.query_one("#cost-tokens-total", Static).update(
+                f"  Total:  {self._fmt(total)}"
+            )
+            self.query_one("#cost-dollars-in", Static).update(
+                f"  Input:  ${cost_in:.4f}"
+            )
+            self.query_one("#cost-dollars-out", Static).update(
+                f"  Output: ${cost_out:.4f}"
+            )
+            self.query_one("#cost-dollars-total", Static).update(
+                f"  Total:  ${cost_total:.4f}"
+            )
+        except Exception:
+            pass
+
+    def update_cost(
+        self,
+        *,
+        tokens_in: int | None = None,
+        tokens_out: int | None = None,
+        cost_per_1k_in: float | None = None,
+        cost_per_1k_out: float | None = None,
+        requests: int | None = None,
+        avg_ms: float | None = None,
+    ) -> None:
+        if tokens_in is not None:
+            self.tokens_in = tokens_in
+        if tokens_out is not None:
+            self.tokens_out = tokens_out
+        if cost_per_1k_in is not None:
+            self.cost_per_1k_in = cost_per_1k_in
+        if cost_per_1k_out is not None:
+            self.cost_per_1k_out = cost_per_1k_out
+        if requests is not None:
+            self.total_requests = requests
+        if avg_ms is not None:
+            self.avg_response_ms = avg_ms
+
+    @staticmethod
+    def _fmt(count: int) -> str:
+        if count >= 1_000_000:
+            return f"{count / 1_000_000:.1f}m"
+        if count >= 1_000:
+            return f"{count / 1_000:.1f}k"
+        return str(count)
+
+
+# ---------------------------------------------------------------------------
+# 7. SidePanel — Tabbed container for all panels
 # ---------------------------------------------------------------------------
 
 class SidePanel(Vertical):
-    """Tabbed side panel with Files, Agents, Stats, MCP tabs."""
+    """Tabbed side panel: Files, Agents, Stats, MCP, Todos, Cost."""
 
     DEFAULT_CSS = """
     SidePanel {
         width: 100%;
         height: 100%;
-        background: #0a0a0a;
-        border-left: tall #222222;
+        background: #101010;
+        border-left: tall #2a2a2a;
     }
 
     SidePanel TabbedContent {
         height: 100%;
-        background: #0a0a0a;
+        background: #101010;
     }
 
     SidePanel ContentSwitcher {
         height: 1fr;
-        background: #0a0a0a;
+        background: #101010;
     }
 
     SidePanel TabPane {
         padding: 0;
-        background: #0a0a0a;
+        background: #101010;
     }
 
     SidePanel Tabs {
-        background: #111111;
+        background: #141414;
         dock: top;
     }
 
     SidePanel Tab {
-        background: #333333;
-        color: #888888;
+        background: #2a2a2a;
+        color: #a0a0a0;
         padding: 0 2;
         text-style: bold;
     }
 
     SidePanel Tab:hover {
-        background: #444444;
-        color: #cccccc;
+        background: #3a3a3a;
+        color: #ededed;
     }
 
     SidePanel Tab.-active {
@@ -1015,34 +1337,42 @@ class SidePanel(Vertical):
         with TabbedContent():
             with TabPane("Files", id="files-tab"):
                 yield ProjectPanel(path=self._project_path)
-            with TabPane("Agents", id="agents-tab"):
+            with TabPane("Agent", id="agents-tab"):
                 yield AgentPanel()
             with TabPane("Stats", id="stats-tab"):
                 yield StatsPanel()
             with TabPane("MCP", id="mcp-tab"):
                 yield MCPPanel()
+            with TabPane("Todo", id="todos-tab"):
+                yield TodoPanel()
+            with TabPane("Cost", id="cost-tab"):
+                yield CostPanel()
 
     # -- Convenience accessors for the parent app --
 
     @property
     def project_panel(self) -> ProjectPanel:
-        """Access the ProjectPanel instance."""
         return self.query_one(ProjectPanel)
 
     @property
     def agent_panel(self) -> AgentPanel:
-        """Access the AgentPanel instance."""
         return self.query_one(AgentPanel)
 
     @property
     def stats_panel(self) -> StatsPanel:
-        """Access the StatsPanel instance."""
         return self.query_one(StatsPanel)
 
     @property
     def mcp_panel(self) -> MCPPanel:
-        """Access the MCPPanel instance."""
         return self.query_one(MCPPanel)
+
+    @property
+    def todo_panel(self) -> TodoPanel:
+        return self.query_one(TodoPanel)
+
+    @property
+    def cost_panel(self) -> CostPanel:
+        return self.query_one(CostPanel)
 
 
 # ---------------------------------------------------------------------------
@@ -1056,6 +1386,8 @@ __all__ = [
     "AgentPanel",
     "StatsPanel",
     "MCPPanel",
+    "TodoPanel",
+    "CostPanel",
     "SidePanel",
     "FilteredDirectoryTree",
 ]

@@ -1,6 +1,6 @@
 [project]
 name = "djcode"
-version = "2.0.1"
+version = "3.0.0"
 description = "DJcode — Local-first AI coding CLI. No cloud. No subscription. Your code stays yours."
 readme = "README.md"
 license = "MIT"

@@ -30,6 +30,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "theme": "dark",
     "auto_approve_tools": False,
     "auto_accept": False,
+    "base_url": "",
+    "custom_providers": {},
 }
 
 
