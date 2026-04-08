@@ -489,7 +489,7 @@ class DJcodeApp(App):
 
         try:
             response_buf = ""
-            chat.write("")  # Start a new line for the response
+            line_buf = ""  # Buffer tokens into complete lines
 
             async for token in self._operator.send(actual_input):
                 # Check for thinking blocks
@@ -499,14 +499,25 @@ class DJcodeApp(App):
                     continue
 
                 response_buf += token
+                line_buf += token
                 self._token_count += 1
 
-                # Write tokens to chat — append to current line
-                chat.write(token, shrink=False, scroll_end=True)
+                # Write complete lines (on newline) or flush periodically
+                if "\n" in line_buf:
+                    parts = line_buf.split("\n")
+                    # Write all complete lines
+                    for part in parts[:-1]:
+                        if part.strip():
+                            chat.write(part, shrink=False, scroll_end=True)
+                    line_buf = parts[-1]  # Keep incomplete last part
 
                 # Update stats periodically
                 if self._token_count % 50 == 0:
                     self._update_stats_bar()
+
+            # Flush remaining buffer
+            if line_buf.strip():
+                chat.write(line_buf, shrink=False, scroll_end=True)
 
             elapsed = time.time() - start
 

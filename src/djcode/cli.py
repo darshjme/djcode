@@ -64,10 +64,10 @@ console = Console()
     help="Show model thinking process (verbose reasoning)",
 )
 @click.option(
-    "--tui",
+    "--classic",
     is_flag=True,
     default=False,
-    help="Launch Textual TUI (split-pane interface)",
+    help="Use classic REPL instead of Textual TUI",
 )
 @click.option(
     "--config",
@@ -85,7 +85,7 @@ def main(
     raw: bool,
     auto_accept: bool,
     thinking: bool,
-    tui: bool,
+    classic: bool,
     show_config: bool,
 ) -> None:
     """DJcode — Local-first AI coding CLI by DarshJ.AI
@@ -106,24 +106,11 @@ def main(
         console.print(table)
         return
 
-    # TUI mode — launch Textual split-pane interface
-    if tui:
-        from djcode.app import run_tui
-
-        run_tui(
-            provider=provider,
-            model=model,
-            bypass_rlhf=bypass_rlhf,
-            auto_accept=auto_accept,
-            show_thinking=thinking,
-        )
-        return
-
     from djcode.repl import run_oneshot, run_repl
 
     try:
         if prompt:
-            # One-shot mode
+            # One-shot mode — always use classic REPL
             asyncio.run(
                 run_oneshot(
                     prompt,
@@ -134,8 +121,8 @@ def main(
                     show_thinking=thinking,
                 )
             )
-        else:
-            # Interactive REPL
+        elif classic or raw:
+            # Classic REPL mode (--classic flag or --raw for piping)
             asyncio.run(
                 run_repl(
                     provider=provider,
@@ -145,6 +132,17 @@ def main(
                     auto_accept=auto_accept,
                     show_thinking=thinking,
                 )
+            )
+        else:
+            # DEFAULT: Textual TUI
+            from djcode.app import run_tui
+
+            run_tui(
+                provider=provider,
+                model=model,
+                bypass_rlhf=bypass_rlhf,
+                auto_accept=auto_accept,
+                show_thinking=thinking,
             )
     except KeyboardInterrupt:
         console.print("\n[dim]Goodbye.[/]")
