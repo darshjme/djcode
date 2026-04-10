@@ -1,14 +1,14 @@
 [project]
 name = "djcode"
-version = "3.0.0"
-description = "DJcode — Local-first AI coding CLI. No cloud. No subscription. Your code stays yours."
+version = "4.0.0"
+description = "DJcode — 19 PhD agents, 17 tools, 1M context, zero telemetry. The AI coding CLI that makes Claude Code sweat."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 authors = [
     { name = "DarshJ", email = "darsh@darshj.ai" },
 ]
-keywords = ["ai", "cli", "coding", "ollama", "local-first", "agent", "apple-silicon"]
+keywords = ["ai", "cli", "coding", "ollama", "local-first", "agent", "apple-silicon", "multi-agent", "parallel", "tui"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -29,6 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 voice = ["sounddevice>=0.4"]
+tokens = ["tiktoken>=0.7"]
 
 [project.scripts]
 djcode = "djcode.cli:main"

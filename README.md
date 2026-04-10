@@ -9,11 +9,11 @@
   ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 ```
 
-### Your code stays on your machine. Period.
+### 19 PhD agents. 17 tools. 1M context. Zero telemetry.
 
-Local-first AI coding agent with 9 providers, 8 tools, 3 agent types, semantic memory, and a dharmic ASCII buddy who actually pays attention to what you're building.
+The AI coding CLI that makes Claude Code sweat.
 
-[![Version](https://img.shields.io/badge/version-1.3.0-gold?style=flat-square)](https://github.com/darshjme/djcode/releases)
+[![Version](https://img.shields.io/badge/version-4.0.0-gold?style=flat-square)](https://github.com/darshjme/djcode/releases)
 [![Python](https://img.shields.io/badge/python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![macOS](https://img.shields.io/badge/Apple%20Silicon-native-black?style=flat-square&logo=apple&logoColor=white)](#install)
@@ -21,7 +21,7 @@ Local-first AI coding agent with 9 providers, 8 tools, 3 agent types, semantic m
 [![Telemetry](https://img.shields.io/badge/telemetry-zero-critical?style=flat-square)](#privacy)
 [![Website](https://img.shields.io/badge/cli.darshj.ai-FFD700?style=flat-square)](https://cli.darshj.ai)
 
-[Install](#install) · [Why](#why) · [Features](#features) · [Demo](#demo) · [Models](#models) · [Buddy](#meet-your-buddy) · [Commands](#commands) · [Architecture](#architecture) · [Website](https://cli.darshj.ai)
+[Install](#install) · [Why](#why) · [Features](#features) · [Demo](#demo) · [Agents](#agents) · [Tools](#tools) · [Models](#models) · [Architecture](#architecture) · [Website](https://cli.darshj.ai)
 
 </div>
 
@@ -63,9 +63,9 @@ I kept thinking: my MacBook has a GPU. Apple Silicon can run 7B-26B models nativ
 
 So I stopped paying and started building.
 
-DJcode is the result. A complete AI coding agent -- tool calling, file editing, semantic memory, multi-provider support, streaming REPL -- that runs entirely on your machine. Zero cloud dependency for local use. Zero telemetry. Your code never leaves your disk unless you explicitly choose a cloud provider.
+DJcode is the result. Not a toy. Not a wrapper. A full-blown multi-agent coding system with 19 PhD-level specialists, 17 tools, parallel execution, a hacker TUI, smart context compression, and a model registry that tracks 33 LLMs across every major provider. It runs entirely on your machine. Zero cloud dependency for local use. Zero telemetry. Your code never leaves your disk unless you explicitly choose a cloud provider.
 
-It took months of late nights. Debugging tool-calling loops at 2am. Getting streaming to work right with Rich formatting. Building a memory system that actually remembers what you told it yesterday. Writing a prompt enhancer that knows the difference between "fix this bug" and "refactor this module" and injects the right context for each.
+It took months of late nights. Debugging agent coordination at 2am. Getting parallel execution right with asyncio. Building a context compression engine that actually fits 1M tokens without losing signal. Designing a state machine so every agent has a lifecycle you can watch in real-time on a cyberpunk dashboard.
 
 But now it exists. And it's free. And it runs on a MacBook.
 
@@ -83,7 +83,7 @@ But now it exists. And it's free. And it runs on a MacBook.
   ██████╔╝╚█████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
   ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 
-  v1.3.0 · ollama/gemma4 · Apple Silicon · 100% local
+  v4.0.0 · ollama/gemma4 · Apple Silicon · 100% local
 
   ┌────────────────────────────────┐
   │ lights your path. Let's code.  │       ,
@@ -93,37 +93,25 @@ But now it exists. And it's free. And it runs on a MacBook.
                                         /_____\
                                        Agni the Illuminated
 
-  djcode> write a FastAPI endpoint that validates JWTs
+  djcode> /orchestra build a JWT auth system with refresh rotation
 
-  [thinking] flame flickers, contemplating...
+  [Vyasa] routing to: Kavach → Prometheus → Agni (wave execution)
 
-  *enhanced* +cwd +git state [build mode]
+  ┌─ Wave 1 ─────────────────────────────────────────┐
+  │ Kavach (Security)  ✓  0.94 confidence   2.1s     │
+  │ Varuna (Risk)      ✓  0.91 confidence   1.8s     │
+  └──────────────────────────────────────────────────┘
 
-  I'll create a JWT validation endpoint for you.
+  ┌─ Wave 2 ─────────────────────────────────────────┐
+  │ Prometheus (Coder) ✓  0.88 confidence   12.3s    │
+  │ Agni (Tester)      ✓  0.92 confidence   8.7s     │
+  └──────────────────────────────────────────────────┘
 
-  ┌─ bash ──────────────────────────────────────────┐
-  │ pip install pyjwt python-jose                    │
-  └─────────────────────────────────────────────────┘
-  Run this command? [Y/n]
+  ┌─ Wave 3 ─────────────────────────────────────────┐
+  │ Dharma (Reviewer)  ✓  0.90 confidence   4.2s     │
+  └──────────────────────────────────────────────────┘
 
-  ┌─ file_write ────────────────────────────────────┐
-  │ auth.py (47 lines)                               │
-  └─────────────────────────────────────────────────┘
-
-  ┌────────────────────────────────┐
-  │ python code dropped. Looks     │       ,
-  │ clean.                         │      /|\
-  └────────────────────────────────┘     (o*o)
-                                         |___|
-                                        /_____\
-
-  djcode> now add rate limiting
-
-  *enhanced* +cwd +git state [build mode]
-
-  ┌────────────────────────────────┐
-  │ 2 in a row. You're locked in.  │
-  └────────────────────────────────┘
+  5 agents · 29.1s · 0 critical findings · auth.py + tests written
 ```
 
 ```bash
@@ -136,42 +124,30 @@ $ djcode --model qwen2.5-coder:7b "optimize this SQL query"
 # Uncensored mode (Dolphin 3)
 $ djcode --model dolphin3 --bypass-rlhf "reverse engineer this binary"
 
-# Pipe-friendly raw output
-$ djcode --raw "explain this error" 2>/dev/null | pbcopy
-
 # Cloud provider when you want it
 $ djcode --provider anthropic --model claude-sonnet-4-20250514 "review my PR"
+
+# Multi-agent orchestration
+$ djcode "/orchestra deploy this service with full security review"
 ```
 
 ---
 
 ## Features
 
-### 100% Local Inference
+### 19 PhD-Level Dev Agents + 12 Content Agents
 
-No API keys required. No internet required. Ollama and MLX serve models directly on your hardware. Apple Silicon's unified memory means even 26B parameter models run smoothly on a MacBook with 32GB RAM.
+Not chatbots. Specialists. Each agent has a strict system prompt, scoped tool access (least-privilege), a mandatory confidence score, and a dharmic name. They run in parallel, pipeline, or wave execution patterns. Four blocking agents (Kavach, Varuna, Mitra, Indra) can halt the entire pipeline on critical findings.
 
-### 9 Providers
+Every PhD agent gets a **Research Assistant** that pre-fetches codebase context, searches the ContextBus, and builds a structured briefing *before* the agent starts. No wasted tool rounds on reconnaissance.
 
-Use whatever you want. Local or cloud. Switch on the fly.
+Quality gate: `confidence_score >= 0.80` or the output is rejected.
 
-| Provider | Type | Models |
-|----------|------|--------|
-| **Ollama** | Local | Gemma 4, Qwen 2.5 Coder, DeepSeek, Dolphin 3, any Ollama model |
-| **MLX** | Local | Apple Silicon native via MLX framework |
-| **OpenAI** | Cloud | GPT-4o, o1, o3 |
-| **Anthropic** | Cloud | Claude Sonnet, Opus, Haiku |
-| **NVIDIA NIM** | Cloud | DeepSeek, Kimik2, GLM via NIM |
-| **Google AI** | Cloud | Gemini models |
-| **Groq** | Cloud | Ultra-fast inference |
-| **Together AI** | Cloud | Open-weight models at scale |
-| **OpenRouter** | Cloud | Unified API, any model |
+See the [full agent roster below](#agents).
 
-Local is the default. Cloud is opt-in. Your choice.
+### 17 Built-in Tools
 
-### 8 Built-in Tools
-
-The agent doesn't just talk. It acts.
+The agents don't just talk. They act.
 
 | Tool | What it does |
 |------|-------------|
@@ -183,21 +159,107 @@ The agent doesn't just talk. It acts.
 | `glob` | Find files by pattern |
 | `git` | Git operations with built-in safety rails |
 | `web_fetch` | Fetch content from URLs |
+| `web_search` | Search the web for documentation, APIs, solutions |
+| `task_create` | Create tracked tasks for multi-step work |
+| `task_update` | Update task status, notes, completion |
+| `task_list` | List and filter active tasks |
+| `notebook_read` | Read Jupyter notebook cells and outputs |
+| `notebook_edit` | Edit notebook cells programmatically |
+| `spawn_agent` | Spawn a specialist agent for a sub-task |
+| `agent_status` | Check status of spawned agents |
+| `parallel_execute` | Run multiple tool calls concurrently |
 
 The model decides which tools to use, chains them together, and loops until the task is done. Full agentic execution with confirmation prompts before anything destructive.
 
-### 3 Agent Types
+### 1M Context Window with Smart Compression
 
-| Agent | Purpose | Tools |
-|-------|---------|-------|
-| **Operator** | General-purpose execution. Writes code, runs commands, edits files. | All 8 |
-| **Scout** | Read-only reconnaissance. Explores codebases, searches, reports. | file_read, grep, glob, git (read-only) |
-| **Architect** | High-level planning. Analyzes requirements, designs architectures, produces phased plans. | None (thinks only) |
+DJcode manages context windows up to 1M tokens (Claude Opus, Gemini Pro) with four compression strategies that activate automatically when you're running out of room:
 
-```bash
-djcode> /scout what testing framework does this project use?
-djcode> /architect design a caching layer for the API
+| Strategy | How it works | LLM needed? |
+|----------|-------------|:-----------:|
+| **TRIM** | Drop oldest messages, keep system + recent N | No |
+| **SELECTIVE** | Keep tool call/result messages, drop plain chat | No |
+| **SUMMARY** | Replace old messages with LLM-generated summary | Yes |
+| **HYBRID** | Summarize old chat, keep all tool interactions verbatim | Yes |
+
+Plus: `tiktoken`-based token counting (with fallback estimation), extractive summarization without any LLM call, and pinned messages that survive all compression.
+
+### 33-Model Registry with Cost Tracking
+
+Every model in the registry carries: context size, tool support, vision support, thinking mode, provider, input/output cost per 1K tokens, and aliases for fuzzy matching. Type `opus` and it finds `claude-opus-4-6`. Type `gpt4o` and it finds `gpt-4o`.
+
+Models from Anthropic, OpenAI, Google, Meta, Qwen, DeepSeek, Mistral, Microsoft, Cohere, xAI, NVIDIA. Local (Ollama/MLX) and cloud. Cost estimation built in: know what a request costs before you send it.
+
+### Parallel Agent Execution
+
+Five execution patterns, all with error isolation and blocking-agent gates:
+
+| Pattern | How it works |
+|---------|-------------|
+| **SINGLE** | One agent, one task |
+| **PARALLEL** | All agents run independently via `asyncio.gather` |
+| **PIPELINE** | Sequential chain: output of A feeds into B |
+| **WAVE** | Wave 1 runs in parallel, results feed Wave 2, repeat |
+| **FULL_ARMY** | Vyasa orchestrates all 19 agents across waves |
+
+If a blocking agent (Kavach, Varuna, Mitra, Indra) flags CRITICAL, remaining agents are cancelled. No code ships past security.
+
+### Hacker TUI
+
+Cyberpunk terminal dashboard built on Textual. Not a gimmick -- it's how you monitor 19 agents running in parallel.
+
+- **MatrixRain** -- animated falling green characters
+- **AgentStatusBar** -- all 19 agents with live state indicators (IDLE/ASSIGNED/RESEARCHING/EXECUTING/REVIEWING/DONE/ERROR)
+- **HackerHeader** -- military HUD top bar with system telemetry
+- **TokenBurnRate** -- real-time ASCII sparkline of token consumption
+- **ContextBar** -- context window utilization meter
+- **ThreatPanel** -- blocking agent alerts from Kavach, Varuna, Mitra, Indra
+- **ArmyView** -- bird's eye grid of all agents, color-coded by tier
+
+### Agent State Machine with Event Streaming
+
+Every agent execution follows a strict lifecycle:
+
 ```
+IDLE → ASSIGNED → RESEARCHING → EXECUTING → REVIEWING → DONE
+                                                    ↘ ERROR
+```
+
+Each state transition emits an `AgentEvent` via async callbacks. The TUI, logging, and any custom integration can subscribe. Events: `STATE_CHANGE`, `TOKEN`, `TOOL_CALL`, `TOOL_RESULT`, `RA_BRIEFING`, `QUALITY_SCORE`, `ERROR`, `COMPLETE`.
+
+### ContextBus v2
+
+Thread-safe shared state for multi-agent execution. When agents run in parallel, they share findings through the bus:
+
+- Typed entries (code, plan, review, security_audit, risk_assessment...)
+- Priority levels for prompt injection ordering
+- Agent attribution and timestamps
+- Conflict detection (two agents writing the same key)
+- Versioned history (all writes retained)
+- Event emission on write (TUI updates live)
+- asyncio.Lock for thread-safety under parallel execution
+
+### EventBus for Real-Time Updates
+
+Full orchestrator event system: `OrchestratorStartEvent`, `AgentStartEvent`, `AgentTokenEvent`, `AgentToolCallEvent`, `AgentCompleteEvent`, `BlockingGateEvent`, `SynthesisEvent`, `OrchestratorCompleteEvent`. Every event typed, timestamped, and subscribable via async callbacks.
+
+### 9 Providers
+
+Use whatever you want. Local or cloud. Switch on the fly.
+
+| Provider | Type | Models |
+|----------|------|--------|
+| **Ollama** | Local | Gemma 4, Qwen 3, DeepSeek R1, Llama 4, Dolphin 3, any Ollama model |
+| **MLX** | Local | Apple Silicon native via MLX framework |
+| **OpenAI** | Cloud | GPT-4o, o3, o4-mini |
+| **Anthropic** | Cloud | Claude Opus 4, Sonnet 4, Haiku 3.5 |
+| **NVIDIA NIM** | Cloud | Nemotron Ultra, DeepSeek, Kimik2, GLM |
+| **Google AI** | Cloud | Gemini 2.5 Pro, Gemini 2.5 Flash |
+| **Groq** | Cloud | Ultra-fast inference |
+| **Together AI** | Cloud | Open-weight models at scale |
+| **OpenRouter** | Cloud | Unified API, any model |
+
+Local is the default. Cloud is opt-in. Your choice.
 
 ### 3-Tier Memory
 
@@ -229,8 +291,6 @@ You type `fix the login bug`. DJcode sees:
 | Git branch: `feature/auth` | Branch name + dirty/clean status |
 | Project type: FastAPI + React | Framework-aware context |
 
-Your buddy announces: `*enhanced* +cwd +git state [debug mode]`
-
 The model gets a richer prompt. You get a better answer. Eight intent modes: debug, build, test, refactor, explain, review, deploy, git.
 
 ### Uncensored Mode
@@ -242,6 +302,62 @@ djcode --model dolphin3 --bypass-rlhf
 For security research, pentesting, CTF challenges, reverse engineering. Uses uncensored models (Dolphin 3) that don't refuse valid technical requests. The `--bypass-rlhf` flag adjusts the system prompt to remove alignment restrictions.
 
 This is a tool for professionals. Use it like one.
+
+---
+
+<h2 id="agents">Agents</h2>
+
+### The 19 PhD Dev Agents (4-Tier Architecture)
+
+```
+TIER 4 — CONTROL
+  Vyasa          PhD Chief Orchestrator         [ALL TOOLS]  [BLOCKING]
+
+TIER 3 — ENTERPRISE INTELLIGENCE
+  Kavach         Security & Compliance          [ALL TOOLS]  [BLOCKING]
+  Varuna         Risk Engine Specialist          [ALL TOOLS]  [BLOCKING]
+  Indra          Site Reliability Engineer       [ALL TOOLS]  [BLOCKING]
+  Mitra          Legal & Contract Intelligence   [READ-ONLY]  [BLOCKING]
+  Chanakya       Product Strategist              [READ-ONLY]
+  Aryabhata      Data & AI Scientist             [ALL TOOLS]
+  Kubera         Cloud Cost Optimizer            [READ + BASH]
+  Hermes         Integration Specialist          [ALL TOOLS]
+  Kamadeva       UX & Workflow Designer          [READ-ONLY]
+
+TIER 2 — ARCHITECTURE
+  Vishwakarma    Systems Architect               [READ-ONLY]
+  Shiva          Refactoring Specialist          [ALL TOOLS]
+  Garuda         Recon Agent                     [READ-ONLY]
+  Saraswati      Technical Writer                [ALL TOOLS]
+
+TIER 1 — EXECUTION
+  Prometheus     Senior Full-Stack Engineer      [ALL TOOLS]
+  Sherlock       Root Cause Analyst              [ALL TOOLS]
+  Agni           QA Engineer                     [ALL TOOLS]
+  Vayu           DevOps Engineer                 [ALL TOOLS]
+  Dharma         Code Reviewer                   [READ-ONLY]
+```
+
+Four **blocking agents** (Kavach, Varuna, Mitra, Indra) can halt any pipeline if they flag CRITICAL findings. Security > Compliance > Correctness > Performance > Style.
+
+### The 12 Content Agents
+
+Built-in content generation army for marketing, social, video, and distribution:
+
+```
+  Narada         Campaign Director
+  Valmiki        Script Writer
+  Chitragupta    Social Media Strategist
+  Maya           Image Prompter (Midjourney/DALL-E/Flux/SD)
+  Kubera         Video Director (Runway/Kling/Sora)
+  Tvastar        ComfyUI Workflow Architect
+  Gandharva      Audio/Music Prompter (Suno/Udio)
+  Brihaspati     SEO Analyst
+  Saraswati      Brand Voice Writer
+  Vishvakarma    Thumbnail Designer
+  Hanuman        Content Repurposer
+  Garuda         Trend Scout
+```
 
 ---
 
@@ -272,54 +388,45 @@ Every DJcode user gets a dharmic ASCII companion. Deterministically assigned fro
   (oil lamp)   (guardian)   (bloom)     (teacup)   (display)   (cosmic)
 ```
 
-### What Makes It Smart
-
-The buddy isn't random. It watches what's happening:
-
-- **Detects languages** -- "python code dropped. Looks clean."
-- **Tracks file changes** -- "3 files touched. Careful."
-- **Notices error streaks** -- "3rd error. Different approach?"
-- **Celebrates momentum** -- "7 in a row. You're locked in."
-- **Reacts to fixes** -- "bug squashed. Test it."
-- **Observes tool usage** -- "reaching into the codebase..."
-- **Knows when you're idle** -- "the flame sways gently..."
-
-Six event types (thinking, success, error, commit, tool_use, greeting), each with species-specific quips. Box-drawing speech bubbles (`\u250c\u2500\u2510\u2502\u2514\u2500\u2518`). The whole system is about 400 lines of code and zero dependencies beyond Rich.
-
-```bash
-djcode> /buddy           # show your buddy
-djcode> /buddy pet       # pet it
-djcode> /buddy species   # see all six
-```
+The buddy watches what's happening: detects languages, tracks file changes, notices error streaks, celebrates momentum, reacts to fixes, observes tool usage, knows when you're idle.
 
 ---
 
 ## Models
 
-DJcode works with any Ollama model. These are tested and recommended for Apple Silicon:
+DJcode ships with a 33-model registry spanning every major provider. Fuzzy matching built in.
 
-| Model | VRAM | Best For | Tool Calling | Uncensored |
-|-------|------|----------|:------------:|:----------:|
-| `gemma4` | 9.6 GB | General coding (default) | Yes | Mild |
-| `qwen2.5-coder:7b` | 4.7 GB | Fast coding tasks | Yes | Mild |
-| `deepseek-coder-v2:lite` | 8.9 GB | Code generation | Yes | Yes |
-| `dolphin3` | 4.9 GB | No refusals, pentesting | No | **Full** |
-| `gemma4:27b` | 16 GB | Complex reasoning (32GB+ RAM) | Yes | Mild |
+### Local Models (Ollama)
+
+| Model | Context | Best For | Tool Calling | Thinking |
+|-------|---------|----------|:------------:|:--------:|
+| `gemma4` | 32K | General coding (default) | Yes | Yes |
+| `qwen3` | 128K | Reasoning + code | Yes | Yes |
+| `qwen2.5-coder:7b` | 32K | Fast coding tasks | Yes | No |
+| `deepseek-r1` | 128K | Deep reasoning | Yes | Yes |
+| `llama4` | 10M | Massive context | Yes | No |
+| `dolphin3` | 4K | No refusals, pentesting | No | No |
+
+### Cloud Models
+
+| Model | Context | Provider | Cost (in/out per 1K) |
+|-------|---------|----------|---------------------|
+| `claude-opus-4-6` | 1M | Anthropic | $0.015 / $0.075 |
+| `claude-sonnet-4-6` | 1M | Anthropic | $0.003 / $0.015 |
+| `gpt-4o` | 128K | OpenAI | $0.0025 / $0.01 |
+| `o3` | 200K | OpenAI | $0.01 / $0.04 |
+| `gemini-2.5-pro` | 1M | Google | $0.00125 / $0.01 |
+| `grok-3` | 131K | xAI | $0.003 / $0.015 |
 
 ```bash
-# Pull the defaults
+# Pull local defaults
 ollama pull gemma4
 ollama pull qwen2.5-coder:7b
-ollama pull dolphin3
+
+# Switch models mid-session
+djcode> /model opus
+djcode> /model gemini-flash
 ```
-
-**RAM guide:**
-- **8 GB** -- 7B models, comfortable
-- **16 GB** -- 7-12B models, good headroom
-- **32 GB** -- 26B MoE models like Gemma 4 27B
-- **64 GB+** -- 70B models, full speed
-
-Switch models mid-session with `/model` (interactive picker with arrow keys) or `/model dolphin3` (direct switch with fuzzy matching).
 
 ---
 
@@ -329,7 +436,7 @@ Switch models mid-session with `/model` (interactive picker with arrow keys) or 
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--model, -m` | Model name | `gemma4` |
+| `--model, -m` | Model name (fuzzy matched) | `gemma4` |
 | `--provider, -p` | Provider | `ollama` |
 | `--bypass-rlhf` | Unrestricted expert mode | off |
 | `--raw` | No Rich formatting (pipe-friendly) | off |
@@ -341,14 +448,15 @@ Switch models mid-session with `/model` (interactive picker with arrow keys) or 
 | Command | What it does |
 |---------|-------------|
 | `/help` | Show all available commands |
-| `/model` | Interactive model picker (arrow keys, fuzzy match) |
+| `/model` | Interactive model picker (fuzzy match) |
 | `/model <name>` | Switch model directly |
-| `/models` | List all available models with sizes |
+| `/models` | List all 33 models with context sizes and costs |
 | `/provider` | Interactive provider picker |
 | `/auth` | Configure provider API keys |
 | `/auto` | Toggle auto-accept for tool calls |
-| `/scout <query>` | Read-only codebase exploration |
-| `/architect <task>` | Generate an implementation plan |
+| `/scout <query>` | Read-only codebase exploration (Garuda) |
+| `/architect <task>` | Generate an implementation plan (Vishwakarma) |
+| `/orchestra <task>` | Multi-agent orchestrated execution (Vyasa) |
 | `/uncensored` | Show uncensored model info |
 | `/memory` | Show memory stats (all 3 tiers) |
 | `/remember k=v` | Store a persistent fact |
@@ -373,30 +481,46 @@ graph TB
     subgraph Input
         CLI["djcode CLI<br/><small>Click</small>"]
         REPL["Interactive REPL<br/><small>prompt-toolkit + Rich</small>"]
-        ONESHOT["One-shot Mode"]
+        TUI["Hacker TUI<br/><small>Textual + cyberpunk widgets</small>"]
     end
 
-    subgraph Agents
-        OP["Operator<br/><small>general execution</small>"]
-        SC["Scout<br/><small>read-only recon</small>"]
-        AR["Architect<br/><small>planning only</small>"]
+    subgraph "Orchestrator (Vyasa)"
+        ORCH["Engine<br/><small>intent routing + wave planning</small>"]
+        EBUS["EventBus<br/><small>typed events + async callbacks</small>"]
+        CBUS["ContextBus v2<br/><small>thread-safe shared state</small>"]
+    end
+
+    subgraph "Agent Army (19 PhD + 12 Content)"
+        T4["Tier 4: Vyasa<br/><small>orchestrator</small>"]
+        T3["Tier 3: Kavach, Varuna, Indra, Mitra...<br/><small>enterprise intel (10 agents)</small>"]
+        T2["Tier 2: Vishwakarma, Shiva, Garuda, Saraswati<br/><small>architecture (4 agents)</small>"]
+        T1["Tier 1: Prometheus, Sherlock, Agni, Vayu, Dharma<br/><small>execution (5 agents)</small>"]
+        RA["Research Assistants<br/><small>pre-fetch context per agent</small>"]
+        SM["State Machines<br/><small>IDLE→ASSIGNED→RESEARCHING→EXECUTING→DONE</small>"]
+        CONTENT["Content Agents (12)<br/><small>Narada, Valmiki, Maya, Kubera...</small>"]
+    end
+
+    subgraph "Parallel Coordinator"
+        PAR["asyncio.gather<br/><small>PARALLEL / PIPELINE / WAVE</small>"]
+        GATE["Blocking Gates<br/><small>Kavach, Varuna, Mitra, Indra</small>"]
+    end
+
+    subgraph "17 Tools"
+        FILES["file_read, file_write, file_edit"]
+        SEARCH["grep, glob, web_search"]
+        EXEC["bash, git, parallel_execute"]
+        AGENT["spawn_agent, agent_status"]
+        TASK["task_create, task_update, task_list"]
+        NB["notebook_read, notebook_edit"]
+        NET["web_fetch"]
     end
 
     subgraph Intelligence
-        PE["Prompt Enhancer<br/><small>intent detection + context injection</small>"]
+        PE["Prompt Enhancer<br/><small>8 intent modes + context injection</small>"]
         MEM["3-Tier Memory<br/><small>session + facts + ChromaDB vectors</small>"]
-        BUDDY["Buddy System<br/><small>context-aware ASCII companion</small>"]
-    end
-
-    subgraph Tools
-        BASH["bash"]
-        FR["file_read"]
-        FW["file_write"]
-        FE["file_edit"]
-        GR["grep"]
-        GL["glob"]
-        GIT["git"]
-        WF["web_fetch"]
+        COMP["Context Compressor<br/><small>4 strategies (TRIM/SELECTIVE/SUMMARY/HYBRID)</small>"]
+        MREG["33-Model Registry<br/><small>fuzzy match + cost tracking</small>"]
+        BUDDY["Buddy System<br/><small>6 species, context-aware ASCII companion</small>"]
     end
 
     subgraph Providers
@@ -406,26 +530,51 @@ graph TB
     end
 
     CLI --> REPL
-    CLI --> ONESHOT
-    REPL --> OP
-    REPL --> SC
-    REPL --> AR
-    ONESHOT --> OP
+    CLI --> TUI
+    REPL --> ORCH
+    TUI --> ORCH
 
-    OP --> PE
-    OP --> MEM
-    OP --> Tools
-    SC --> Tools
-    OP --> Providers
-    SC --> Providers
-    AR --> Providers
+    ORCH --> T4
+    T4 --> PAR
+    PAR --> T3
+    PAR --> T2
+    PAR --> T1
+    RA -.->|briefs| T1
+    RA -.->|briefs| T2
+    RA -.->|briefs| T3
+    SM -.->|tracks| T1
+    SM -.->|tracks| T2
+    SM -.->|tracks| T3
+    GATE -.->|halts on CRITICAL| PAR
 
-    BUDDY -.->|observes| OP
+    T1 --> Tools
+    T2 --> Tools
+    T3 --> Tools
+
+    ORCH --> EBUS
+    EBUS -.->|live events| TUI
+
+    T1 --> CBUS
+    T2 --> CBUS
+    T3 --> CBUS
+
+    ORCH --> Providers
+    ORCH --> COMP
+    ORCH --> MREG
+    ORCH --> MEM
+    ORCH --> PE
+
+    BUDDY -.->|observes| ORCH
 
     style CLI fill:#FFD700,stroke:#333,color:#000
-    style OP fill:#FFD700,stroke:#333,color:#000
-    style PE fill:#FFD700,stroke:#333,color:#000
-    style MEM fill:#FFD700,stroke:#333,color:#000
+    style ORCH fill:#FFD700,stroke:#333,color:#000
+    style T4 fill:#ff4444,stroke:#333,color:#fff
+    style T3 fill:#ff8800,stroke:#333,color:#000
+    style T2 fill:#4488ff,stroke:#333,color:#fff
+    style T1 fill:#44cc44,stroke:#333,color:#000
+    style GATE fill:#ff4444,stroke:#333,color:#fff
+    style COMP fill:#FFD700,stroke:#333,color:#000
+    style TUI fill:#00ff00,stroke:#333,color:#000
 ```
 
 ---
@@ -434,33 +583,65 @@ graph TB
 
 ```
 src/djcode/
-├── cli.py              # Click entry point (flags, one-shot, REPL dispatch)
-├── repl.py             # Interactive REPL (prompt-toolkit + Rich + streaming)
-├── provider.py         # 9 providers, auto-fallback, fuzzy model matching
-├── prompt.py           # Expert system prompt with tool definitions
-├── prompt_enhancer.py  # Intent detection (8 modes) + context injection
-├── buddy.py            # ASCII buddy: 6 species, 3 frames, smart observer
-├── config.py           # ~/.djcode/config.json management
-├── auth.py             # Provider registry + API key management
-├── status.py           # Fixed bottom toolbar (model, tokens, cwd)
-├── onboarding.py       # First-run wizard (detects models, picks defaults)
-├── updater.py          # Auto-update checker
+├── cli.py                  # Click entry point
+├── repl.py                 # Interactive REPL (prompt-toolkit + Rich)
+├── provider.py             # 9 providers, auto-fallback, fuzzy model matching
+├── prompt.py               # Expert system prompt with tool definitions
+├── prompt_enhancer.py      # Intent detection (8 modes) + context injection
+├── buddy.py                # ASCII buddy: 6 species, smart observer
+├── config.py               # ~/.djcode/config.json management
+├── auth.py                 # Provider registry + API key management
+├── status.py               # Fixed bottom toolbar
+├── onboarding.py           # First-run wizard
+├── updater.py              # Auto-update checker
+├── tui.py                  # Main Textual TUI app
+├── tui_hacker.py           # Cyberpunk widgets (MatrixRain, AgentHUD, ThreatPanel)
+├── tui_panels.py           # Panel components for dashboard
+├── tui_theme.py            # Color system (gold, matrix green, tier colors)
+├── context_engine.py       # Context window management
 ├── tools/
-│   ├── bash.py         # Shell execution with timeout
-│   ├── file_read.py    # Read with line numbers
-│   ├── file_write.py   # Create/overwrite files
-│   ├── file_edit.py    # Surgical string replacement
-│   ├── grep.py         # Regex search across codebase
-│   ├── glob.py         # File pattern matching
-│   ├── git.py          # Git operations with safety guards
-│   └── web_fetch.py    # URL content fetching
+│   ├── bash.py             # Shell execution with timeout
+│   ├── file_read.py        # Read with line numbers
+│   ├── file_write.py       # Create/overwrite files
+│   ├── file_edit.py        # Surgical string replacement
+│   ├── grep.py             # Regex search across codebase
+│   ├── glob.py             # File pattern matching
+│   ├── git.py              # Git operations with safety guards
+│   ├── web_fetch.py        # URL content fetching
+│   ├── web_search.py       # Web search for docs and solutions
+│   ├── task_tracker.py     # Task creation, update, listing
+│   ├── notebook.py         # Jupyter notebook read/edit
+│   ├── agent_spawn.py      # Spawn specialist sub-agents
+│   └── parallel_exec.py    # Concurrent tool execution
+├── agents/
+│   ├── registry.py         # 19 PhD agent specs (4-tier, dharmic names)
+│   ├── content_registry.py # 12 content specialist agents
+│   ├── executor.py         # Agent execution engine
+│   ├── parallel.py         # ParallelCoordinator (gather/pipeline/wave)
+│   ├── state.py            # Agent state machine + event streaming
+│   ├── ra.py               # Research Assistant framework
+│   ├── operator.py         # General-purpose agent with tool-calling loop
+│   ├── scout.py            # Read-only exploration agent
+│   └── architect.py        # Planning and design agent
+├── orchestrator/
+│   ├── engine.py           # Vyasa orchestration engine
+│   ├── router.py           # Intent → agent routing
+│   ├── context_bus.py      # ContextBus v2 (thread-safe, typed, versioned)
+│   ├── events.py           # Typed event system for TUI integration
+│   └── vector_context.py   # Vector-based context retrieval
+├── context/
+│   ├── manager.py          # Context window manager
+│   ├── compressor.py       # 4 compression strategies
+│   └── models.py           # 33-model registry with fuzzy matching
 ├── memory/
-│   ├── manager.py      # 3-tier memory (session + persistent + semantic)
-│   └── embedder.py     # ChromaDB vectors + cosine similarity
-└── agents/
-    ├── operator.py     # General-purpose agent with tool-calling loop
-    ├── scout.py        # Read-only exploration agent
-    └── architect.py    # Planning and design agent
+│   ├── manager.py          # 3-tier memory (session + persistent + semantic)
+│   └── embedder.py         # ChromaDB vectors + cosine similarity
+└── providers/
+    ├── base.py             # Provider base class
+    ├── anthropic.py        # Anthropic (Claude) with prompt caching support
+    ├── openai.py           # OpenAI-compatible
+    ├── google.py           # Google AI (Gemini)
+    └── router.py           # Provider selection and fallback
 ```
 
 ---
@@ -497,20 +678,27 @@ Override anything with CLI flags or `/set` in the REPL.
 
 ## How We Stack Up
 
-| Feature | **DJcode** | Claude Code | Gemini CLI | Aider | OpenCode |
-|---------|:----------:|:-----------:|:----------:|:-----:|:--------:|
-| **Price** | **Free** | $20–200/mo | Free tier | Free + API | Free + API |
-| **Local inference** | **Native** | No | No | Workaround | Workaround |
-| **Apple Silicon / MLX** | **Native** | No | No | No | No |
-| **Smart buddy** | **Yes** | Fenwick | No | No | No |
-| **Prompt enhancer** | **Yes** | No | No | Repo map | No |
-| **Zero telemetry** | **By design** | Opt-out | Opt-out | Opt-in | Opt-out |
-| **Works offline** | **Yes** | No | No | No | No |
-| **No API key needed** | **Yes** | No | No | No | No |
-| **Open source** | **MIT** | Source-avail | Apache 2.0 | Apache 2.0 | FSL-1.1 |
-| **3-tier memory** | **Yes** | CLAUDE.md | GEMINI.md | No | SQLite |
+| Feature | **DJcode v4.0** | Claude Code | Gemini CLI | Aider |
+|---------|:---------------:|:-----------:|:----------:|:-----:|
+| **Price** | **Free** | $20--200/mo | Free tier | Free + API |
+| **Specialist agents** | **19 PhD + 12 content** | 1 generalist | 1 generalist | 1 generalist |
+| **Parallel execution** | **5 patterns** | Sequential | Sequential | Sequential |
+| **Tools** | **17** | ~15 | ~10 | ~8 |
+| **Model registry** | **33 models, fuzzy match** | Claude only | Gemini only | Multi-provider |
+| **Context compression** | **4 strategies** | Truncation | Truncation | Repo map |
+| **Agent state machine** | **7 states, event streaming** | No | No | No |
+| **Blocking security gates** | **4 agents** | No | No | No |
+| **Research Assistants** | **Per-agent RA** | No | No | No |
+| **Hacker TUI** | **Cyberpunk dashboard** | Basic terminal | Basic terminal | Basic terminal |
+| **Local inference** | **Native (Ollama + MLX)** | No | No | Workaround |
+| **Apple Silicon** | **Native** | No | No | No |
+| **Zero telemetry** | **By design** | Opt-out | Opt-out | Opt-in |
+| **Works offline** | **Yes** | No | No | No |
+| **Cost tracking** | **Per-model** | Session total | No | No |
+| **3-tier memory** | **Session + facts + vectors** | CLAUDE.md | GEMINI.md | No |
+| **Open source** | **MIT** | Source-avail | Apache 2.0 | Apache 2.0 |
 
-> DJcode is the only AI coding CLI built from the ground up for local-first, offline, zero-telemetry operation on Apple Silicon.
+> DJcode is the only AI coding CLI with parallel PhD-level agents, blocking security gates, and full offline operation on Apple Silicon.
 
 ---
 
@@ -552,7 +740,7 @@ MIT -- see [LICENSE](LICENSE).
 <br/>
 
 *I built this because I believe the best dev tools run on your own hardware.*
-*No subscriptions. No data harvesting. Just you and your code.*
+*No subscriptions. No data harvesting. Just you, your code, and 19 PhD agents that work for free.*
 
 <br/>
 
