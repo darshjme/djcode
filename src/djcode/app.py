@@ -41,6 +41,7 @@ from textual.widgets.option_list import Option
 
 from djcode import __version__
 from djcode.tui_panels import SidePanel, AgentPanel, StatsPanel, MCPPanel, TodoPanel, CostPanel
+from djcode.tui_hacker import HackerHeader, AgentStatusBar, ProgressHUD, ContextBar
 from djcode.tui_theme import (
     DJCODE_CSS,
     ERROR,
@@ -96,6 +97,12 @@ COMMAND_REGISTRY: list[tuple[str, str]] = [
     ("/shortcuts", "Show keyboard shortcuts"),
     ("/todo", "Manage session todos (add/done/rm/list)"),
     ("/cost", "Show token cost estimates"),
+    ("/search", "Web search (DuckDuckGo/Brave)"),
+    ("/tasks", "List/create/update session tasks"),
+    ("/spawn", "Spawn a specialist agent"),
+    ("/army", "Show full 18-agent army view"),
+    ("/context", "Show context window utilization"),
+    ("/waves", "Run multi-agent wave execution"),
     ("/exit", "Quit DJcode"),
 ]
 
@@ -138,6 +145,12 @@ HELP_TEXT = """\
   [cyan]/memory[/]          Memory stats
   [cyan]/extension[/]       MCP extensions
   [cyan]/recipe[/]          Run recipes
+  [cyan]/search[/] <query>  Web search
+  [cyan]/tasks[/]           Session task manager
+  [cyan]/spawn[/] <agent>   Spawn specialist agent
+  [cyan]/army[/]            18-agent army view
+  [cyan]/context[/]         Context window stats
+  [cyan]/waves[/] <task>    Wave execution
   [cyan]/help[/]            Show this help
   [cyan]/exit[/]            Quit
 
@@ -930,9 +943,10 @@ class DJcodeApp(App):
         self._session_db: Any = None
         self._sqlite_session_id: str | None = None
         self._response_times: list[float] = []
+        self._context_mgr: Any = None
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        yield HackerHeader(id="hacker-header")
         with Horizontal(id="main-layout"):
             with Vertical(id="chat-panel"):
                 yield RichLog(
@@ -943,6 +957,7 @@ class DJcodeApp(App):
                     auto_scroll=True,
                 )
                 yield OptionList(id="cmd-suggest")
+                yield AgentStatusBar(id="agent-status-bar")
                 yield Input(
                     id="prompt-input",
                     placeholder="\u276f Type a message... (/help for commands, / for palette)",
@@ -1053,12 +1068,22 @@ class DJcodeApp(App):
             except Exception:
                 self._memory = None
 
-            # Initialize orchestrator
+            # Initialize orchestrator (v2 ShadowOrchestrator via compat wrapper)
             try:
                 from djcode.orchestrator import Orchestrator
                 self._orchestrator = Orchestrator(self._provider)
             except Exception:
                 self._orchestrator = None
+
+            # Initialize context window manager
+            try:
+                from djcode.context import ContextWindowManager
+                self._context_mgr = ContextWindowManager(
+                    model=self._provider.config.model,
+                    provider=self._provider,
+                )
+            except Exception:
+                self._context_mgr = None
 
             # Initialize session DB
             try:
@@ -1086,6 +1111,17 @@ class DJcodeApp(App):
             prov = self._provider.config.name
             self.sub_title = f"v{__version__} | {model} | {prov}"
 
+            # Update HackerHeader with model info
+            try:
+                hdr = self.query_one("#hacker-header", HackerHeader)
+                hdr.model_name = model
+                hdr.mode = "PLAN" if self._plan_mode else "ACT"
+                if self._context_mgr:
+                    stats = self._context_mgr.get_stats()
+                    hdr.update_context(stats.current_tokens, stats.max_context_tokens)
+            except Exception:
+                pass
+
             chat.write(
                 f"  [dim]Model:[/]    [{GOLD}]{model}[/]\n"
                 f"  [dim]Provider:[/] [{GOLD}]{prov}[/]\n"
@@ -1107,6 +1143,14 @@ class DJcodeApp(App):
                     facts=stats.get("persistent_facts", 0),
                     vectors=stats.get("facts_with_embeddings", 0),
                 )
+
+            # If --army flag was passed, switch sidebar to Army tab
+            if getattr(self, "_show_army_on_start", False):
+                try:
+                    tabbed = side.query_one("TabbedContent")
+                    tabbed.active = "army-tab"
+                except Exception:
+                    pass
 
         except Exception as e:
             chat.write(f"[{ERROR}]Initialization error: {e}[/]")
@@ -1371,6 +1415,24 @@ class DJcodeApp(App):
         elif cmd == "/cost":
             self._show_cost()
 
+        elif cmd == "/search":
+            await self._handle_search(arg)
+
+        elif cmd == "/tasks":
+            await self._handle_tasks(arg)
+
+        elif cmd == "/spawn":
+            await self._handle_spawn(arg)
+
+        elif cmd == "/army":
+            self._show_army()
+
+        elif cmd == "/context":
+            self._show_context()
+
+        elif cmd == "/waves":
+            await self._handle_waves(arg)
+
         # Agent dispatch commands — send to orchestrator or operator
         elif cmd in (
             "/scout", "/architect", "/orchestra", "/review", "/debug",
@@ -1393,6 +1455,173 @@ class DJcodeApp(App):
                 self.run_worker(self._send_message(text), exclusive=True)
             else:
                 chat.write(f"[{WARNING}]Unknown command: {cmd}[/]")
+
+    # ── New v4.0 command handlers ────────────────────────────────────────
+
+    async def _handle_search(self, query: str) -> None:
+        """Execute a web search via the web_search tool."""
+        chat = self.query_one("#chat-log", RichLog)
+        if not query:
+            chat.write(f"[{WARNING}]Usage: /search <query>[/]")
+            return
+        chat.write(f"\n[bold {GOLD}]\u276f[/] [{GOLD}]/search {query}[/]")
+        chat.write(f"[dim]Searching...[/]")
+        try:
+            from djcode.tools import dispatch_tool
+            result = await dispatch_tool("web_search", {"query": query})
+            chat.write(result)
+        except Exception as e:
+            chat.write(f"[{ERROR}]Search error: {e}[/]")
+
+    async def _handle_tasks(self, arg: str) -> None:
+        """Manage session tasks: list, create, update."""
+        chat = self.query_one("#chat-log", RichLog)
+        from djcode.tools import dispatch_tool
+        parts = arg.split(maxsplit=1) if arg else []
+        sub = parts[0].lower() if parts else "list"
+        rest = parts[1] if len(parts) > 1 else ""
+
+        try:
+            if sub == "list" or not arg:
+                result = await dispatch_tool("task_list", {})
+                chat.write(f"\n[bold {GOLD}]Session Tasks[/]\n{result}")
+            elif sub == "add" and rest:
+                result = await dispatch_tool("task_create", {"title": rest})
+                chat.write(f"[{SUCCESS}]Task created: {rest}[/]")
+            elif sub == "done" and rest:
+                result = await dispatch_tool("task_update", {"task_id": rest, "status": "done"})
+                chat.write(f"[{SUCCESS}]Task updated: {rest}[/]")
+            else:
+                chat.write(f"[{WARNING}]Usage: /tasks [list|add <title>|done <id>][/]")
+        except Exception as e:
+            chat.write(f"[{ERROR}]Task error: {e}[/]")
+
+    async def _handle_spawn(self, arg: str) -> None:
+        """Spawn a specialist agent via the spawn_agent tool."""
+        chat = self.query_one("#chat-log", RichLog)
+        if not arg:
+            chat.write(f"[{WARNING}]Usage: /spawn <agent_role> <task>[/]")
+            return
+        parts = arg.split(maxsplit=1)
+        role = parts[0]
+        task = parts[1] if len(parts) > 1 else "work on this codebase"
+        chat.write(f"\n[bold {GOLD}]\u276f[/] [{GOLD}]/spawn {role}[/]")
+        chat.write(f"[dim]Spawning {role}...[/]")
+        try:
+            from djcode.tools import dispatch_tool
+            result = await dispatch_tool("spawn_agent", {"role": role, "task": task})
+            chat.write(result)
+            # Update agent status bar
+            try:
+                bar = self.query_one("#agent-status-bar", AgentStatusBar)
+                bar.set_agent_state(role.capitalize(), "executing")
+            except Exception:
+                pass
+        except Exception as e:
+            chat.write(f"[{ERROR}]Spawn error: {e}[/]")
+
+    def _show_army(self) -> None:
+        """Show the full 18-agent army status view."""
+        chat = self.query_one("#chat-log", RichLog)
+        try:
+            bar = self.query_one("#agent-status-bar", AgentStatusBar)
+            active = bar.get_active_count()
+            chat.write(
+                f"\n[bold {GOLD}]Shadow Army Status[/]  "
+                f"[dim]Active: {active}/18[/]\n"
+            )
+        except Exception:
+            pass
+
+        # Switch sidebar to Army tab
+        try:
+            side = self.query_one(SidePanel)
+            tabbed = side.query_one("TabbedContent")
+            tabbed.active = "army-tab"
+        except Exception:
+            pass
+
+    def _show_context(self) -> None:
+        """Show context window utilization stats."""
+        chat = self.query_one("#chat-log", RichLog)
+        if not self._context_mgr:
+            chat.write(f"[{WARNING}]Context manager not initialized.[/]")
+            return
+        try:
+            stats = self._context_mgr.get_stats()
+            chat.write(
+                f"\n[bold {GOLD}]Context Window[/]\n"
+                f"  [dim]Model:[/]        [{GOLD}]{stats.model}[/]\n"
+                f"  [dim]Max tokens:[/]   [{GOLD}]{stats.max_context_tokens:,}[/]\n"
+                f"  [dim]Current:[/]      [{GOLD}]{stats.current_tokens:,}[/]\n"
+                f"  [dim]Utilization:[/]  [{GOLD}]{stats.utilization_pct:.1f}%[/]\n"
+                f"  [dim]Remaining:[/]    [{GOLD}]{stats.remaining_tokens:,}[/]\n"
+                f"  [dim]Messages:[/]     [{GOLD}]{stats.message_count}[/]\n"
+                f"  [dim]Pinned:[/]       [{GOLD}]{stats.pinned_count}[/]\n"
+                f"  [dim]Compressions:[/] [{GOLD}]{stats.compressions_performed}[/]\n"
+            )
+            # Update HackerHeader context display
+            try:
+                hdr = self.query_one("#hacker-header", HackerHeader)
+                hdr.update_context(stats.current_tokens, stats.max_context_tokens)
+            except Exception:
+                pass
+        except Exception as e:
+            chat.write(f"[{ERROR}]Context error: {e}[/]")
+
+    async def _handle_waves(self, arg: str) -> None:
+        """Run multi-agent wave execution via the ShadowOrchestrator."""
+        chat = self.query_one("#chat-log", RichLog)
+        if not arg:
+            chat.write(f"[{WARNING}]Usage: /waves <task description>[/]")
+            return
+        if not self._orchestrator:
+            chat.write(f"[{ERROR}]Orchestrator not initialized.[/]")
+            return
+        chat.write(f"\n[bold {GOLD}]\u276f[/] [{GOLD}]/waves {arg}[/]")
+        chat.write(f"[dim]Launching wave execution...[/]")
+        try:
+            # Access the ShadowOrchestrator's event-based execute
+            shadow = self._orchestrator._shadow if hasattr(self._orchestrator, '_shadow') else None
+            if shadow:
+                from djcode.orchestrator.events import EventType
+                async for event in shadow.execute(arg):
+                    if event.event_type == EventType.AGENT_TOKEN:
+                        token = event.data.get("token", "")
+                        if token:
+                            chat.write(token, shrink=False, scroll_end=True)
+                    elif event.event_type == EventType.WAVE_START:
+                        wave = event.data.get("wave", "?")
+                        chat.write(f"\n  [{GOLD}]Wave {wave} starting...[/]")
+                    elif event.event_type == EventType.WAVE_COMPLETE:
+                        wave = event.data.get("wave", "?")
+                        chat.write(f"\n  [{SUCCESS}]Wave {wave} complete.[/]")
+                    elif event.event_type == EventType.AGENT_START:
+                        name = event.data.get("agent_name", "")
+                        try:
+                            bar = self.query_one("#agent-status-bar", AgentStatusBar)
+                            bar.set_agent_state(name, "executing")
+                        except Exception:
+                            pass
+                    elif event.event_type == EventType.AGENT_COMPLETE:
+                        name = event.data.get("agent_name", "")
+                        try:
+                            bar = self.query_one("#agent-status-bar", AgentStatusBar)
+                            bar.set_agent_state(name, "done")
+                        except Exception:
+                            pass
+                chat.write(f"\n[{SUCCESS}]Wave execution complete.[/]")
+                # Reset agent bar
+                try:
+                    self.query_one("#agent-status-bar", AgentStatusBar).set_all_idle()
+                except Exception:
+                    pass
+            else:
+                # Fallback: use the compat wrapper's token-yielding execute
+                async for token in self._orchestrator.execute(arg):
+                    chat.write(token, shrink=False, scroll_end=True)
+        except Exception as e:
+            chat.write(f"[{ERROR}]Wave execution error: {e}[/]")
 
     # ── Agent dispatch ───────────────────────────────────────────────────
 
@@ -1656,6 +1885,16 @@ class DJcodeApp(App):
             try:
                 from djcode.orchestrator import Orchestrator
                 self._orchestrator = Orchestrator(self._provider)
+            except Exception:
+                pass
+
+            # Re-initialize context manager with new model
+            try:
+                from djcode.context import ContextWindowManager
+                self._context_mgr = ContextWindowManager(
+                    model=self._provider.config.model,
+                    provider=self._provider,
+                )
             except Exception:
                 pass
 
@@ -2503,6 +2742,7 @@ def run_tui(
     bypass_rlhf: bool = False,
     auto_accept: bool = False,
     show_thinking: bool = True,
+    army: bool = False,
 ) -> None:
     """Entry point to launch the Textual TUI."""
     app = DJcodeApp(
@@ -2512,6 +2752,7 @@ def run_tui(
         auto_accept=auto_accept,
         show_thinking=show_thinking,
     )
+    app._show_army_on_start = army
     app.run()
 
 

@@ -68,6 +68,18 @@ console = Console()
     default=False,
     help="Show current configuration",
 )
+@click.option(
+    "--army",
+    is_flag=True,
+    default=False,
+    help="Launch with army panel visible (18-agent overview)",
+)
+@click.option(
+    "--wave",
+    type=str,
+    default=None,
+    help="Run a task with wave execution strategy then exit",
+)
 @click.version_option(version=__version__, prog_name="djcode")
 def main(
     prompt: str | None,
@@ -78,6 +90,8 @@ def main(
     auto_accept: bool,
     thinking: bool,
     show_config: bool,
+    army: bool,
+    wave: str | None,
 ) -> None:
     """DJcode — Local-first AI coding CLI by DarshJ.AI
 
@@ -119,7 +133,37 @@ def main(
         return
 
     try:
-        if prompt:
+        if wave:
+            # Wave execution mode: run a task with multi-agent wave strategy
+            from djcode.provider import Provider, ProviderConfig
+            from djcode.orchestrator import Orchestrator
+            from djcode.orchestrator.events import EventType
+
+            config = ProviderConfig.from_config(
+                provider_override=provider,
+                model_override=model,
+            )
+            prov = Provider(config)
+            orch = Orchestrator(prov)
+            shadow = orch._shadow
+
+            async def _run_wave() -> None:
+                console.print(f"[bold #FFD700]Wave execution:[/] {wave}")
+                async for event in shadow.execute(wave):
+                    if event.event_type == EventType.AGENT_TOKEN:
+                        token = event.data.get("token", "")
+                        if token:
+                            console.print(token, end="")
+                    elif event.event_type == EventType.WAVE_START:
+                        w = event.data.get("wave", "?")
+                        console.print(f"\n[#FFD700]Wave {w} starting...[/]")
+                    elif event.event_type == EventType.WAVE_COMPLETE:
+                        w = event.data.get("wave", "?")
+                        console.print(f"\n[green]Wave {w} complete.[/]")
+                console.print("\n[green]Wave execution finished.[/]")
+
+            asyncio.run(_run_wave())
+        elif prompt:
             # One-shot mode
             from djcode.repl import run_oneshot
 
@@ -142,6 +186,7 @@ def main(
                 bypass_rlhf=bypass_rlhf,
                 auto_accept=auto_accept,
                 show_thinking=thinking,
+                army=army,
             )
     except KeyboardInterrupt:
         console.print("\n[dim]Goodbye.[/]")
