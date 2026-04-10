@@ -1,8 +1,16 @@
 """LLM Provider abstraction for DJcode.
 
-Supports Ollama, MLX, and generic OpenAI-compatible endpoints.
-All communication is local-first via httpx async.
-Includes model validation, fuzzy matching, and robust error handling.
+Backward-compatible shim that delegates to the new djcode.providers system.
+All existing imports (Provider, ProviderConfig, Message, TOOL_DEFINITIONS,
+fetch_ollama_models_sync, etc.) continue to work unchanged.
+
+The new providers/ package adds:
+- Anthropic prompt caching and extended thinking
+- OpenAI o-series reasoning model support
+- Google Gemini native API
+- Unified ProviderChunk/TokenUsage protocol
+- Model aliasing and auto-detection
+- Rate limit handling with exponential backoff
 """
 
 from __future__ import annotations
@@ -564,7 +572,6 @@ def fuzzy_match_model(query: str, available: list[str]) -> str | None:
     if len(prefix_matches) == 1:
         return prefix_matches[0]
     if prefix_matches:
-        # Return the shortest prefix match (most likely what the user meant)
         return min(prefix_matches, key=len)
 
     # Substring match (e.g., "dolphin" matches "dolphin3:latest")
@@ -593,12 +600,68 @@ def format_model_size(size_bytes: int) -> str:
     return f"{mb:.0f} MB"
 
 
+def _messages_to_dicts(messages: list[Message]) -> list[dict[str, Any]]:
+    """Convert Message dataclass instances to plain dicts for the new providers."""
+    result = []
+    for m in messages:
+        d: dict[str, Any] = {"role": m.role, "content": m.content}
+        if m.tool_calls:
+            d["tool_calls"] = m.tool_calls
+        if m.tool_call_id:
+            d["tool_call_id"] = m.tool_call_id
+        if m.name:
+            d["name"] = m.name
+        result.append(d)
+    return result
+
+
 class Provider:
-    """Async LLM provider that handles chat completions with tool calling."""
+    """Async LLM provider that handles chat completions with tool calling.
+
+    This class maintains the original API surface but now delegates to the
+    new providers/ system for Anthropic, OpenAI, and Google. Ollama and
+    OpenAI-compat keep their original direct implementation for zero-risk
+    backward compatibility with local-first workflows.
+    """
 
     def __init__(self, config: ProviderConfig | None = None) -> None:
         self.config = config or ProviderConfig.from_config()
         self._client = httpx.AsyncClient(timeout=300.0)
+        self._new_provider = None  # Lazy-loaded new provider instance
+
+    def _get_new_provider(self):
+        """Lazy-initialize the new provider system for supported backends."""
+        if self._new_provider is not None:
+            return self._new_provider
+
+        name = self.config.name
+
+        if name == "anthropic":
+            from djcode.providers.anthropic import AnthropicProvider
+            cfg = load_config()
+            self._new_provider = AnthropicProvider(
+                model=self.config.model,
+                api_key=self.config.api_key,
+                base_url=self.config.base_url,
+                enable_caching=cfg.get("enable_caching", True),
+                enable_thinking=cfg.get("enable_thinking", False),
+                thinking_budget=cfg.get("thinking_budget", 10_000),
+            )
+        elif name == "openai":
+            from djcode.providers.openai import OpenAIProvider
+            self._new_provider = OpenAIProvider(
+                model=self.config.model,
+                api_key=self.config.api_key,
+                base_url=self.config.base_url,
+            )
+        elif name == "google":
+            from djcode.providers.google import GoogleProvider
+            self._new_provider = GoogleProvider(
+                model=self.config.model,
+                api_key=self.config.api_key,
+                base_url=self.config.base_url,
+            )
+        return self._new_provider
 
     @property
     def is_ollama(self) -> bool:
@@ -621,14 +684,12 @@ class Provider:
 
         available = get_ollama_model_names(self.config.base_url)
         if not available:
-            # Can't reach Ollama — will fail at chat time with better error
             return True, ""
 
         model = self.config.model
         if model in available:
             return True, ""
 
-        # Try fuzzy match
         match = fuzzy_match_model(model, available)
         if match:
             self.config.model = match
@@ -692,7 +753,6 @@ class Provider:
                 msg += f"\nPull it with: ollama pull {self.config.model}"
                 raise ConnectionError(msg)
             elif e.response.status_code == 400 and use_tools:
-                # Model doesn't support tools — retry without them
                 async for chunk in self.chat_ollama(messages, stream=stream, use_tools=False):
                     yield chunk
             else:
@@ -702,7 +762,7 @@ class Provider:
                 "Request timed out. Try a smaller model or increase timeout."
             )
 
-    # -- OpenAI-compatible API (MLX, remote) --
+    # -- OpenAI-compatible API (MLX, remote, groq, together, nvidia, etc.) --
 
     async def chat_openai_compat(
         self,
@@ -725,7 +785,6 @@ class Provider:
         }
 
         base = self.config.base_url.rstrip("/")
-        # If base_url already ends with /v1, don't double it
         if base.endswith("/v1"):
             url = f"{base}/chat/completions"
         else:
@@ -751,12 +810,14 @@ class Provider:
 
         except httpx.ConnectError:
             raise ConnectionError(
-                f"Cannot connect to {self.config.base_url}. Check the URL and ensure the server is running."
+                f"Cannot connect to {self.config.base_url}. "
+                "Check the URL and ensure the server is running."
             )
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise ConnectionError(
-                    "Authentication failed. Check your API key (set via config or OPENAI_API_KEY env var)."
+                    "Authentication failed. Check your API key "
+                    "(set via config or OPENAI_API_KEY env var)."
                 )
             elif e.response.status_code == 404:
                 raise ConnectionError(
@@ -771,7 +832,7 @@ class Provider:
                 "Request timed out. Try a smaller model or increase timeout."
             )
 
-    # -- Anthropic native Messages API --
+    # -- Anthropic: delegate to new provider with prompt caching + thinking --
 
     async def chat_anthropic(
         self,
@@ -779,112 +840,190 @@ class Provider:
         *,
         stream: bool = True,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Call Anthropic's native Messages API (/v1/messages)."""
-        headers = {
-            "x-api-key": self.config.api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
-        payload: dict[str, Any] = {
-            "model": self.config.model,
-            "max_tokens": self.config.max_tokens,
-            "messages": [
-                {"role": m.role, "content": m.content}
-                for m in messages
-                if m.role != "system"
-            ],
-        }
-        # Anthropic uses system as a top-level param, not a message
-        system_msgs = [m.content for m in messages if m.role == "system"]
-        if system_msgs:
-            payload["system"] = "\n".join(system_msgs)
+        """Call Anthropic via the new provider system with prompt caching.
 
-        # Add tools in Anthropic format
-        anthropic_tools = []
-        for td in TOOL_DEFINITIONS:
-            func = td.get("function", {})
-            anthropic_tools.append({
-                "name": func["name"],
-                "description": func.get("description", ""),
-                "input_schema": func.get("parameters", {}),
-            })
-        payload["tools"] = anthropic_tools
+        Delegates to providers/anthropic.py which supports:
+        - Prompt caching (cache_control blocks for system prompt + large context)
+        - Extended thinking (thinking blocks with budget_tokens)
+        - Proper content_block_start/delta/stop handling
+        - Rate limit handling with exponential backoff
+        - Full usage tracking (input, output, cache_creation, cache_read tokens)
 
-        url = f"{self.config.base_url}/v1/messages"
+        Converts ProviderChunks back to OpenAI-compat dict format expected
+        by the rest of the codebase.
+        """
+        provider = self._get_new_provider()
+        if provider is None:
+            async for chunk in self.chat_openai_compat(messages, stream=stream):
+                yield chunk
+            return
 
-        try:
-            if stream:
-                payload["stream"] = True
-                async with self._client.stream("POST", url, json=payload, headers=headers) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        line = line.strip()
-                        if line.startswith("data: ") and line != "data: [DONE]":
-                            try:
-                                chunk = json.loads(line[6:])
-                            except json.JSONDecodeError:
-                                continue
-                            # Convert Anthropic streaming format to OpenAI-compatible internal format
-                            if chunk.get("type") == "content_block_delta":
-                                delta = chunk.get("delta", {})
-                                if delta.get("type") == "text_delta":
-                                    yield {"choices": [{"delta": {"content": delta.get("text", "")}}]}
-                                elif delta.get("type") == "input_json_delta":
-                                    # Tool call argument streaming
-                                    yield {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": delta.get("partial_json", "")}}]}}]}
-                            elif chunk.get("type") == "content_block_start":
-                                block = chunk.get("content_block", {})
-                                if block.get("type") == "tool_use":
-                                    yield {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": block.get("id", ""), "function": {"name": block.get("name", ""), "arguments": ""}}]}}]}
-                            elif chunk.get("type") == "message_delta":
-                                stop = chunk.get("delta", {}).get("stop_reason", "")
-                                if stop == "tool_use":
-                                    yield {"choices": [{"finish_reason": "tool_calls"}]}
-                                elif stop == "end_turn":
-                                    yield {"choices": [{"finish_reason": "stop"}]}
-            else:
-                resp = await self._client.post(url, json=payload, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-                # Convert Anthropic response to OpenAI-compatible format
-                content_parts = data.get("content", [])
-                text = ""
-                tool_calls = []
-                for part in content_parts:
-                    if part.get("type") == "text":
-                        text += part.get("text", "")
-                    elif part.get("type") == "tool_use":
-                        tool_calls.append({
-                            "id": part.get("id", ""),
-                            "function": {
-                                "name": part.get("name", ""),
-                                "arguments": json.dumps(part.get("input", {})),
-                            },
-                        })
-                result: dict[str, Any] = {"choices": [{"message": {"content": text, "role": "assistant"}}]}
-                if tool_calls:
-                    result["choices"][0]["message"]["tool_calls"] = tool_calls
-                yield result
+        from djcode.providers.base import FinishReason
+        msg_dicts = _messages_to_dicts(messages)
 
-        except httpx.ConnectError:
-            raise ConnectionError(
-                f"Cannot connect to Anthropic API at {self.config.base_url}."
-            )
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                raise ConnectionError(
-                    "Anthropic authentication failed. Check your API key (/auth or ANTHROPIC_API_KEY env var)."
-                )
-            elif e.response.status_code == 404:
-                raise ConnectionError(
-                    f"Anthropic model '{self.config.model}' not found."
-                )
-            else:
-                raise ConnectionError(
-                    f"Anthropic API error {e.response.status_code}: {e.response.text[:200]}"
-                )
-        except httpx.ReadTimeout:
-            raise ConnectionError("Anthropic request timed out.")
+        async for chunk in provider.chat(
+            msg_dicts,
+            stream=stream,
+            tools=TOOL_DEFINITIONS,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
+        ):
+            if chunk.content:
+                yield {"choices": [{"delta": {"content": chunk.content}}]}
+
+            if chunk.thinking:
+                yield {"choices": [{"delta": {"thinking": chunk.thinking}}]}
+
+            if chunk.tool_calls:
+                for tc in chunk.tool_calls:
+                    yield {"choices": [{"delta": {"tool_calls": [{
+                        "index": 0,
+                        "id": tc.id,
+                        "function": {"name": tc.name, "arguments": tc.arguments},
+                    }]}}]}
+
+            if chunk.finish_reason is not None:
+                if chunk.finish_reason == FinishReason.TOOL_USE:
+                    yield {"choices": [{"finish_reason": "tool_calls"}]}
+                elif chunk.finish_reason == FinishReason.MAX_TOKENS:
+                    yield {"choices": [{"finish_reason": "length"}]}
+                else:
+                    yield {"choices": [{"finish_reason": "stop"}]}
+
+                if chunk.usage:
+                    yield {"usage": {
+                        "prompt_tokens": chunk.usage.input_tokens,
+                        "completion_tokens": chunk.usage.output_tokens,
+                        "cache_creation_tokens": chunk.usage.cache_creation_tokens,
+                        "cache_read_tokens": chunk.usage.cache_read_tokens,
+                        "total_cost": chunk.usage.total_cost,
+                    }}
+
+    # -- OpenAI native: delegate to new provider for reasoning models --
+
+    async def chat_openai_native(
+        self,
+        messages: list[Message],
+        *,
+        stream: bool = True,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Call OpenAI via the new provider system.
+
+        Handles o1/o3/o4-mini reasoning models properly:
+        - Developer role instead of system
+        - No temperature parameter
+        - max_completion_tokens instead of max_tokens
+        - Reasoning content (thinking) streaming
+
+        Converts ProviderChunks back to OpenAI-compat dict format.
+        """
+        provider = self._get_new_provider()
+        if provider is None:
+            async for chunk in self.chat_openai_compat(messages, stream=stream):
+                yield chunk
+            return
+
+        from djcode.providers.base import FinishReason
+        msg_dicts = _messages_to_dicts(messages)
+
+        async for chunk in provider.chat(
+            msg_dicts,
+            stream=stream,
+            tools=TOOL_DEFINITIONS,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
+        ):
+            if chunk.content:
+                yield {"choices": [{"delta": {"content": chunk.content}}]}
+
+            if chunk.thinking:
+                yield {"choices": [{"delta": {"thinking": chunk.thinking}}]}
+
+            if chunk.tool_calls:
+                for tc in chunk.tool_calls:
+                    yield {"choices": [{"delta": {"tool_calls": [{
+                        "index": 0,
+                        "id": tc.id,
+                        "function": {"name": tc.name, "arguments": tc.arguments},
+                    }]}}]}
+
+            if chunk.finish_reason is not None:
+                if chunk.finish_reason == FinishReason.TOOL_USE:
+                    yield {"choices": [{"finish_reason": "tool_calls"}]}
+                elif chunk.finish_reason == FinishReason.MAX_TOKENS:
+                    yield {"choices": [{"finish_reason": "length"}]}
+                else:
+                    yield {"choices": [{"finish_reason": "stop"}]}
+
+                if chunk.usage:
+                    yield {"usage": {
+                        "prompt_tokens": chunk.usage.input_tokens,
+                        "completion_tokens": chunk.usage.output_tokens,
+                        "total_cost": chunk.usage.total_cost,
+                    }}
+
+    # -- Google Gemini: delegate to new provider --
+
+    async def chat_google(
+        self,
+        messages: list[Message],
+        *,
+        stream: bool = True,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Call Google Gemini via the new native provider system.
+
+        Uses Gemini's generateContent API directly (not OpenAI-compat shim):
+        - 1M context window
+        - Native function calling with functionDeclarations
+        - Thinking/reasoning content support
+        - Token counting via countTokens endpoint
+
+        Converts ProviderChunks back to OpenAI-compat dict format.
+        """
+        provider = self._get_new_provider()
+        if provider is None:
+            async for chunk in self.chat_openai_compat(messages, stream=stream):
+                yield chunk
+            return
+
+        from djcode.providers.base import FinishReason
+        msg_dicts = _messages_to_dicts(messages)
+
+        async for chunk in provider.chat(
+            msg_dicts,
+            stream=stream,
+            tools=TOOL_DEFINITIONS,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
+        ):
+            if chunk.content:
+                yield {"choices": [{"delta": {"content": chunk.content}}]}
+
+            if chunk.thinking:
+                yield {"choices": [{"delta": {"thinking": chunk.thinking}}]}
+
+            if chunk.tool_calls:
+                for tc in chunk.tool_calls:
+                    yield {"choices": [{"delta": {"tool_calls": [{
+                        "index": 0,
+                        "id": tc.id,
+                        "function": {"name": tc.name, "arguments": tc.arguments},
+                    }]}}]}
+
+            if chunk.finish_reason is not None:
+                if chunk.finish_reason == FinishReason.TOOL_USE:
+                    yield {"choices": [{"finish_reason": "tool_calls"}]}
+                elif chunk.finish_reason == FinishReason.MAX_TOKENS:
+                    yield {"choices": [{"finish_reason": "length"}]}
+                else:
+                    yield {"choices": [{"finish_reason": "stop"}]}
+
+                if chunk.usage:
+                    yield {"usage": {
+                        "prompt_tokens": chunk.usage.input_tokens,
+                        "completion_tokens": chunk.usage.output_tokens,
+                        "total_cost": chunk.usage.total_cost,
+                    }}
 
     # -- Unified interface --
 
@@ -894,16 +1033,26 @@ class Provider:
         *,
         stream: bool = True,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Route to the correct backend based on provider name."""
+        """Route to the correct backend based on provider name.
+
+        Uses new native providers for anthropic, openai, and google.
+        Keeps original implementations for ollama and openai-compat.
+        """
         if self.config.name == "ollama":
             async for chunk in self.chat_ollama(messages, stream=stream):
                 yield chunk
         elif self.config.name == "anthropic":
             async for chunk in self.chat_anthropic(messages, stream=stream):
                 yield chunk
+        elif self.config.name == "openai":
+            async for chunk in self.chat_openai_native(messages, stream=stream):
+                yield chunk
+        elif self.config.name == "google":
+            async for chunk in self.chat_google(messages, stream=stream):
+                yield chunk
         else:
-            # All other providers (openai, nvidia, google, groq,
-            # together, openrouter, mlx, remote) use OpenAI-compatible API
+            # All other providers (nvidia, groq, together, openrouter,
+            # mlx, remote, custom) use OpenAI-compatible API
             async for chunk in self.chat_openai_compat(messages, stream=stream):
                 yield chunk
 
@@ -923,11 +1072,15 @@ class Provider:
             data = resp.json()
             return data.get("embeddings", [data.get("embedding", [])])[0]
         except httpx.ConnectError:
-            raise ConnectionError("Cannot connect to Ollama for embeddings. Start it with: ollama serve")
+            raise ConnectionError(
+                "Cannot connect to Ollama for embeddings. "
+                "Start it with: ollama serve"
+            )
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ConnectionError(
-                    f"Embedding model '{embed_model}' not found. Pull it with: ollama pull {embed_model}"
+                    f"Embedding model '{embed_model}' not found. "
+                    f"Pull it with: ollama pull {embed_model}"
                 )
             raise
 
@@ -953,3 +1106,5 @@ class Provider:
 
     async def close(self) -> None:
         await self._client.aclose()
+        if self._new_provider is not None:
+            await self._new_provider.close()
