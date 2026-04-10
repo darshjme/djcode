@@ -119,11 +119,15 @@ class AgentSpec:
 # ══════════════════════════════════════════════════════════════════════════════
 
 _ALL_TOOLS   = frozenset({"bash", "file_read", "file_write", "file_edit",
-                           "grep", "glob", "git", "web_fetch"})
-_READ_TOOLS  = frozenset({"file_read", "grep", "glob", "git", "web_fetch"})
+                           "grep", "glob", "git", "web_fetch", "web_search",
+                           "task_create", "task_update", "task_list",
+                           "notebook_read", "notebook_edit",
+                           "spawn_agent", "parallel_execute"})
+_READ_TOOLS  = frozenset({"file_read", "grep", "glob", "git", "web_fetch",
+                           "web_search", "task_list", "notebook_read"})
 _WRITE_TOOLS = frozenset({"file_write", "file_edit", "bash", "git"})
 _BASH_TOOLS  = frozenset({"bash", "file_read", "file_write", "grep", "glob"})
-_NET_TOOLS   = frozenset({"web_fetch", "file_read", "grep"})
+_NET_TOOLS   = frozenset({"web_fetch", "web_search", "file_read", "grep"})
 
 
 # ══════════════════════════════════════════════════════════════════════════════

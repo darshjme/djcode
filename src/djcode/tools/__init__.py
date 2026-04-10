@@ -12,6 +12,11 @@ from djcode.tools.git import execute_git
 from djcode.tools.glob import execute_glob
 from djcode.tools.grep import execute_grep
 from djcode.tools.web_fetch import execute_web_fetch
+from djcode.tools.web_search import execute_web_search
+from djcode.tools.task_tracker import execute_task_create, execute_task_update, execute_task_list
+from djcode.tools.notebook import execute_notebook_read, execute_notebook_edit
+from djcode.tools.parallel_exec import execute_parallel
+from djcode.tools.agent_spawn import execute_spawn_agent, execute_agent_status
 
 # Central dispatch table
 TOOL_DISPATCH: dict[str, Any] = {
@@ -23,6 +28,15 @@ TOOL_DISPATCH: dict[str, Any] = {
     "glob": execute_glob,
     "git": execute_git,
     "web_fetch": execute_web_fetch,
+    "web_search": execute_web_search,
+    "task_create": execute_task_create,
+    "task_update": execute_task_update,
+    "task_list": execute_task_list,
+    "notebook_read": execute_notebook_read,
+    "notebook_edit": execute_notebook_edit,
+    "parallel_execute": execute_parallel,
+    "spawn_agent": execute_spawn_agent,
+    "agent_status": execute_agent_status,
 }
 
 
