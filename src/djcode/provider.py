@@ -294,6 +294,229 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web using DuckDuckGo or Brave Search. Returns title, URL, and snippet for top results. Useful for looking up docs, finding solutions, researching libraries.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query.",
+                    },
+                    "num_results": {
+                        "type": "integer",
+                        "description": "Number of results to return (1-20, default 5).",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_create",
+            "description": "Create a new task for tracking work items. Tasks persist across the session in SQLite.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subject": {
+                        "type": "string",
+                        "description": "Short title for the task.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Detailed description of what needs to be done.",
+                    },
+                    "priority": {
+                        "type": "string",
+                        "description": "Priority level: low, medium, high, critical (default: medium).",
+                    },
+                    "depends_on": {
+                        "type": "string",
+                        "description": "Comma-separated task IDs this depends on.",
+                    },
+                    "tags": {
+                        "type": "string",
+                        "description": "Comma-separated tags for categorization.",
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Associate with a specific DJcode session.",
+                    },
+                },
+                "required": ["subject"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_update",
+            "description": "Update an existing task's status, subject, description, priority, dependencies, or tags.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The ID of the task to update.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "New status: pending, in_progress, completed, blocked, cancelled.",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "New subject/title.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "New description.",
+                    },
+                    "priority": {
+                        "type": "string",
+                        "description": "New priority: low, medium, high, critical.",
+                    },
+                    "depends_on": {
+                        "type": "string",
+                        "description": "New dependency list (comma-separated task IDs).",
+                    },
+                    "tags": {
+                        "type": "string",
+                        "description": "New tags (comma-separated).",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_list",
+            "description": "List tasks with optional filtering by status, session, or tag. Shows progress summary.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Filter by status: pending, in_progress, completed, blocked, cancelled.",
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Filter by session ID.",
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "Filter by tag.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of tasks to return (default 50).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "notebook_read",
+            "description": "Read a Jupyter notebook (.ipynb) and display cells with their source code and outputs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the .ipynb file.",
+                    },
+                    "cell_index": {
+                        "type": "integer",
+                        "description": "Show only this cell (0-based index).",
+                    },
+                    "cell_type": {
+                        "type": "string",
+                        "description": "Filter by cell type: code, markdown, or raw.",
+                    },
+                    "max_output_chars": {
+                        "type": "integer",
+                        "description": "Maximum characters per cell output (default 5000).",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "notebook_edit",
+            "description": "Edit a Jupyter notebook cell: replace source, change type, insert new cells, or delete cells.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the .ipynb file.",
+                    },
+                    "cell_index": {
+                        "type": "integer",
+                        "description": "Index of the cell to edit (0-based).",
+                    },
+                    "new_source": {
+                        "type": "string",
+                        "description": "New cell content (replaces existing source).",
+                    },
+                    "cell_type": {
+                        "type": "string",
+                        "description": "Change cell type to: code, markdown, or raw.",
+                    },
+                    "insert_before": {
+                        "type": "boolean",
+                        "description": "If true, insert a new cell before cell_index instead of editing.",
+                    },
+                    "delete": {
+                        "type": "boolean",
+                        "description": "If true, delete the cell at cell_index.",
+                    },
+                },
+                "required": ["path", "cell_index"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spawn_agent",
+            "description": "Spawn a specialist sub-agent (debugger, tester, reviewer, coder, etc.) to handle a specific task. The agent runs with its own context and tool access policies.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "description": "Agent role: coder, debugger, tester, reviewer, architect, scout, refactorer, devops, docs, security_compliance, data_scientist, sre.",
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "Description of what the agent should do.",
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": "If true, run agent in background and return tracking ID (default: false).",
+                    },
+                    "max_tool_rounds": {
+                        "type": "integer",
+                        "description": "Override max tool execution rounds for this agent.",
+                    },
+                },
+                "required": ["role", "task"],
+            },
+        },
+    },
 ]
 
 
