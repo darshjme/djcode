@@ -169,3 +169,39 @@ def test_transient_retry_before_emission_only():
             assert len(attempts)==2 and result[0][0]=='done'
         finally:await provider.close()
     asyncio.run(run())
+
+
+def test_native_tool_summary_code_blocks_are_never_reexecuted(tmp_path, monkeypatch):
+    """A summary after native execution is prose, never a second write/command."""
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / 'test_arithmetic.py'
+    marker = tmp_path / 'summary-command-ran'
+    summary = (
+        'Verified `test_arithmetic.py`:\n```python\nARITHMETIC_TESTS_PASSED\nCONFIDENCE: 1.00\n```\n'
+        f'Example command (already complete):\n```bash\ntouch {marker}\n```\n'
+    )
+    class Fake:
+        config = ProviderConfig('custom', 'https://fixture.test', 'fixture')
+        calls = 0
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                yield event({'tool_calls': [{'index': 0, 'id': 'write_1', 'function': {
+                    'name': 'file_write', 'arguments': json.dumps({'path': str(target), 'content': 'assert 2 + 2 == 4\n'})}}]})
+                yield event(finish='tool_calls')
+            elif self.calls == 2:
+                yield event({'content': summary})
+                yield event(finish='stop')
+            else:
+                raise AssertionError('Native summary incorrectly caused another tool round')
+    async def run():
+        provider = Fake()
+        operator = Operator(provider, auto_accept=True, raw=True)
+        result = ''.join([part async for part in operator.send('Write and summarize test')])
+        assert result == summary
+        assert provider.calls == 2
+        assert target.read_text() == 'assert 2 + 2 == 4\n'
+        assert not marker.exists()
+        assert operator.messages[-1].role == 'assistant'
+        assert not any('[Tool Execution Results]' in message.content for message in operator.messages)
+    asyncio.run(run())

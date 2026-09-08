@@ -154,6 +154,7 @@ class Operator:
             user_input += "\n\nSaved context (lexical matches; verify relevance):\n" + "\n".join(recalled)[:4000]
         self.messages.append(Message(role="user", content=user_input))
         extracted_seen = set()
+        native_tools_used = False
         self.last_had_tool_calls = False
 
         for _round in range(self.max_tool_rounds):
@@ -187,6 +188,7 @@ class Operator:
 
             # If there are tool calls, execute them and loop
             if tool_calls:
+                native_tools_used = True
                 self.last_had_tool_calls = True
                 # Record assistant message with tool calls
                 self.messages.append(
@@ -245,8 +247,9 @@ class Operator:
                 # Continue the loop to get next LLM response
                 continue
 
-            # Text-only models still receive execution results, rather than a UI-only side effect.
-            if full_response and not self.plan_mode:
+            # Once this run uses native tools, later code blocks are summaries,
+            # not fallback commands. Never execute them a second time.
+            if full_response and not self.plan_mode and not native_tools_used:
                 from djcode.tool_router import ToolExtractionRouter
                 router = ToolExtractionRouter()
                 intents = router.extract_intents(full_response)
