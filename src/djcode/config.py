@@ -7,10 +7,12 @@ Zero telemetry. Everything stays local.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
-CONFIG_DIR = Path.home() / ".djcode"
+CONFIG_DIR = Path(os.environ.get("DJCODE_CONFIG_DIR", str(Path.home() / ".djcode"))).expanduser()
 CONFIG_FILE = CONFIG_DIR / "config.json"
 MEMORY_DIR = CONFIG_DIR / "memory"
 HISTORY_FILE = CONFIG_DIR / "history.txt"
@@ -58,8 +60,16 @@ def load_config() -> dict[str, Any]:
 def save_config(config: dict[str, Any]) -> None:
     """Persist config to disk."""
     ensure_dirs()
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
+    fd, temporary = tempfile.mkstemp(prefix=".config-", dir=CONFIG_DIR)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(config, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, CONFIG_FILE)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def get(key: str, default: Any = None) -> Any:

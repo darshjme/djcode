@@ -80,6 +80,7 @@ console = Console()
     default=None,
     help="Run a task with wave execution strategy then exit",
 )
+@click.option("--repl", "use_repl", is_flag=True, help="Use the line-oriented REPL instead of the full-screen TUI.")
 @click.version_option(version=__version__, prog_name="djcode")
 def main(
     prompt: str | None,
@@ -92,6 +93,7 @@ def main(
     show_config: bool,
     army: bool,
     wave: str | None,
+    use_repl: bool,
 ) -> None:
     """DJcode — Local-first AI coding CLI by DarshJ.AI
 
@@ -100,23 +102,11 @@ def main(
     # --url / -u takes precedence; --provider with an http value also works
     if url:
         provider = url
-    if provider and provider.startswith("http"):
-        # Stash the raw URL so downstream can use it as a custom endpoint
-        import os
-        os.environ["DJCODE_CUSTOM_URL"] = provider
-        provider = "custom"
-
-    # Validate named providers (skip validation for "custom" — already resolved)
-    _known_providers = {
-        "ollama", "openai", "anthropic", "nvidia", "google",
-        "groq", "together", "openrouter", "mlx", "remote", "custom",
-    }
-    if provider and provider not in _known_providers:
-        console.print(
-            f"[red]Unknown provider:[/] {provider}\n"
-            f"[dim]Valid providers: {', '.join(sorted(_known_providers))}[/]"
-        )
-        sys.exit(1)
+    from djcode.auth import PROVIDERS
+    from djcode.config import load_config
+    known = set(PROVIDERS) | {"remote"} | set(load_config().get("custom_providers", {}))
+    if provider and not provider.startswith(("https://", "http://")) and provider not in known:
+        raise click.BadParameter(f"Unknown provider: {provider}", param_hint="--provider")
 
     if show_config:
         from djcode.config import load_config
@@ -143,25 +133,36 @@ def main(
                 provider_override=provider,
                 model_override=model,
             )
-            prov = Provider(config)
-            orch = Orchestrator(prov)
-            shadow = orch._shadow
-
             async def _run_wave() -> None:
-                console.print(f"[bold #FFD700]Wave execution:[/] {wave}")
-                async for event in shadow.execute(wave):
-                    if event.event_type == EventType.AGENT_TOKEN:
-                        token = event.data.get("token", "")
-                        if token:
-                            console.print(token, end="")
-                    elif event.event_type == EventType.WAVE_START:
-                        w = event.data.get("wave", "?")
-                        console.print(f"\n[#FFD700]Wave {w} starting...[/]")
-                    elif event.event_type == EventType.WAVE_COMPLETE:
-                        w = event.data.get("wave", "?")
-                        console.print(f"\n[green]Wave {w} complete.[/]")
-                console.print("\n[green]Wave execution finished.[/]")
-
+                from djcode.orchestrator.engine import ExecutionStrategy
+                from djcode.tools.agent_spawn import cancel_background_agents
+                prov = Provider(config)
+                try:
+                    valid, message = prov.validate_model()
+                    if not valid:
+                        raise click.ClickException(message)
+                    orch = Orchestrator(prov, auto_accept=auto_accept)
+                    console.print(f"[bold #FFD700]Wave execution:[/] {wave}")
+                    completed = False
+                    async for event in orch._shadow.execute(wave, strategy_override=ExecutionStrategy.WAVE):
+                        if event.event_type == EventType.AGENT_TOKEN:
+                            token = event.data.get("token", "")
+                            if token:
+                                console.print(token, end="", markup=False)
+                        elif event.event_type in (EventType.AGENT_ERROR, EventType.ORCHESTRATOR_ERROR):
+                            raise click.ClickException(event.data.get("error", "Wave execution failed"))
+                        elif event.event_type == EventType.WAVE_START:
+                            console.print(f"\n[#FFD700]Wave {event.data.get('wave', '?')} starting...[/]")
+                        elif event.event_type == EventType.WAVE_COMPLETE:
+                            console.print(f"\n[green]Wave {event.data.get('wave', '?')} complete.[/]")
+                        elif event.event_type == EventType.ORCHESTRATOR_COMPLETE:
+                            completed = True
+                    if not completed:
+                        raise click.ClickException("Wave execution ended without completion")
+                    console.print("\n[green]Wave execution finished.[/]")
+                finally:
+                    await cancel_background_agents()
+                    await prov.close()
             asyncio.run(_run_wave())
         elif prompt:
             # One-shot mode
@@ -174,8 +175,13 @@ def main(
                     model=model,
                     bypass_rlhf=bypass_rlhf,
                     show_thinking=thinking,
+                    auto_accept=auto_accept,
                 )
             )
+        elif use_repl:
+            from djcode.repl import run_repl
+            asyncio.run(run_repl(provider=provider, model=model, bypass_rlhf=bypass_rlhf,
+                                 auto_accept=auto_accept, show_thinking=thinking))
         else:
             # Default: Textual TUI
             from djcode.app import run_tui
@@ -190,7 +196,7 @@ def main(
             )
     except KeyboardInterrupt:
         console.print("\n[dim]Goodbye.[/]")
-        sys.exit(0)
+        sys.exit(130)
 
 
 if __name__ == "__main__":

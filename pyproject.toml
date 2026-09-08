@@ -1,7 +1,7 @@
 [project]
 name = "djcode"
-version = "4.0.0"
-description = "DJcode — 19 PhD agents, 17 tools, 1M context, zero telemetry. The AI coding CLI that makes Claude Code sweat."
+version = "4.0.1"
+description = "DJcode — local-first coding agent with specialist profiles, tool approvals and recoverable sessions."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

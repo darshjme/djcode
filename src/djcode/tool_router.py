@@ -1187,7 +1187,7 @@ class ToolExtractionRouter:
                 result = await dispatch_tool("bash", {"command": intent.content})
                 return ToolResult(
                     intent=intent,
-                    success=True,  # bash always "succeeds" (returns output)
+                    success=not (result.startswith(("Error:", "[exit code", "Command timed out"))),
                     output=result,
                 )
 

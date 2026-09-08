@@ -33,33 +33,11 @@ async def execute_git(subcommand: str) -> str:
                 "Use bash tool directly if you really need this."
             )
 
-    cmd = f"git {subcommand}"
+    from djcode.tools.bash import run_process
     try:
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-
-        output_parts = []
-        if stdout:
-            output_parts.append(stdout.decode("utf-8", errors="replace"))
-        if stderr and proc.returncode != 0:
-            output_parts.append(stderr.decode("utf-8", errors="replace"))
-
-        result = "\n".join(output_parts).strip()
-
-        if proc.returncode != 0:
-            result = f"[git exit code {proc.returncode}]\n{result}"
-
-        # Cap output
-        if len(result) > 30_000:
-            result = result[:30_000] + "\n... (output truncated)"
-
-        return result or "(no output)"
-
-    except asyncio.TimeoutError:
-        return "Git command timed out after 30s"
-    except Exception as e:
-        return f"Error: {e}"
+        arguments = shlex.split(subcommand)
+        if not arguments or arguments[0].startswith("-"):
+            return "Error: a git subcommand is required (global options are not accepted)"
+        return await run_process("git", "--no-pager", *arguments, timeout=30, output_limit=30_000)
+    except Exception as exc:
+        return f"Error: {exc}"

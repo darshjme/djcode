@@ -10,7 +10,7 @@ import asyncio
 import concurrent.futures
 import json
 import sys
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 import questionary
 from rich.console import Console
@@ -52,92 +52,32 @@ class ThinkingStreamProcessor:
         self._response_text = ""     # Accumulated non-thinking response
 
     def process_token(self, token: str) -> str | None:
-        """Process a single streamed token.
-
-        Returns the text to yield as response (or None if it's thinking content).
-        Side effect: prints thinking output directly to stderr if show_thinking.
-        """
+        """Handle tags even when a complete thinking block arrives in one chunk."""
         self._buffer += token
-
-        # Check for think open tag
-        if not self._in_think:
-            if THINK_OPEN in self._buffer:
-                # Split: everything before the tag is response, after is thinking
-                before, _, after = self._buffer.partition(THINK_OPEN)
-                self._buffer = after
-                self._in_think = True
-
-                # Print thinking header
-                if self.show_thinking and not self.raw:
-                    if not self._think_started:
-                        sys.stderr.write(f"\n{THINK_LABEL}  \u23fa reasoning...{THINK_RESET}\n")
-                        self._think_started = True
-                    # Flush any buffered thinking content
-                    if self._buffer:
-                        sys.stderr.write(f"{THINK_PREFIX}  {self._buffer}{THINK_RESET}")
-                        sys.stderr.flush()
-                        self._buffer = ""
-
-                if before.strip():
-                    self._response_text += before
-                    return before
-                return None
-
-            # Check for partial tag at end of buffer (could be start of <think>)
-            for i in range(1, len(THINK_OPEN)):
-                if self._buffer.endswith(THINK_OPEN[:i]):
-                    # Hold back the potential partial tag
-                    safe = self._buffer[:-i]
-                    self._buffer = self._buffer[-i:]
-                    if safe:
-                        self._response_text += safe
-                        return safe
-                    return None
-
-            # No tag detected — flush buffer as response
-            result = self._buffer
-            self._buffer = ""
-            if result:
-                self._response_text += result
-                return result
-            return None
-
-        # Inside thinking block
-        if THINK_CLOSE in self._buffer:
-            # End of thinking
-            before, _, after = self._buffer.partition(THINK_CLOSE)
-            self._buffer = ""
-            self._in_think = False
-
-            # Print remaining thinking content
-            if self.show_thinking and not self.raw and before:
-                sys.stderr.write(f"{THINK_PREFIX}  {before}{THINK_RESET}\n")
-            if self.show_thinking and not self.raw:
-                sys.stderr.write(f"{THINK_LABEL}  \u23fa done{THINK_RESET}\n\n")
-                sys.stderr.flush()
-
-            # Anything after </think> is response
-            if after.strip():
-                self._response_text += after
-                return after
-            return None
-
-        # Check for partial </think> at end of buffer — hold it back
-        for i in range(1, len(THINK_CLOSE)):
-            if self._buffer.endswith(THINK_CLOSE[:i]):
-                safe = self._buffer[:-i]
-                self._buffer = self._buffer[-i:]
-                if self.show_thinking and not self.raw and safe:
-                    sys.stderr.write(f"{THINK_PREFIX}  {safe}{THINK_RESET}")
-                    sys.stderr.flush()
-                return None
-
-        # Still inside thinking — print and consume
-        if self.show_thinking and not self.raw and self._buffer:
-            sys.stderr.write(f"{THINK_PREFIX}  {self._buffer}{THINK_RESET}")
-            sys.stderr.flush()
-        self._buffer = ""
-        return None
+        output = []
+        while self._buffer:
+            marker = THINK_CLOSE if self._in_think else THINK_OPEN
+            index = self._buffer.find(marker)
+            if index >= 0:
+                text, self._buffer = self._buffer[:index], self._buffer[index + len(marker):]
+                if not self._in_think:
+                    output.append(text)
+                    self._think_started = True
+                elif self.show_thinking and not self.raw:
+                    sys.stderr.write(f"{THINK_PREFIX}{text}{THINK_RESET}")
+                self._in_think = not self._in_think
+                continue
+            hold = max((n for n in range(1, len(marker)) if self._buffer.endswith(marker[:n])), default=0)
+            safe = self._buffer[:-hold] if hold else self._buffer
+            self._buffer = self._buffer[-hold:] if hold else ""
+            if not self._in_think:
+                output.append(safe)
+            elif self.show_thinking and not self.raw:
+                sys.stderr.write(f"{THINK_PREFIX}{safe}{THINK_RESET}")
+            break
+        result = "".join(output)
+        self._response_text += result
+        return result or None
 
     def flush(self) -> str | None:
         """Flush any remaining buffer content."""
@@ -172,12 +112,18 @@ class Operator:
         model: str = "",
         auto_accept: bool = False,
         show_thinking: bool = True,
+        approval_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
     ) -> None:
         self.provider = provider
         self.bypass_rlhf = bypass_rlhf
         self.raw = raw
         self.auto_accept = auto_accept
         self.show_thinking = show_thinking
+        self.approval_callback = approval_callback
+        self.plan_mode = False
+        self.on_checkpoint = None
+        from djcode.context.manager import ContextWindowManager
+        self.context_manager = ContextWindowManager(model=provider.config.model, provider=provider)
         self.messages: list[Message] = [
             Message(role="system", content=build_system_prompt(
                 bypass_rlhf=bypass_rlhf, model=model or provider.config.model
@@ -197,36 +143,39 @@ class Operator:
         Thinking blocks (<think>...</think>) are detected and rendered
         as dimmed verbose output to stderr, not included in the response.
         """
+        from djcode.memory.manager import MemoryManager
+        memory = MemoryManager()
+        recalled = []
+        for key, score in memory.search(user_input, top_k=3):
+            entry = memory.recall(key)
+            if entry:
+                recalled.append(f"{key}: {entry}")
+        if recalled:
+            user_input += "\n\nSaved context (lexical matches; verify relevance):\n" + "\n".join(recalled)[:4000]
         self.messages.append(Message(role="user", content=user_input))
+        extracted_seen = set()
+        self.last_had_tool_calls = False
 
         for _round in range(self.max_tool_rounds):
+            self.context_manager.replace_messages(self.messages)
+            if self.context_manager.needs_compression():
+                await self.context_manager.auto_compress()
+                self.messages = self.context_manager.get_messages()
             full_response = ""
             tool_calls: list[dict[str, Any]] = []
             thinker = ThinkingStreamProcessor(
                 show_thinking=self.show_thinking, raw=self.raw
             )
 
-            # Stream the response
-            if self.provider.is_ollama:
-                async for chunk in self._stream_ollama():
-                    text, calls = chunk
-                    if text:
-                        response_part = thinker.process_token(text)
-                        if response_part:
-                            full_response += response_part
-                            yield response_part
-                    if calls:
-                        tool_calls.extend(calls)
-            else:
-                async for chunk in self._stream_openai():
-                    text, calls = chunk
-                    if text:
-                        response_part = thinker.process_token(text)
-                        if response_part:
-                            full_response += response_part
-                            yield response_part
-                    if calls:
-                        tool_calls.extend(calls)
+            from djcode.streaming import stream_turn
+            async for text, calls in stream_turn(self.provider, self.messages):
+                if text:
+                    response_part = thinker.process_token(text)
+                    if response_part:
+                        full_response += response_part
+                        yield response_part
+                if calls:
+                    tool_calls.extend(calls)
 
             # Flush remaining buffer
             remainder = thinker.flush()
@@ -254,42 +203,26 @@ class Operator:
                         try:
                             args = json.loads(args_raw)
                         except json.JSONDecodeError:
-                            args = {"command": args_raw} if name == "bash" else {}
+                            args = None
                     else:
                         args = args_raw
+
+                    if not isinstance(args, dict):
+                        self.messages.append(Message(role="tool", content="Error: tool arguments must be a JSON object", tool_call_id=tc["id"], name=name))
+                        continue
 
                     # Display tool call
                     if not self.raw:
                         self._display_tool_call(name, args)
 
-                    # Tool confirmation gate — require user approval unless auto_accept
-                    if not self.auto_accept:
-                        console.print(Panel(
-                            f"[bold]Tool:[/] {name}\n[bold]Args:[/] {json.dumps(args, indent=2)[:500]}",
-                            title="[yellow]Tool Call[/]",
-                            border_style="yellow",
-                        ))
-                        # Run questionary in thread to avoid asyncio.run() conflict
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            confirm = await asyncio.get_event_loop().run_in_executor(
-                                pool,
-                                lambda: questionary.confirm(
-                                    "Execute this tool?", default=True
-                                ).ask(),
-                            )
-                        if not confirm:
-                            self.messages.append(
-                                Message(
-                                    role="tool",
-                                    content="Error: User denied tool execution",
-                                    tool_call_id=tc.get("id", f"call_{name}"),
-                                    name=name,
-                                )
-                            )
-                            continue
+                    if not await self._approve_tool(name, args):
+                        self.messages.append(Message(role="tool", content="Error: User denied tool execution", tool_call_id=tc["id"], name=name))
+                        continue
 
                     # Execute tool
-                    result = await dispatch_tool(name, args)
+                    from djcode.tools.agent_spawn import agent_context
+                    with agent_context(self.provider, self.auto_accept, self.approval_callback):
+                        result = await dispatch_tool(name, args)
 
                     # Display result
                     if not self.raw:
@@ -306,16 +239,59 @@ class Operator:
                         )
                     )
 
+                if self.on_checkpoint:
+                    self.on_checkpoint(self.messages)
+
                 # Continue the loop to get next LLM response
                 continue
 
+            # Text-only models still receive execution results, rather than a UI-only side effect.
+            if full_response and not self.plan_mode:
+                from djcode.tool_router import ToolExtractionRouter
+                router = ToolExtractionRouter()
+                intents = router.extract_intents(full_response)
+                pending = []
+                for intent in intents:
+                    signature = (intent.action, intent.path, intent.content, intent.old_string, intent.new_string)
+                    if signature not in extracted_seen:
+                        pending.append(intent)
+                        extracted_seen.add(signature)
+                if pending:
+                    self.messages.append(Message(role="assistant", content=full_response))
+                    results = []
+                    for intent in pending:
+                        args = {"path": intent.path, "content": intent.content}
+                        if await self._approve_tool(intent.action, args):
+                            results.append(await router._execute_intent(intent))
+                    if results:
+                        self.last_had_tool_calls = True
+                        self.messages.append(Message(role="user", content=router.format_results_for_context(results)))
+                        if self.on_checkpoint:
+                            self.on_checkpoint(self.messages)
+                        continue
+
             # No tool calls — final response
             # Only mark as no-tool-calls if we never saw any in this entire send()
-            if not tool_calls and _round == 0:
-                self.last_had_tool_calls = False
             if full_response:
                 self.messages.append(Message(role="assistant", content=full_response))
+            self.context_manager.replace_messages(self.messages)
+            if self.on_checkpoint:
+                self.on_checkpoint(self.messages)
             break
+        else:
+            raise RuntimeError(f"Tool round limit ({self.max_tool_rounds}) reached; task is incomplete.")
+
+    async def _approve_tool(self, name: str, args: dict[str, Any]) -> bool:
+        if self.plan_mode:
+            return False
+        if self.auto_accept:
+            return True
+        if self.approval_callback:
+            return await self.approval_callback(name, args)
+        if not sys.stdin.isatty():
+            raise PermissionError("Tool execution needs approval; use --auto-accept for an authorized unattended task.")
+        console.print(Panel(f"Tool: {name}\n{json.dumps(args, indent=2)[:1000]}", title="Approve tool"))
+        return bool(await asyncio.to_thread(lambda: questionary.confirm("Execute this tool?", default=False).ask()))
 
     async def _stream_ollama(self) -> AsyncIterator[tuple[str, list[dict]]]:
         """Stream from Ollama, yielding (text_chunk, tool_calls)."""

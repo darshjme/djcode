@@ -16,6 +16,8 @@ The new providers/ package adds:
 from __future__ import annotations
 
 import json
+import asyncio
+from contextlib import aclosing
 import os
 from dataclasses import dataclass, field
 from difflib import get_close_matches
@@ -861,6 +863,7 @@ class Provider:
         from djcode.providers.base import FinishReason
         msg_dicts = _messages_to_dicts(messages)
 
+        next_tool_index = 0
         async for chunk in provider.chat(
             msg_dicts,
             stream=stream,
@@ -876,8 +879,10 @@ class Provider:
 
             if chunk.tool_calls:
                 for tc in chunk.tool_calls:
+                    index = next_tool_index
+                    next_tool_index += 1
                     yield {"choices": [{"delta": {"tool_calls": [{
-                        "index": 0,
+                        "index": index,
                         "id": tc.id,
                         "function": {"name": tc.name, "arguments": tc.arguments},
                     }]}}]}
@@ -926,6 +931,7 @@ class Provider:
         from djcode.providers.base import FinishReason
         msg_dicts = _messages_to_dicts(messages)
 
+        next_tool_index = 0
         async for chunk in provider.chat(
             msg_dicts,
             stream=stream,
@@ -941,8 +947,10 @@ class Provider:
 
             if chunk.tool_calls:
                 for tc in chunk.tool_calls:
+                    index = next_tool_index
+                    next_tool_index += 1
                     yield {"choices": [{"delta": {"tool_calls": [{
-                        "index": 0,
+                        "index": index,
                         "id": tc.id,
                         "function": {"name": tc.name, "arguments": tc.arguments},
                     }]}}]}
@@ -989,6 +997,7 @@ class Provider:
         from djcode.providers.base import FinishReason
         msg_dicts = _messages_to_dicts(messages)
 
+        next_tool_index = 0
         async for chunk in provider.chat(
             msg_dicts,
             stream=stream,
@@ -1004,8 +1013,10 @@ class Provider:
 
             if chunk.tool_calls:
                 for tc in chunk.tool_calls:
+                    index = next_tool_index
+                    next_tool_index += 1
                     yield {"choices": [{"delta": {"tool_calls": [{
-                        "index": 0,
+                        "index": index,
                         "id": tc.id,
                         "function": {"name": tc.name, "arguments": tc.arguments},
                     }]}}]}
@@ -1038,23 +1049,32 @@ class Provider:
         Uses new native providers for anthropic, openai, and google.
         Keeps original implementations for ollama and openai-compat.
         """
-        if self.config.name == "ollama":
-            async for chunk in self.chat_ollama(messages, stream=stream):
-                yield chunk
-        elif self.config.name == "anthropic":
-            async for chunk in self.chat_anthropic(messages, stream=stream):
-                yield chunk
-        elif self.config.name == "openai":
-            async for chunk in self.chat_openai_native(messages, stream=stream):
-                yield chunk
-        elif self.config.name == "google":
-            async for chunk in self.chat_google(messages, stream=stream):
-                yield chunk
-        else:
-            # All other providers (nvidia, groq, together, openrouter,
-            # mlx, remote, custom) use OpenAI-compatible API
-            async for chunk in self.chat_openai_compat(messages, stream=stream):
-                yield chunk
+        backend = {
+            "ollama": self.chat_ollama,
+            "anthropic": self.chat_anthropic,
+            "openai": self.chat_openai_native,
+            "google": self.chat_google,
+        }.get(self.config.name, self.chat_openai_compat)
+        for attempt in range(3):
+            emitted = False
+            try:
+                async with aclosing(backend(messages, stream=stream)) as response:
+                    async for chunk in response:
+                        if chunk.get("error"):
+                            error = chunk["error"]
+                            code = error.get("code") if isinstance(error, dict) else None
+                            if code in (429, 500, 502, 503, 504) and not emitted and attempt < 2:
+                                raise ConnectionError(f"Transient provider error {code}")
+                            raise ConnectionError(str(error))
+                        emitted = True
+                        yield chunk
+                return
+            except (ConnectionError, httpx.HTTPStatusError) as exc:
+                status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+                transient = status in (429, 500, 502, 503, 504) or any(str(c) in str(exc) for c in (429, 500, 502, 503, 504))
+                if emitted or not transient or attempt == 2:
+                    raise
+                await asyncio.sleep(2 ** attempt)
 
     # -- Embedding --
 
@@ -1089,8 +1109,17 @@ class Provider:
     @staticmethod
     def _msg_to_ollama(msg: Message) -> dict[str, Any]:
         d: dict[str, Any] = {"role": msg.role, "content": msg.content}
+        if msg.name:
+            d["tool_name"] = msg.name
         if msg.tool_calls:
-            d["tool_calls"] = msg.tool_calls
+            calls = []
+            for tc in msg.tool_calls:
+                fn = tc["function"]
+                args = fn.get("arguments", {})
+                if isinstance(args, str):
+                    args = json.loads(args)
+                calls.append({"function": {"name": fn["name"], "arguments": args}})
+            d["tool_calls"] = calls
         return d
 
     @staticmethod

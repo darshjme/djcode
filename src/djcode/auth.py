@@ -82,6 +82,13 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "base_url": "http://localhost:8899",
         "description": "Apple Silicon native inference",
     },
+    "featherless": {
+        "name": "Featherless AI",
+        "needs_key": True,
+        "env": "FEATHERLESS_API_KEY",
+        "base_url": "https://api.featherless.ai/v1",
+        "description": "Hosted open models via OpenAI-compatible API",
+    },
     "custom": {
         "name": "Custom (OpenAI-compatible)",
         "needs_key": True,

@@ -1,0 +1,12 @@
+name: CLI checks
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --python 3.12
+      - run: uv run --with pytest pytest -q
+      - run: uv build
+      - run: bash -n install.sh

@@ -28,6 +28,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.screen import ModalScreen
 from textual.widgets import (
+    Button,
     Footer,
     Header,
     Input,
@@ -68,7 +69,7 @@ COMMAND_REGISTRY: list[tuple[str, str]] = [
     ("/auto", "Toggle auto-accept tool calls"),
     ("/thinking", "Toggle thinking display"),
     ("/plan", "Toggle plan/act mode"),
-    ("/agents", "Show all 22 agents roster"),
+    ("/agents", "Show engineering and content profiles"),
     ("/scout", "Read-only codebase exploration"),
     ("/architect", "Generate implementation plan"),
     ("/orchestra", "Multi-agent orchestration"),
@@ -156,6 +157,37 @@ HELP_TEXT = """\
 
 [dim]Press Escape to close[/]
 """
+
+
+class ToolApprovalScreen(ModalScreen[bool]):
+    """Native, per-call permission prompt; Escape always denies."""
+    BINDINGS = [Binding("escape", "deny", "Deny")]
+    DEFAULT_CSS = """
+    ToolApprovalScreen { align: center middle; background: rgba(0, 0, 0, 0.85); }
+    #approval-box { width: 76; height: auto; max-height: 85%; border: round #FFD700; background: #111111; padding: 1 2; }
+    #approval-actions { height: 3; margin-top: 1; }
+    #approval-actions Button { margin-right: 2; }
+    """
+    def __init__(self, name: str, arguments: dict) -> None:
+        super().__init__()
+        self.tool_name = name
+        self.arguments = arguments
+
+    def compose(self) -> ComposeResult:
+        import json
+        with Vertical(id="approval-box"):
+            yield Static(f"Approve tool: {self.tool_name}", markup=False)
+            yield Static(json.dumps(self.arguments, indent=2, ensure_ascii=False)[:4000], markup=False)
+            with Horizontal(id="approval-actions"):
+                yield Button("Deny", id="deny-tool")
+                yield Button("Allow once", id="allow-tool", variant="warning")
+
+    @on(Button.Pressed)
+    def choose(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "allow-tool")
+
+    def action_deny(self) -> None:
+        self.dismiss(False)
 
 
 class HelpScreen(ModalScreen[None]):
@@ -934,6 +966,8 @@ class DJcodeApp(App):
         self._active_agent = "Operator"
         self._is_generating = False
         self._cancel_requested = False
+        self._generation_task: asyncio.Task | None = None
+        self._approval_lock = asyncio.Lock()
         self._last_input = ""
         self._provider: Any = None
         self._operator: Any = None
@@ -1058,6 +1092,7 @@ class DJcodeApp(App):
                 model=self._provider.config.model,
                 auto_accept=self._auto_accept,
                 show_thinking=False,
+                approval_callback=self._approve_tool,
             )
             self._operator.auto_accept = self._auto_accept
 
@@ -1071,17 +1106,14 @@ class DJcodeApp(App):
             # Initialize orchestrator (v2 ShadowOrchestrator via compat wrapper)
             try:
                 from djcode.orchestrator import Orchestrator
-                self._orchestrator = Orchestrator(self._provider)
+                self._orchestrator = Orchestrator(self._provider, auto_accept=self._auto_accept, approval_callback=self._approve_tool)
             except Exception:
                 self._orchestrator = None
 
             # Initialize context window manager
             try:
                 from djcode.context import ContextWindowManager
-                self._context_mgr = ContextWindowManager(
-                    model=self._provider.config.model,
-                    provider=self._provider,
-                )
+                self._context_mgr = self._operator.context_manager
             except Exception:
                 self._context_mgr = None
 
@@ -1117,7 +1149,7 @@ class DJcodeApp(App):
                 hdr.model_name = model
                 hdr.mode = "PLAN" if self._plan_mode else "ACT"
                 if self._context_mgr:
-                    stats = self._context_mgr.get_stats()
+                    stats = self._context_mgr.stats
                     hdr.update_context(stats.current_tokens, stats.max_context_tokens)
             except Exception:
                 pass
@@ -1304,12 +1336,32 @@ class DJcodeApp(App):
 
         # Slash commands
         if text.startswith("/"):
-            await self._handle_slash_command(text)
+            self.run_worker(self._run_slash_command(text), group="slash-command", exclusive=False)
             return
 
         # Normal chat message
         self._last_input = text
         self.run_worker(self._send_message(text), exclusive=True)
+
+    async def _run_slash_command(self, text: str) -> None:
+        """Keep the event pump free while a specialist awaits a permission modal."""
+        long_commands = {"/spawn", "/waves", "/orchestra", "/scout", "/architect", "/review", "/debug", "/test", "/refactor", "/devops", "/launch", "/campaign", "/image", "/video", "/social", "/docs", "/recipe", "/search"}
+        tracks_task = text.split()[0].lower() in long_commands
+        if tracks_task:
+            if self._is_generating:
+                self.notify("Already generating. Cancel or wait for completion.", severity="warning")
+                return
+            self._is_generating = True
+            self._generation_task = asyncio.current_task()
+        try:
+            await self._handle_slash_command(text)
+        except asyncio.CancelledError:
+            self.query_one("#chat-log", RichLog).write(f"[{WARNING}]Command cancelled.[/]")
+            raise
+        finally:
+            if tracks_task:
+                self._is_generating = False
+                self._generation_task = None
 
     async def _handle_slash_command(self, text: str) -> None:
         """Route slash commands — ported from classic REPL."""
@@ -1407,7 +1459,11 @@ class DJcodeApp(App):
             self._handle_resume(arg)
 
         elif cmd == "/docs":
-            self._handle_docs(arg)
+            from djcode.docs import DOCS_SECTIONS
+            if arg and arg not in DOCS_SECTIONS and arg != "all":
+                await self._handle_agent_command(cmd, arg)
+            else:
+                self._handle_docs(arg)
 
         elif cmd == "/todo":
             self._handle_todo(arg)
@@ -1442,19 +1498,10 @@ class DJcodeApp(App):
             await self._handle_agent_command(cmd, arg)
 
         elif cmd == "/auth":
-            chat.write(
-                f"[{WARNING}]Auth requires interactive input.[/]\n"
-                "[dim]Set API keys via config: /set remote_api_key=sk-...[/]\n"
-                "[dim]Or env vars: OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.[/]"
-            )
+            self._show_provider_picker()
 
         else:
-            # Unrecognized — try as agent task
-            if self._operator:
-                self._last_input = text
-                self.run_worker(self._send_message(text), exclusive=True)
-            else:
-                chat.write(f"[{WARNING}]Unknown command: {cmd}[/]")
+            chat.write(f"[{WARNING}]Unknown command: {cmd}. Use /help or the command palette.[/]")
 
     # ── New v4.0 command handlers ────────────────────────────────────────
 
@@ -1509,12 +1556,14 @@ class DJcodeApp(App):
         chat.write(f"[dim]Spawning {role}...[/]")
         try:
             from djcode.tools import dispatch_tool
-            result = await dispatch_tool("spawn_agent", {"role": role, "task": task})
+            from djcode.tools.agent_spawn import agent_context
+            with agent_context(self._provider, self._auto_accept, self._approve_tool):
+                result = await dispatch_tool("spawn_agent", {"role": role, "task": task})
             chat.write(result)
             # Update agent status bar
             try:
                 bar = self.query_one("#agent-status-bar", AgentStatusBar)
-                bar.set_agent_state(role.capitalize(), "executing")
+                bar.set_agent_state(role.capitalize(), "error" if result.startswith("Error") else "done")
             except Exception:
                 pass
         except Exception as e:
@@ -1548,7 +1597,7 @@ class DJcodeApp(App):
             chat.write(f"[{WARNING}]Context manager not initialized.[/]")
             return
         try:
-            stats = self._context_mgr.get_stats()
+            stats = self._context_mgr.stats
             chat.write(
                 f"\n[bold {GOLD}]Context Window[/]\n"
                 f"  [dim]Model:[/]        [{GOLD}]{stats.model}[/]\n"
@@ -1585,7 +1634,13 @@ class DJcodeApp(App):
             shadow = self._orchestrator._shadow if hasattr(self._orchestrator, '_shadow') else None
             if shadow:
                 from djcode.orchestrator.events import EventType
-                async for event in shadow.execute(arg):
+                from djcode.orchestrator.engine import ExecutionStrategy
+                completed = False
+                async for event in shadow.execute(arg, strategy_override=ExecutionStrategy.WAVE):
+                    if event.event_type in (EventType.AGENT_ERROR, EventType.ORCHESTRATOR_ERROR):
+                        raise RuntimeError(event.data.get("error", "Wave execution failed"))
+                    if event.event_type == EventType.ORCHESTRATOR_COMPLETE:
+                        completed = True
                     if event.event_type == EventType.AGENT_TOKEN:
                         token = event.data.get("token", "")
                         if token:
@@ -1610,6 +1665,8 @@ class DJcodeApp(App):
                             bar.set_agent_state(name, "done")
                         except Exception:
                             pass
+                if not completed:
+                    raise RuntimeError("Wave execution ended without completion")
                 chat.write(f"\n[{SUCCESS}]Wave execution complete.[/]")
                 # Reset agent bar
                 try:
@@ -1642,6 +1699,7 @@ class DJcodeApp(App):
             "/test": ("Agni", "test", "Test generation"),
             "/refactor": ("Shiva", "refactor", "Restructuring"),
             "/devops": ("Vayu", "devops", "DevOps/CI/CD"),
+            "/docs": ("Saraswati", "docs", "Documentation"),
         }
 
         if cmd == "/orchestra" and self._orchestrator:
@@ -1661,41 +1719,18 @@ class DJcodeApp(App):
             side.agent_panel.set_agent("Operator", "General")
             return
 
-        if cmd in ("/scout", "/architect"):
-            agent_name, module_name, desc = agent_map[cmd]
-            task = arg or f"explore this codebase" if cmd == "/scout" else arg
-            if not task:
-                chat.write(f"[{WARNING}]Usage: {cmd} <task>[/]")
-                return
-            chat.write(f"\n[bold {GOLD}]\u276f[/] [{GOLD}]{cmd} {task}[/]")
-            side.agent_panel.set_agent(agent_name, desc)
-            chat.write(f"[dim]{agent_name} working...[/]")
-            try:
-                if cmd == "/scout":
-                    from djcode.agents.scout import Scout
-                    agent = Scout(self._provider)
-                    result = await agent.investigate(task)
-                else:
-                    from djcode.agents.architect import Architect
-                    agent = Architect(self._provider)
-                    result = await agent.plan(task)
-                chat.write(result)
-                side.agent_panel.add_tool_call(module_name, "ok")
-            except Exception as e:
-                chat.write(f"[{ERROR}]{agent_name} error: {e}[/]")
-                side.agent_panel.add_tool_call(module_name, "error")
-            side.agent_panel.set_agent("Operator", "General")
-            return
-
         if cmd in agent_map and self._orchestrator:
             agent_name, _, desc = agent_map[cmd]
             from djcode.agents.registry import AgentRole
             role_map = {
+                "/scout": AgentRole.SCOUT,
+                "/architect": AgentRole.ARCHITECT,
                 "/review": AgentRole.REVIEWER,
                 "/debug": AgentRole.DEBUGGER,
                 "/test": AgentRole.TESTER,
                 "/refactor": AgentRole.REFACTORER,
                 "/devops": AgentRole.DEVOPS,
+                "/docs": AgentRole.DOCS,
             }
             role = role_map.get(cmd)
             task = arg or f"work on this codebase"
@@ -1721,6 +1756,9 @@ class DJcodeApp(App):
             "/social": "Social content",
         }
         if cmd in content_map:
+            if cmd == "/launch" and not self._orchestrator:
+                chat.write(f"[{ERROR}]Launch requires an initialized orchestrator.[/]" )
+                return
             if not arg and cmd == "/launch":
                 chat.write(f"[{WARNING}]Usage: /launch <product description>[/]")
                 return
@@ -1748,7 +1786,7 @@ class DJcodeApp(App):
                     spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
                     runner = AgentRunner(
                         self._provider, spec,
-                        self._orchestrator.bus, auto_accept=True,
+                        self._orchestrator.bus, auto_accept=self._auto_accept, approval_callback=self._approve_tool,
                     )
                     async for token in runner.run_streaming(
                         f"Create a full launch campaign for: {arg}"
@@ -1760,7 +1798,7 @@ class DJcodeApp(App):
                     spec = get_content_spec(role)
                     bus = self._orchestrator.bus if self._orchestrator else None
                     runner = AgentRunner(
-                        self._provider, spec, bus, auto_accept=True,
+                        self._provider, spec, bus, auto_accept=self._auto_accept, approval_callback=self._approve_tool,
                     )
                     async for token in runner.run_streaming(arg or f"create content"):
                         chat.write(token, shrink=False, scroll_end=True)
@@ -1771,13 +1809,7 @@ class DJcodeApp(App):
                 side.agent_panel.add_tool_call(cmd.lstrip("/"), "error")
             return
 
-        # Fallback: send as message to operator
-        self._last_input = text if not arg else f"{cmd} {arg}"
-        self.run_worker(
-            self._send_message(self._last_input), exclusive=True,
-        )
-
-    # ── Interactive Pickers ─────────────────────────────────────────────
+        chat.write(f"[{ERROR}]Specialist execution unavailable. Check provider initialization.[/]")
 
     def _show_model_picker(self) -> None:
         """Open interactive model picker overlay."""
@@ -1847,6 +1879,7 @@ class DJcodeApp(App):
                 model=new_model,
                 auto_accept=self._auto_accept,
                 show_thinking=False,
+                approval_callback=self._approve_tool,
             )
             self._operator.auto_accept = self._auto_accept
             side.stats_panel.update_stats(model=new_model)
@@ -1878,23 +1911,21 @@ class DJcodeApp(App):
                 model=self._provider.config.model,
                 auto_accept=self._auto_accept,
                 show_thinking=False,
+                approval_callback=self._approve_tool,
             )
             self._operator.auto_accept = self._auto_accept
 
             # Re-initialize orchestrator with new provider
             try:
                 from djcode.orchestrator import Orchestrator
-                self._orchestrator = Orchestrator(self._provider)
+                self._orchestrator = Orchestrator(self._provider, auto_accept=self._auto_accept, approval_callback=self._approve_tool)
             except Exception:
                 pass
 
             # Re-initialize context manager with new model
             try:
                 from djcode.context import ContextWindowManager
-                self._context_mgr = ContextWindowManager(
-                    model=self._provider.config.model,
-                    provider=self._provider,
-                )
+                self._context_mgr = self._operator.context_manager
             except Exception:
                 pass
 
@@ -1968,7 +1999,8 @@ class DJcodeApp(App):
             parsed = value
         from djcode.config import set_value
         set_value(key, parsed)
-        chat.write(f"[{SUCCESS}]Set {key}={parsed}[/]")
+        display = "***" if any(word in key.lower() for word in ("key", "token", "secret", "password")) else str(parsed)
+        chat.write(f"[{SUCCESS}]Set {key}={display}[/]")
 
     def _show_session_stats(self) -> None:
         """Display session stats."""
@@ -2078,7 +2110,11 @@ class DJcodeApp(App):
             from djcode.docs import render_docs, render_docs_index
             # Capture docs output as text (docs module uses Rich console)
             if arg.strip():
-                chat.write(f"[dim]Docs: {arg.strip()}[/]")
+                from djcode.docs import DOCS_SECTIONS
+                from rich.markdown import Markdown
+                sections = DOCS_SECTIONS.values() if arg.strip() == "all" else [DOCS_SECTIONS.get(arg.strip(), "Unknown documentation topic")]
+                for section in sections:
+                    chat.write(Markdown(section))
             else:
                 chat.write(
                     f"\n[bold {GOLD}]DJcode Documentation[/]\n"
@@ -2301,8 +2337,8 @@ class DJcodeApp(App):
                 for s in sessions:
                     chat.write(
                         f"  [{GOLD}]{s.id[:8]}[/] "
-                        f"[dim]{s.model} | {s.created_at[:16]}[/] "
-                        f"[dim]{s.messages} msgs[/]"
+                        f"[dim]{s.model} | {s.start[:16]}[/] "
+                        f"[dim]{s.messages_count} msgs[/]"
                     )
                 chat.write(f"\n[dim]Resume with: /resume <session_id>[/]\n")
 
@@ -2312,7 +2348,7 @@ class DJcodeApp(App):
                 chat.write(f"\n[bold {GOLD}]Sessions matching '{sub[1]}':[/]")
                 for s in results:
                     chat.write(
-                        f"  [{GOLD}]{s.id[:8]}[/] [dim]{s.model} | {s.created_at[:16]}[/]"
+                        f"  [{GOLD}]{s.id[:8]}[/] [dim]{s.model} | {s.start[:16]}[/]"
                     )
                 chat.write("")
             else:
@@ -2358,7 +2394,7 @@ class DJcodeApp(App):
                 content = m.get("content", "")
                 tc = m.get("tool_calls")
                 self._operator.messages.append(
-                    _Msg(role=role, content=content, tool_calls=tc if tc else None)
+                    _Msg(role=role, content=content, tool_calls=tc or [], tool_call_id=m.get("tool_call_id"), name=m.get("name"))
                 )
                 restored += 1
 
@@ -2368,6 +2404,23 @@ class DJcodeApp(App):
             )
 
     # ── Message sending and streaming ────────────────────────────────────
+
+    async def _approve_tool(self, name: str, arguments: dict) -> bool:
+        async with self._approval_lock:
+            return await self._show_tool_approval(name, arguments)
+
+    async def _show_tool_approval(self, name: str, arguments: dict) -> bool:
+        decision = asyncio.get_running_loop().create_future()
+        screen = ToolApprovalScreen(name, arguments)
+        def finish(value: bool | None) -> None:
+            if not decision.done():
+                decision.set_result(bool(value))
+        self.push_screen(screen, finish)
+        try:
+            return await decision
+        finally:
+            if self.screen is screen:
+                self.pop_screen()
 
     async def _send_message(self, text: str) -> None:
         """Send a message to the operator and stream the response."""
@@ -2383,6 +2436,7 @@ class DJcodeApp(App):
             return
 
         self._is_generating = True
+        self._generation_task = asyncio.current_task()
         self._cancel_requested = False
 
         # Show user message
@@ -2423,6 +2477,9 @@ class DJcodeApp(App):
             # Show thinking indicator
             chat.write(f"[{THINKING}]\u23fa Thinking...[/]")
 
+            self._operator.plan_mode = self._plan_mode
+            if self._session_db and self._sqlite_session_id:
+                self._operator.on_checkpoint = lambda messages: self._session_db.save_conversation(self._sqlite_session_id, messages)
             async for token in self._operator.send(actual_input):
                 # Check for cancel
                 if self._cancel_requested:
@@ -2513,47 +2570,12 @@ class DJcodeApp(App):
             # Session DB tracking
             if self._session_db and self._sqlite_session_id:
                 try:
-                    self._session_db.save_message(
-                        self._sqlite_session_id, "user", text,
-                    )
-                    self._session_db.save_message(
-                        self._sqlite_session_id, "assistant", response_buf,
-                    )
+                    self._session_db.save_conversation(self._sqlite_session_id, self._operator.messages)
                     self._session_db.update_session(
                         self._sqlite_session_id,
                         tokens_out=token_est,
                         messages=1,
                     )
-                except Exception:
-                    pass
-
-            # Tool extraction router — for models without native tool calling
-            if response_buf and not self._operator.last_had_tool_calls:
-                try:
-                    from djcode.tool_router import ToolExtractionRouter
-
-                    router = ToolExtractionRouter()
-                    extracted = router.extract_intents(response_buf)
-                    if extracted:
-                        from djcode.config import load_config
-                        cfg = load_config()
-                        effective_auto = (
-                            self._auto_accept
-                            or cfg.get("auto_accept", False)
-                        )
-                        results = await router.extract_and_execute(
-                            response_buf, auto_accept=effective_auto,
-                        )
-                        if results:
-                            ctx = router.format_results_for_context(results)
-                            if ctx:
-                                from djcode.provider import Message as _Msg
-                                self._operator.messages.append(
-                                    _Msg(role="user", content=ctx)
-                                )
-                                side.agent_panel.add_tool_call(
-                                    "tool_router", "ok",
-                                )
                 except Exception:
                     pass
 
@@ -2579,6 +2601,9 @@ class DJcodeApp(App):
                     vectors=stats.get("facts_with_embeddings", 0),
                 )
 
+        except asyncio.CancelledError:
+            chat.write(f"\n[{WARNING}]Generation cancelled.[/]")
+            raise
         except ConnectionError as e:
             chat.write(f"\n[{ERROR}]Connection error: {e}[/]")
             side.agent_panel.add_tool_call("connection", "error")
@@ -2598,6 +2623,7 @@ class DJcodeApp(App):
                 pass
         finally:
             self._is_generating = False
+            self._generation_task = None
 
     # ── Key bindings / actions ───────────────────────────────────────────
 
@@ -2657,6 +2683,9 @@ class DJcodeApp(App):
         self._auto_accept = not self._auto_accept
         if self._operator:
             self._operator.auto_accept = self._auto_accept
+        if self._orchestrator:
+            self._orchestrator.auto_accept = self._auto_accept
+            self._orchestrator._shadow.auto_accept = self._auto_accept
         label = "ON" if self._auto_accept else "OFF"
         chat = self.query_one("#chat-log", RichLog)
         chat.write(f"[dim]Auto-accept: {label}[/]")
@@ -2677,6 +2706,8 @@ class DJcodeApp(App):
         """Cancel current generation."""
         if self._is_generating:
             self._cancel_requested = True
+            if self._generation_task and not self._generation_task.done():
+                self._generation_task.cancel()
             self.notify("Cancelling...", severity="warning")
 
     def action_show_help(self) -> None:
@@ -2712,6 +2743,8 @@ class DJcodeApp(App):
 
     async def on_unmount(self) -> None:
         """Clean up on exit."""
+        from djcode.tools.agent_spawn import cancel_background_agents
+        await cancel_background_agents()
         # Record session end
         try:
             from djcode.stats import record_session_end

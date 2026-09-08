@@ -988,7 +988,8 @@ async def handle_slash_command(
                         operator.messages.append(_Msg(
                             role=role,
                             content=content,
-                            tool_calls=tc if tc else None,
+                            tool_calls=tc or [],
+                            tool_call_id=m.get("tool_call_id"), name=m.get("name"),
                         ))
                         restored += 1
 
@@ -1266,34 +1267,6 @@ async def run_repl(
                 session_db.save_message(sqlite_session_id, "assistant", full_response)
 
                 # Tool extraction router — for models without native tool calling
-                # If the model produced text but didn't use any native tool_calls,
-                # scan the output for tool intents and execute them.
-                if not operator.last_had_tool_calls:
-                    try:
-                        from djcode.tool_router import ToolExtractionRouter
-
-                        router = ToolExtractionRouter()
-                        extracted_intents = router.extract_intents(full_response)
-                        if extracted_intents:
-                            current_cfg_for_auto = load_config()
-                            effective_auto = operator.auto_accept or current_cfg_for_auto.get("auto_accept", False)
-                            tool_results = await router.extract_and_execute(
-                                full_response, auto_accept=effective_auto
-                            )
-                            # Feed results back as context for the next turn
-                            if tool_results:
-                                result_context = router.format_results_for_context(tool_results)
-                                if result_context:
-                                    from djcode.provider import Message as _Msg
-                                    operator.messages.append(
-                                        _Msg(
-                                            role="user",
-                                            content=result_context,
-                                        )
-                                    )
-                    except Exception as tr_err:
-                        logger.debug("Tool router error: %s", tr_err)
-
                 # Censorship detection — warn if aligned model refuses
                 from djcode.prompt import CENSORED_WARNING, detect_refusal
 
@@ -1362,37 +1335,38 @@ async def run_oneshot(
     bypass_rlhf: bool = False,
     raw: bool = False,
     show_thinking: bool = True,
+    auto_accept: bool = False,
 ) -> None:
-    """Run a single prompt and exit."""
-    provider_config = ProviderConfig.from_config(
-        provider_override=provider,
-        model_override=model,
-    )
-    llm = Provider(provider_config)
-
-    # Validate model
-    ok, msg = llm.validate_model()
-    if not ok:
-        console.print(f"[red]{msg}[/]")
-        return
-    elif msg:
-        console.print(f"[dim]{msg}[/]")
-
-    operator = Operator(
-        llm, bypass_rlhf=bypass_rlhf, raw=raw, model=llm.config.model,
-        show_thinking=show_thinking,
-    )
-
+    """Run one task; preserve failures in the process exit status and always close HTTP."""
+    import click
+    config = ProviderConfig.from_config(provider_override=provider, model_override=model)
+    llm = Provider(config)
+    from djcode.sessions import SessionDB
+    session_db = SessionDB()
+    session_id = session_db.create_session(model=config.model, provider=config.name, cwd=os.getcwd())
+    operator = None
     try:
+        ok, msg = llm.validate_model()
+        if not ok:
+            raise click.ClickException(msg)
+        if msg:
+            console.print(msg, markup=False)
+        operator = Operator(llm, bypass_rlhf=bypass_rlhf, raw=raw,
+                            model=llm.config.model, show_thinking=show_thinking,
+                            auto_accept=auto_accept)
+        operator.on_checkpoint = lambda messages: session_db.save_conversation(session_id, messages)
         async for token in operator.send(prompt):
             sys.stdout.write(token)
             sys.stdout.flush()
-        print()  # Final newline
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted.[/]")
-    except ConnectionError as e:
-        console.print(f"\n[red]{e}[/]")
-    except Exception as e:
-        console.print(f"[red]Error:[/] {e}")
+        print()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        raise click.exceptions.Exit(130)
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
     finally:
+        if operator:
+            session_db.save_conversation(session_id, operator.messages)
+        session_db.end_session(session_id)
         await llm.close()

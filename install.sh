@@ -1,155 +1,43 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# DJcode installer. Never downloads models or modifies shell startup files.
 set -euo pipefail
-
-# DJcode Installer — https://cli.darshj.ai
-# Usage: curl -fsSL https://cli.darshj.ai/install.sh | bash
-#
-# Installs DJcode CLI via pip/uv into ~/.djcode/
-# Zero sudo. Works on macOS and Linux.
-
-VERSION="1.3.0"
-REPO="https://github.com/darshjme/djcode.git"
-DJCODE_DIR="$HOME/.djcode"
-
-BOLD='\033[1m'
-GOLD='\033[38;5;220m'
-GREEN='\033[32m'
-RED='\033[31m'
-DIM='\033[2m'
-RESET='\033[0m'
-
-info()  { printf "${GOLD}${BOLD}djcode${RESET} ${DIM}→${RESET} %s\n" "$1"; }
-ok()    { printf "${GREEN}✓${RESET} %s\n" "$1"; }
-warn()  { printf "${GOLD}⚠${RESET} %s\n" "$1"; }
-err()   { printf "${RED}✗ %s${RESET}\n" "$1" >&2; exit 1; }
-
-# ── Uninstall ───────────────────────────────────────────────────────────────
-if [ "${1:-}" = "--uninstall" ]; then
-  info "Uninstalling DJcode..."
-  pip uninstall djcode -y 2>/dev/null || true
-  uv tool uninstall djcode 2>/dev/null || true
-  rm -rf "$DJCODE_DIR/src"
-  for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile" "$HOME/.bash_profile"; do
-    if [ -f "$rc" ] && grep -q '\.djcode' "$rc" 2>/dev/null; then
-      TMP=$(mktemp)
-      grep -v '\.djcode' "$rc" > "$TMP" && mv "$TMP" "$rc"
-    fi
-  done
-  printf "${GREEN}DJcode uninstalled.${RESET}\n"
+REPO="${DJCODE_REPO_URL:-https://github.com/darshjme/djcode.git}"
+REF="${DJCODE_REF:-main}"
+PREFIX="${DJCODE_INSTALL_DIR:-$HOME/.local/share/djcode}"
+BIN_DIR="${DJCODE_BIN_DIR:-$HOME/.local/bin}"
+if [[ "${1:-}" == "--help" ]]; then
+  printf '%s\n' 'Install: bash install.sh' 'Requires git and Python 3.12+ (or an existing uv-managed Python).' 'Overrides: DJCODE_INSTALL_DIR, DJCODE_BIN_DIR, DJCODE_REF, DJCODE_REPO_URL.' 'Models and API subscriptions are configured separately; no models are downloaded.'
   exit 0
 fi
-
-# ── Banner ──────────────────────────────────────────────────────────────────
-printf "\n${GOLD}${BOLD}"
-cat << 'ASCII'
-  ██████╗      ██╗ ██████╗ ██████╗ ██████╗ ███████╗
-  ██╔══██╗     ██║██╔════╝██╔═══██╗██╔══██╗██╔════╝
-  ██║  ██║     ██║██║     ██║   ██║██║  ██║█████╗
-  ██║  ██║██   ██║██║     ██║   ██║██║  ██║██╔══╝
-  ██████╔╝╚█████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
-  ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
-ASCII
-printf "${RESET}\n"
-info "Installer v${VERSION} — zero sudo, Python-native"
-printf "\n"
-
-# ── Preflight ───────────────────────────────────────────────────────────────
-
-# Check Python 3.12+
-if ! command -v python3 >/dev/null 2>&1; then
-  err "Python 3.12+ required. Install from https://python.org"
-fi
-
-PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-PY_MAJOR=$(echo "$PY_VERSION" | cut -d. -f1)
-PY_MINOR=$(echo "$PY_VERSION" | cut -d. -f2)
-
-if [ "$PY_MAJOR" -lt 3 ] || ([ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 12 ]); then
-  err "Python 3.12+ required (found $PY_VERSION). Update: https://python.org"
-fi
-ok "Python $PY_VERSION"
-
-# Check git
-if ! command -v git >/dev/null 2>&1; then
-  err "git is required. Install from https://git-scm.com"
-fi
-ok "git $(git --version | awk '{print $3}')"
-
-# ── Detect best install method ──────────────────────────────────────────────
-
-INSTALL_METHOD=""
-
+if [[ -n "${1:-}" ]]; then printf 'Unknown option: %s\n' "$1" >&2; exit 2; fi
+command -v git >/dev/null || { printf 'git is required.\n' >&2; exit 1; }
+mkdir -p "$PREFIX" "$BIN_DIR"
+RELEASE=$(mktemp -d "$PREFIX/release.XXXXXXXX")
+SUCCEEDED=0
+cleanup() { if [[ "$SUCCEEDED" != 1 ]]; then rm -rf -- "$RELEASE"; fi; }
+trap cleanup EXIT
+printf 'Installing DJcode from %s (%s)\n' "$REPO" "$REF"
+git clone --quiet --depth 1 --branch "$REF" "$REPO" "$RELEASE/source"
 if command -v uv >/dev/null 2>&1; then
-  INSTALL_METHOD="uv"
-  ok "uv $(uv --version 2>/dev/null | awk '{print $2}')"
-elif command -v pipx >/dev/null 2>&1; then
-  INSTALL_METHOD="pipx"
-  ok "pipx detected"
+  uv venv --python 3.12 --no-python-downloads "$RELEASE/venv"
+  uv pip install --python "$RELEASE/venv/bin/python" "$RELEASE/source"
 else
-  INSTALL_METHOD="pip"
-  ok "pip (fallback)"
+  PYTHON="${DJCODE_PYTHON:-python3}"
+  "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3,12) else "Python 3.12+ is required")'
+  "$PYTHON" -m venv "$RELEASE/venv"
+  "$RELEASE/venv/bin/python" -m pip install "$RELEASE/source"
 fi
-
-# ── Clone & Install ─────────────────────────────────────────────────────────
-
-info "Downloading DJcode..."
-rm -rf "$DJCODE_DIR/src"
-mkdir -p "$DJCODE_DIR"
-
-if ! git clone --depth 1 "$REPO" "$DJCODE_DIR/src" 2>&1 | tail -2; then
-  err "Failed to clone. Check your internet connection."
+"$RELEASE/venv/bin/djcode" --version
+# Keep earlier releases for rollback; refuse to replace an unrelated executable.
+if [[ -e "$BIN_DIR/djcode" && ! -L "$BIN_DIR/djcode" ]]; then
+  printf 'Existing %s/djcode is not a symlink; choose DJCODE_BIN_DIR or move it first.\n' "$BIN_DIR" >&2
+  exit 1
 fi
-ok "Source downloaded"
-
-info "Installing DJcode via ${INSTALL_METHOD}..."
-
-cd "$DJCODE_DIR/src"
-
-case "$INSTALL_METHOD" in
-  uv)
-    uv tool install --force . 2>&1 | tail -3
-    ;;
-  pipx)
-    pipx install --force . 2>&1 | tail -3
-    ;;
-  pip)
-    python3 -m pip install --user --break-system-packages . 2>&1 | tail -3 || \
-    python3 -m pip install --user . 2>&1 | tail -3
-    ;;
+ln -sfn "$RELEASE/venv/bin/djcode" "$BIN_DIR/djcode"
+SUCCEEDED=1
+printf '\nInstalled: %s/djcode\n' "$BIN_DIR"
+case ":$PATH:" in
+  *":$BIN_DIR:"*) printf 'Run djcode --help to get started.\n' ;;
+  *) printf 'Add this directory to PATH: %s\nOr launch using the full path above.\n' "$BIN_DIR" ;;
 esac
-
-ok "DJcode installed"
-
-# ── Check Ollama ────────────────────────────────────────────────────────────
-if command -v ollama >/dev/null 2>&1; then
-  ok "Ollama detected"
-  if ! ollama list 2>/dev/null | grep -q "gemma4"; then
-    info "Pulling default model (gemma4)..."
-    ollama pull gemma4 2>/dev/null && ok "gemma4 ready" || warn "Run 'ollama pull gemma4' later"
-  else
-    ok "gemma4 model ready"
-  fi
-else
-  warn "Ollama not found — install from https://ollama.com for local inference"
-fi
-
-# ── Create default config ──────────────────────────────────────────────────
-if [ ! -f "$DJCODE_DIR/config.json" ]; then
-  cat > "$DJCODE_DIR/config.json" << 'CONF'
-{"provider":"ollama","model":"gemma4","ollama_url":"http://localhost:11434","temperature":0.7,"max_tokens":8192,"telemetry":false}
-CONF
-fi
-
-# ── Verify ──────────────────────────────────────────────────────────────────
-printf "\n"
-
-if command -v djcode >/dev/null 2>&1; then
-  INSTALLED_V=$(djcode --version 2>&1 || echo "installed")
-  printf "${GREEN}${BOLD}  DJcode installed successfully!${RESET}\n"
-  printf "  ${DIM}%s${RESET}\n" "$INSTALLED_V"
-  printf "\n  Run ${GOLD}${BOLD}djcode${RESET} to start coding.\n\n"
-else
-  printf "${GREEN}${BOLD}  DJcode installed!${RESET}\n"
-  printf "\n  ${DIM}Open a new terminal, then run:${RESET}\n"
-  printf "  ${GOLD}${BOLD}djcode${RESET}\n\n"
-fi
+printf 'Use an existing Ollama model or configure a hosted provider. No models were downloaded.\n'

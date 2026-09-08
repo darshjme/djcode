@@ -9,11 +9,11 @@
   ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 ```
 
-### 19 PhD agents. 17 tools. 1M context. Zero telemetry.
+### 19 engineering profiles. 12 content profiles. 17 tools.
 
-The AI coding CLI that makes Claude Code sweat.
+A local-first coding agent with explicit provider choice, tool approvals, and recoverable sessions.
 
-[![Version](https://img.shields.io/badge/version-4.0.0-gold?style=flat-square)](https://github.com/darshjme/djcode/releases)
+[![Version](https://img.shields.io/badge/version-4.0.1-gold?style=flat-square)](https://github.com/darshjme/djcode/releases)
 [![Python](https://img.shields.io/badge/python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![macOS](https://img.shields.io/badge/Apple%20Silicon-native-black?style=flat-square&logo=apple&logoColor=white)](#install)
@@ -29,13 +29,13 @@ The AI coding CLI that makes Claude Code sweat.
 
 ## Install
 
-One line. No package manager. No config files. Just paste and go.
+Install into an isolated Python environment. Requires git and Python 3.12+ (or an existing uv-managed Python).
 
 ```bash
 curl -fsSL https://cli.darshj.ai/install.sh | bash
 ```
 
-That's it. You have a full AI coding agent running locally.
+The installer keeps previous releases for rollback and downloads no models. Select an existing local model or configure a hosted provider. See [installation and recovery](docs/INSTALLATION-AND-RECOVERY.md).
 
 <details>
 <summary><b>Manual install (from source)</b></summary>
@@ -47,7 +47,7 @@ uv sync
 uv run python -m djcode
 ```
 
-**Requires:** Python 3.12+, [Ollama](https://ollama.com) with at least one model pulled (`ollama pull gemma4`).
+**Requires:** Python 3.12+. Inference requires either an existing Ollama/MLX model server or a configured hosted provider account. The installer does not acquire model weights.
 
 </details>
 
@@ -63,9 +63,9 @@ I kept thinking: my MacBook has a GPU. Apple Silicon can run 7B-26B models nativ
 
 So I stopped paying and started building.
 
-DJcode is the result. Not a toy. Not a wrapper. A full-blown multi-agent coding system with 19 PhD-level specialists, 17 tools, parallel execution, a hacker TUI, smart context compression, and a model registry that tracks 33 LLMs across every major provider. It runs entirely on your machine. Zero cloud dependency for local use. Zero telemetry. Your code never leaves your disk unless you explicitly choose a cloud provider.
+DJcode is the result. Not a toy. Not a wrapper. A full-blown multi-agent coding system with 19 specialist profiles, 17 tools, parallel execution, a hacker TUI, smart context compression, and a model registry that tracks 33 LLMs across every major provider. It runs entirely on your machine. Zero cloud dependency for local use. Zero telemetry. Your code never leaves your disk unless you explicitly choose a cloud provider.
 
-It took months of late nights. Debugging agent coordination at 2am. Getting parallel execution right with asyncio. Building a context compression engine that actually fits 1M tokens without losing signal. Designing a state machine so every agent has a lifecycle you can watch in real-time on a cyberpunk dashboard.
+It took months of late nights. Debugging agent coordination at 2am. Getting parallel execution right with asyncio. Building a context compression engine that respects the selected model budget and preserves tool-call/result groups. Summarization can lose detail; full sessions remain stored separately. Designing a state machine so every agent has a lifecycle you can watch in real-time on a cyberpunk dashboard.
 
 But now it exists. And it's free. And it runs on a MacBook.
 
@@ -75,6 +75,8 @@ But now it exists. And it's free. And it runs on a MacBook.
 
 ## Demo
 
+Illustrative transcript, not a measured benchmark or an actual execution log.
+
 ```
   ██████╗      ██╗ ██████╗ ██████╗ ██████╗ ███████╗
   ██╔══██╗     ██║██╔════╝██╔═══██╗██╔══██╗██╔════╝
@@ -83,7 +85,7 @@ But now it exists. And it's free. And it runs on a MacBook.
   ██████╔╝╚█████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
   ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 
-  v4.0.0 · ollama/gemma4 · Apple Silicon · 100% local
+  v4.0.1 · ollama/gemma4 · Apple Silicon · 100% local
 
   ┌────────────────────────────────┐
   │ lights your path. Let's code.  │       ,
@@ -128,20 +130,20 @@ $ djcode --model dolphin3 --bypass-rlhf "reverse engineer this binary"
 $ djcode --provider anthropic --model claude-sonnet-4-20250514 "review my PR"
 
 # Multi-agent orchestration
-$ djcode "/orchestra deploy this service with full security review"
+$ djcode --wave "review this service and propose improvements"
 ```
 
 ---
 
 ## Features
 
-### 19 PhD-Level Dev Agents + 12 Content Agents
+### 19 Engineering Profiles + 12 Content Agents
 
 Not chatbots. Specialists. Each agent has a strict system prompt, scoped tool access (least-privilege), a mandatory confidence score, and a dharmic name. They run in parallel, pipeline, or wave execution patterns. Four blocking agents (Kavach, Varuna, Mitra, Indra) can halt the entire pipeline on critical findings.
 
-Every PhD agent gets a **Research Assistant** that pre-fetches codebase context, searches the ContextBus, and builds a structured briefing *before* the agent starts. No wasted tool rounds on reconnaissance.
+Every specialist gets a **Research Assistant** that pre-fetches codebase context, searches the ContextBus, and builds a structured briefing *before* the agent starts. No wasted tool rounds on reconnaissance.
 
-Quality gate: `confidence_score >= 0.80` or the output is rejected.
+Agent confidence is model-reported, not a calibrated accuracy score. Critical blocking findings can stop orchestration; operational errors, cancellation, deadlines and exhausted tool budgets report failure rather than completion.
 
 See the [full agent roster below](#agents).
 
@@ -276,8 +278,8 @@ Tier 2: Persistent Facts
 
 Tier 3: Semantic Search
        ChromaDB embeddings stored locally.
-       Vector similarity search over your past conversations and facts.
-       Finds relevant context even when you don't remember the exact words.
+       Semantic search requires explicitly supplied embeddings.
+       Offline lexical retrieval remains available without any model download.
 ```
 
 ### Smart Prompt Enhancer
@@ -307,11 +309,11 @@ This is a tool for professionals. Use it like one.
 
 <h2 id="agents">Agents</h2>
 
-### The 19 PhD Dev Agents (4-Tier Architecture)
+### The 19 Engineering Profiles (4-Tier Architecture)
 
 ```
 TIER 4 — CONTROL
-  Vyasa          PhD Chief Orchestrator         [ALL TOOLS]  [BLOCKING]
+  Vyasa          Chief Orchestrator         [ALL TOOLS]  [BLOCKING]
 
 TIER 3 — ENTERPRISE INTELLIGENCE
   Kavach         Security & Compliance          [ALL TOOLS]  [BLOCKING]
@@ -490,7 +492,7 @@ graph TB
         CBUS["ContextBus v2<br/><small>thread-safe shared state</small>"]
     end
 
-    subgraph "Agent Army (19 PhD + 12 Content)"
+    subgraph "Agent Army (19 engineering + 12 content)"
         T4["Tier 4: Vyasa<br/><small>orchestrator</small>"]
         T3["Tier 3: Kavach, Varuna, Indra, Mitra...<br/><small>enterprise intel (10 agents)</small>"]
         T2["Tier 2: Vishwakarma, Shiva, Garuda, Saraswati<br/><small>architecture (4 agents)</small>"]
@@ -614,7 +616,7 @@ src/djcode/
 │   ├── agent_spawn.py      # Spawn specialist sub-agents
 │   └── parallel_exec.py    # Concurrent tool execution
 ├── agents/
-│   ├── registry.py         # 19 PhD agent specs (4-tier, dharmic names)
+│   ├── registry.py         # 19 specialist specs (4-tier, dharmic names)
 │   ├── content_registry.py # 12 content specialist agents
 │   ├── executor.py         # Agent execution engine
 │   ├── parallel.py         # ParallelCoordinator (gather/pipeline/wave)
@@ -668,37 +670,20 @@ Override anything with CLI flags or `/set` in the REPL.
 <h2 id="privacy">Privacy</h2>
 
 - `DO_NOT_TRACK=1` by default
-- Zero analytics, zero phone-home, zero usage tracking
+- No product analytics collection. Local session history and estimated activity statistics are stored on disk.
+- Automatic GitHub release checks can be disabled with `DJCODE_NO_UPDATE_CHECK=1`.
 - All memory stored at `~/.djcode/` on your filesystem
 - ChromaDB vectors stored locally, never uploaded
 - Cloud providers are opt-in and explicit
-- No account required. No sign-up. No email.
+- Local model use needs no DJcode account. Hosted providers require their own account and terms.
 
 ---
 
 ## How We Stack Up
 
-| Feature | **DJcode v4.0** | Claude Code | Gemini CLI | Aider |
-|---------|:---------------:|:-----------:|:----------:|:-----:|
-| **Price** | **Free** | $20--200/mo | Free tier | Free + API |
-| **Specialist agents** | **19 PhD + 12 content** | 1 generalist | 1 generalist | 1 generalist |
-| **Parallel execution** | **5 patterns** | Sequential | Sequential | Sequential |
-| **Tools** | **17** | ~15 | ~10 | ~8 |
-| **Model registry** | **33 models, fuzzy match** | Claude only | Gemini only | Multi-provider |
-| **Context compression** | **4 strategies** | Truncation | Truncation | Repo map |
-| **Agent state machine** | **7 states, event streaming** | No | No | No |
-| **Blocking security gates** | **4 agents** | No | No | No |
-| **Research Assistants** | **Per-agent RA** | No | No | No |
-| **Hacker TUI** | **Cyberpunk dashboard** | Basic terminal | Basic terminal | Basic terminal |
-| **Local inference** | **Native (Ollama + MLX)** | No | No | Workaround |
-| **Apple Silicon** | **Native** | No | No | No |
-| **Zero telemetry** | **By design** | Opt-out | Opt-out | Opt-in |
-| **Works offline** | **Yes** | No | No | No |
-| **Cost tracking** | **Per-model** | Session total | No | No |
-| **3-tier memory** | **Session + facts + vectors** | CLAUDE.md | GEMINI.md | No |
-| **Open source** | **MIT** | Source-avail | Apache 2.0 | Apache 2.0 |
+DJcode focuses on local/provider choice, 19 engineering and 12 content profiles, explicit tool approval, persistent sessions and 17 built-in tools. Evaluate it on your repository and model; no speed, quality or feature-parity advantage over another coding agent has been established.
 
-> DJcode is the only AI coding CLI with parallel PhD-level agents, blocking security gates, and full offline operation on Apple Silicon.
+The repair drew on public engineering patterns from Hermes, Pi and Codex. See [source references and acceptance coverage](docs/RELEASE-VALIDATION.md) for exact commits, licenses, tested paths and remaining limits. Claude Code documentation informed the loop review; its published repository was not treated as permissively licensed engine source.
 
 ---
 
@@ -740,7 +725,7 @@ MIT -- see [LICENSE](LICENSE).
 <br/>
 
 *I built this because I believe the best dev tools run on your own hardware.*
-*No subscriptions. No data harvesting. Just you, your code, and 19 PhD agents that work for free.*
+*No subscriptions. No data harvesting. Just you, your code, and 19 specialists that work for free.*
 
 <br/>
 

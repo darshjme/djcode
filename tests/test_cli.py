@@ -56,7 +56,7 @@ class TestConfig:
     def test_default_config(self) -> None:
         cfg = DEFAULT_CONFIG
         assert cfg["provider"] == "ollama"
-        assert cfg["model"] == "qwen3:32b"
+        assert cfg["model"] == "gemma4"
         assert cfg["telemetry"] is False
 
     def test_load_save_roundtrip(self, tmp_path: Path) -> None:
