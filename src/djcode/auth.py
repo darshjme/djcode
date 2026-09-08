@@ -34,6 +34,13 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "base_url": "https://api.openai.com/v1",
         "description": "GPT-4o, o1, o3 models",
     },
+    "xai": {
+        "name": "xAI (Grok)",
+        "needs_key": True,
+        "env": "XAI_API_KEY",
+        "base_url": "https://api.x.ai/v1",
+        "description": "Grok via xAI API; distinct from Groq",
+    },
     "anthropic": {
         "name": "Anthropic",
         "needs_key": True,

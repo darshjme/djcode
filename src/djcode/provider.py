@@ -50,6 +50,7 @@ class ProviderConfig:
     temperature: float = 0.7
     max_tokens: int = 8192
     context_window: int | None = None
+    auth_method: str = "api_key"
 
     @classmethod
     def from_config(
@@ -137,6 +138,7 @@ class ProviderConfig:
             temperature=cfg.get("temperature", 0.7),
             max_tokens=max_tokens,
             context_window=context_window,
+            auth_method=cfg.get(f"{provider}_auth_method", "api_key"),
         )
 
 
@@ -807,7 +809,11 @@ class Provider:
     ) -> AsyncIterator[dict[str, Any]]:
         """Call OpenAI-compatible /v1/chat/completions."""
         headers = {}
-        if self.config.api_key:
+        if self.config.auth_method == "account":
+            from djcode.account_auth import account_token
+            token = await account_token(self.config.name, self.config.base_url)
+            headers["Authorization"] = f"Bearer {token}"
+        elif self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         payload = {
@@ -1107,6 +1113,8 @@ class Provider:
         Uses new native providers for anthropic, openai, and google.
         Keeps original implementations for ollama and openai-compat.
         """
+        if self.config.auth_method == "account" and self.config.name != "xai":
+            raise ValueError("Account authentication is unavailable for this provider; choose API key.")
         backend = {
             "ollama": self.chat_ollama,
             "anthropic": self.chat_anthropic,
