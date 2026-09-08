@@ -177,8 +177,10 @@ class ParallelCoordinator:
         overall_timeout_s: float = 600.0,
         halt_on_blocking_critical: bool = True,
         auto_accept: bool = False,
+        approval_callback=None,
     ) -> None:
         self.auto_accept = auto_accept
+        self.approval_callback = approval_callback
         self.provider = provider
         self.bus = bus if bus is not None else ContextBus()
         self.enable_ra = enable_ra
@@ -225,6 +227,7 @@ class ParallelCoordinator:
             ra_timeout_s=15.0,
             execution_timeout_s=self.per_agent_timeout_s,
             auto_accept=self.auto_accept,
+            approval_callback=self.approval_callback,
         )
         # Attach global agent event callback if registered
         if hasattr(self, "_agent_callback"):

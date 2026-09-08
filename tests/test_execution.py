@@ -171,9 +171,13 @@ def test_tui_mount_permission_and_immediate_cancel(monkeypatch, tmp_path):
             spawn_provider = ScriptedProvider([[call("file_write", json.dumps({"path": str(target), "content": "no"}))], [final("permission denied")]])
             original_provider = app._provider
             app._provider = spawn_provider
-            await app._handle_spawn("coder write a file")
+            spawning = asyncio.create_task(app._handle_spawn("coder write a file"))
+            await pilot.pause()
+            assert isinstance(app.screen, ToolApprovalScreen)
+            await pilot.click("#deny-tool")
+            await spawning
             assert not target.exists()
-            assert "requires write approval" in spawn_provider.messages[1][-1].content
+            assert "User denied" in spawn_provider.messages[1][-1].content
             app._provider = original_provider
             app.action_show_agents()
             await pilot.pause()
@@ -197,3 +201,59 @@ def test_tui_mount_permission_and_immediate_cancel(monkeypatch, tmp_path):
             assert not app._is_generating
             assert provider.cancelled == 1
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("allow,readonly", [(True, False), (False, False), (True, True)])
+def test_specialist_approval_precedes_write(tmp_path, allow, readonly):
+    import json
+    target = tmp_path / "approved.txt"
+    provider = ScriptedProvider([[call("file_write", json.dumps({"path": str(target), "content": "yes"}))], [final()]])
+    decisions = []
+    async def approve(name, args):
+        decisions.append((name, args))
+        return allow
+    executor = AgentExecutor(replace(get_agent(AgentRole.CODER), read_only=readonly), provider, ContextBus(), enable_ra=False, approval_callback=approve)
+    assert asyncio.run(executor.execute("test")).succeeded
+    assert target.exists() == (allow and not readonly)
+    assert bool(decisions) == (not readonly)
+
+
+def test_nested_spawn_inherits_approval(tmp_path):
+    import json
+    target = tmp_path / "nested.txt"
+    provider = ScriptedProvider([[call("spawn_agent", json.dumps({"role": "coder", "task": "write"}))], [call("file_write", json.dumps({"path": str(target), "content": "nested"}))], [final("child done")], [final("parent done")]])
+    decisions = []
+    async def approve(name, args):
+        decisions.append(name)
+        return True
+    async def run():
+        with agent_spawn.agent_context(provider, False, approve):
+            return await agent_spawn.execute_spawn_agent("coder", "delegate")
+    assert "parent done" in asyncio.run(run())
+    assert target.read_text() == "nested"
+    assert decisions == ["spawn_agent", "file_write"]
+
+
+def test_wave_cli_failure_closes_provider(monkeypatch):
+    from click.testing import CliRunner
+    from djcode.cli import main
+    from djcode.provider import Provider, ProviderConfig
+    from djcode.orchestrator import Orchestrator
+    from djcode.orchestrator.events import orchestrator_error_event
+    from djcode.orchestrator.engine import ExecutionStrategy
+    from types import SimpleNamespace
+    closed = []
+    monkeypatch.setattr(ProviderConfig, "from_config", staticmethod(lambda **kw: ProviderConfig(name="openai", model="test", base_url="https://example.invalid", api_key="test")))
+    monkeypatch.setattr(Provider, "validate_model", lambda self: (True, ""))
+    async def close(self):
+        closed.append(True)
+    monkeypatch.setattr(Provider, "close", close)
+    async def execute(task, strategy_override=None):
+        assert strategy_override == ExecutionStrategy.WAVE
+        yield orchestrator_error_event(task, "provider unavailable", [])
+    monkeypatch.setattr(Orchestrator, "__init__", lambda self, *a, **kw: setattr(self, "_shadow", SimpleNamespace(execute=execute)))
+    result = CliRunner().invoke(main, ["--wave", "test"])
+    assert result.exit_code != 0
+    assert "provider unavailable" in result.output
+    assert "Wave execution finished" not in result.output
+    assert closed == [True]

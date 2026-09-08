@@ -121,8 +121,10 @@ class AgentExecutor:
         ra_timeout_s: float = 15.0,
         execution_timeout_s: float = 300.0,
         auto_accept: bool = False,
+        approval_callback=None,
     ) -> None:
         self.auto_accept = auto_accept
+        self.approval_callback = approval_callback
         self.spec = spec
         self.provider = provider
         self.bus = bus
@@ -354,14 +356,20 @@ class AgentExecutor:
 
         # Tools outside this explicit read set require user-approved write mode.
         read_tools = {"file_read", "grep", "glob", "web_fetch", "web_search", "notebook_read", "task_list", "agent_status"}
-        if tool_name not in read_tools and (self.spec.read_only or not self.auto_accept):
-            return f"Error: Tool '{tool_name}' requires write approval; agent is read-only or auto-accept is off."
+        if tool_name not in read_tools:
+            if self.spec.read_only:
+                return f"Error: Tool '{tool_name}' requires write approval; agent is read-only."
+            if not self.auto_accept:
+                if self.approval_callback is None:
+                    return f"Error: Tool '{tool_name}' requires write approval; auto-accept is off."
+                if not await self.approval_callback(tool_name, args):
+                    return f"Error: User denied tool '{tool_name}'."
 
         # Execute the tool
         start = time.monotonic()
         try:
             from djcode.tools.agent_spawn import agent_context
-            with agent_context(self.provider, self.auto_accept):
+            with agent_context(self.provider, self.auto_accept, self.approval_callback):
                 result = await asyncio.wait_for(dispatch_tool(tool_name, args), timeout=120.0)
             elapsed_ms = (time.monotonic() - start) * 1000
             logger.debug(

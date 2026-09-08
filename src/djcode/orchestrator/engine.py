@@ -164,12 +164,14 @@ class AgentRunner:
         context_bus: ContextBus,
         event_bus: EventBus | None = None,
         auto_accept: bool = False,
+        approval_callback=None,
     ) -> None:
         self.provider = provider
         self.spec = spec
         self.bus = context_bus if context_bus is not None else ContextBus()
         self.event_bus = event_bus
         self.auto_accept = auto_accept
+        self.approval_callback = approval_callback
 
     def _build_system_prompt(self) -> str:
         """Build the agent's system prompt with context bus injection."""
@@ -202,7 +204,7 @@ class AgentRunner:
         from djcode.agents.executor import AgentExecutor
         from djcode.agents.state import AgentEventType
         executor = AgentExecutor(self.spec, self.provider, self.bus, enable_ra=False,
-                                 auto_accept=self.auto_accept)
+                                 auto_accept=self.auto_accept, approval_callback=self.approval_callback)
         await self._emit(agent_start_event(self.spec.name, self.spec.role.value, task))
         response = ""
         async for event in executor.execute_streaming(task):
@@ -248,9 +250,11 @@ class ShadowOrchestrator:
         self,
         provider: Provider,
         auto_accept: bool = False,
+        approval_callback=None,
     ) -> None:
         self.provider = provider
         self.auto_accept = auto_accept
+        self.approval_callback = approval_callback
         self.bus = ContextBus()
         self.event_bus = EventBus()
 
@@ -356,6 +360,7 @@ class ShadowOrchestrator:
             context_bus=self.bus,
             event_bus=self.event_bus,
             auto_accept=self.auto_accept,
+            approval_callback=self.approval_callback,
         )
 
     # -- Blocking Gate Check ---------------------------------------------------
@@ -613,7 +618,7 @@ class ShadowOrchestrator:
 
     # -- Main Entry Point ------------------------------------------------------
 
-    async def execute(self, task: str) -> AsyncIterator[OrchestratorEvent]:
+    async def execute(self, task: str, strategy_override: ExecutionStrategy | None = None) -> AsyncIterator[OrchestratorEvent]:
         """Full orchestration — classify, route, gate, execute, synthesize.
 
         This is the main entry point. It:
@@ -654,7 +659,7 @@ class ShadowOrchestrator:
 
         # Classify and strategize
         complexity = self.classify_complexity(task)
-        strategy = self.select_strategy(complexity, roles)
+        strategy = strategy_override or self.select_strategy(complexity, roles)
 
         agent_names = [get_agent(r).name for r in roles]
 
@@ -839,10 +844,11 @@ class Orchestrator:
             print(token, end="")
     """
 
-    def __init__(self, provider: Provider, auto_accept: bool = False) -> None:
-        self._shadow = ShadowOrchestrator(provider, auto_accept)
+    def __init__(self, provider: Provider, auto_accept: bool = False, approval_callback=None) -> None:
+        self._shadow = ShadowOrchestrator(provider, auto_accept, approval_callback=approval_callback)
         self.provider = provider
         self.auto_accept = auto_accept
+        self.approval_callback = approval_callback
         self.bus = self._shadow.bus
         self.router = self._shadow.router
         self.vector_store = self._shadow.vector_store

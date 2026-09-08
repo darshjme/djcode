@@ -25,12 +25,12 @@ logger = logging.getLogger(__name__)
 _background_tasks: dict[str, dict[str, Any]] = {}
 
 
-_parent_context: ContextVar[tuple[Any, bool] | None] = ContextVar("agent_parent", default=None)
+_parent_context: ContextVar[tuple[Any, bool, Any] | None] = ContextVar("agent_parent", default=None)
 _spawn_depth: ContextVar[int] = ContextVar("agent_depth", default=0)
 
 @contextmanager
-def agent_context(provider: Any, auto_accept: bool = False):
-    token = _parent_context.set((provider, auto_accept))
+def agent_context(provider: Any, auto_accept: bool = False, approval_callback=None):
+    token = _parent_context.set((provider, auto_accept, approval_callback))
     try:
         yield
     finally:
@@ -128,14 +128,15 @@ async def _spawn_foreground(spec: Any, task: str, max_rounds: int | None) -> str
         if parent is None:
             provider = Provider(ProviderConfig.from_config())
             auto_accept = False
+            approval_callback = None
             owns_provider = True
         else:
-            provider, auto_accept = parent
+            provider, auto_accept, approval_callback = parent
         if max_rounds is not None:
             spec = replace(spec, max_tool_rounds=max_rounds)
         bus = ContextBus()
         bus.set_task(task, spec.role.value)
-        runner = AgentRunner(provider, spec, bus, auto_accept=auto_accept)
+        runner = AgentRunner(provider, spec, bus, auto_accept=auto_accept, approval_callback=approval_callback)
         start = time.monotonic()
         result = await runner.run(task)
         if result.lstrip().startswith("Error:") or "\nError: Agent " in result:
