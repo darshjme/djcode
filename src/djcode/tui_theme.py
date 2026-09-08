@@ -94,6 +94,11 @@ Screen {
     color: #8A8A8A;
 }
 
+/* Preserve the application beneath a tool permission dialog. */
+ToolApprovalScreen {
+    background: rgba(0, 0, 0, 0.60);
+}
+
 /* ── Header — Military HUD bar ────────────────────────────────── */
 
 Header {
