@@ -1,88 +1,103 @@
-"""Vector Context — feeds larger context to agents via semantic search.
+"""Persistent context retrieval with an offline lexical default.
 
-Uses ChromaDB (already a dependency) to:
-1. Store past conversation snippets as embeddings
-2. Retrieve relevant context for new tasks via cosine similarity
-3. Inject retrieved context into agents via the ContextBus
-
-This gives agents access to a much larger effective context than the
-model's native context window, and makes behavior consistent across
-different model backends (Ollama, MLX, API).
+An explicitly supplied embedding function can enable Chroma cosine search.
+No default embedding model is constructed or downloaded. Backend labels travel
+with retrieved context so keyword matches are never presented as semantic ones.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
+import re
+import sqlite3
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from djcode.config import CONFIG_DIR
 from djcode.orchestrator.context_bus import ContextBus
 
 VECTOR_DIR = CONFIG_DIR / "vectors"
+logger = logging.getLogger(__name__)
 
 
 class VectorContextStore:
-    """ChromaDB-backed vector store for long-term context retrieval.
+    """SQLite lexical context with optional explicitly supplied Chroma embeddings."""
 
-    Stores conversation snippets, code patterns, and agent results.
-    Retrieves semantically relevant context for new tasks.
-    """
-
-    def __init__(self, provider: Any | None = None) -> None:
+    def __init__(
+        self, provider: Any | None = None, *,
+        embedding_function: Callable[[str], list[float]] | None = None,
+    ) -> None:
+        # Provider is retained for constructor compatibility; it is never called
+        # implicitly. Callers must explicitly supply their embedding function.
         self._provider = provider
+        self._embedding_function = embedding_function
         self._collection = None
         self._client = None
         self._initialized = False
+        self._db_path = VECTOR_DIR / "context.sqlite3"
 
     def initialize(self) -> bool:
-        """Initialize ChromaDB with persistent storage."""
+        """Open lexical storage; optionally enable supplied-embedding Chroma."""
         try:
-            import chromadb
-
             VECTOR_DIR.mkdir(parents=True, exist_ok=True)
-            self._client = chromadb.PersistentClient(path=str(VECTOR_DIR))
-            self._collection = self._client.get_or_create_collection(
-                name="djcode_context",
-                metadata={"hnsw:space": "cosine"},
-            )
+            with sqlite3.connect(self._db_path) as conn:
+                conn.execute("""CREATE TABLE IF NOT EXISTS snippets (
+                    id TEXT PRIMARY KEY, text TEXT NOT NULL, metadata TEXT NOT NULL
+                )""")
             self._initialized = True
-            return True
-        except Exception:
-            self._initialized = False
+        except (sqlite3.Error, OSError):
+            logger.warning("Context storage could not be initialized")
             return False
+        if self._embedding_function is not None:
+            try:
+                import chromadb
+                from chromadb.config import Settings
+                self._client = chromadb.PersistentClient(
+                    path=str(VECTOR_DIR), settings=Settings(anonymized_telemetry=False),
+                )
+                self._collection = self._client.get_or_create_collection(
+                    name="djcode_context", metadata={"hnsw:space": "cosine"},
+                    embedding_function=None,
+                )
+            except Exception:
+                logger.debug("Optional Chroma unavailable; using lexical context")
+        return True
 
     @property
     def is_ready(self) -> bool:
-        return self._initialized and self._collection is not None
+        return self._initialized
+
+    @property
+    def backend(self) -> str:
+        return "semantic (supplied embeddings)" if self._collection is not None else "lexical (SQLite)"
 
     def store(
-        self,
-        text: str,
-        metadata: dict[str, str] | None = None,
+        self, text: str, metadata: dict[str, str] | None = None,
         category: str = "conversation",
     ) -> None:
-        """Store a text snippet with embeddings for future retrieval."""
-        if not self.is_ready:
+        """Persist text offline; index semantically only with explicit embeddings."""
+        if not self.is_ready or not text.strip():
             return
-
-        # Generate a stable ID from content hash
         doc_id = hashlib.sha256(text.encode()).hexdigest()[:16]
-        meta = {
-            "category": category,
-            "timestamp": str(time.time()),
-            **(metadata or {}),
-        }
-
+        meta = {**(metadata or {}), "category": category, "timestamp": str(time.time())}
         try:
-            self._collection.upsert(
-                documents=[text],
-                metadatas=[meta],
-                ids=[doc_id],
-            )
-        except Exception:
-            pass  # Non-critical — don't break the flow
+            with sqlite3.connect(self._db_path) as conn:
+                conn.execute("INSERT OR REPLACE INTO snippets VALUES (?, ?, ?)",
+                             (doc_id, text, json.dumps(meta)))
+        except sqlite3.Error:
+            logger.warning("Context snippet could not be saved")
+            return
+        if self._collection is not None and self._embedding_function is not None:
+            try:
+                embedding = self._embedding_function(text)
+                if embedding:
+                    self._collection.upsert(documents=[text], metadatas=[meta],
+                                            ids=[doc_id], embeddings=[embedding])
+            except Exception:
+                logger.debug("Context embedding failed; lexical copy retained")
 
     def store_exchange(
         self,
@@ -130,38 +145,45 @@ class VectorContextStore:
         )
 
     def retrieve(
-        self,
-        query: str,
-        n_results: int = 5,
-        category: str | None = None,
+        self, query: str, n_results: int = 5, category: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Retrieve semantically relevant context for a query.
-
-        Returns list of {text, metadata, distance} dicts.
-        """
-        if not self.is_ready:
+        """Return ranked context with its actual retrieval backend and distance."""
+        if not self.is_ready or n_results <= 0:
             return []
-
+        if self._collection is not None and self._embedding_function is not None:
+            try:
+                embedding = self._embedding_function(query)
+                results = self._collection.query(
+                    query_embeddings=[embedding], n_results=n_results,
+                    where={"category": category} if category else None,
+                )
+                docs = results.get("documents", [[]])[0]
+                metadata = results.get("metadatas", [[]])[0]
+                distances = results.get("distances", [[]])[0]
+                if docs:
+                    return [{"text": text, "metadata": metadata[i],
+                             "distance": distances[i], "backend": "semantic"}
+                            for i, text in enumerate(docs)]
+            except Exception:
+                logger.debug("Semantic query unavailable; using lexical context")
+        terms = set(re.findall(r"\w+", query.casefold()))
+        if not terms:
+            return []
         try:
-            where = {"category": category} if category else None
-            results = self._collection.query(
-                query_texts=[query],
-                n_results=n_results,
-                where=where,
-            )
-
-            docs: list[dict[str, Any]] = []
-            if results and results["documents"]:
-                for i, doc in enumerate(results["documents"][0]):
-                    meta = results["metadatas"][0][i] if results["metadatas"] else {}
-                    dist = results["distances"][0][i] if results["distances"] else 1.0
-                    docs.append({
-                        "text": doc,
-                        "metadata": meta,
-                        "distance": dist,
-                    })
-            return docs
-        except Exception:
+            with sqlite3.connect(self._db_path) as conn:
+                rows = conn.execute("SELECT text, metadata FROM snippets").fetchall()
+            matches = []
+            for text, raw_meta in rows:
+                meta = json.loads(raw_meta)
+                if category and meta.get("category") != category:
+                    continue
+                words = set(re.findall(r"\w+", text.casefold()))
+                score = len(terms & words) / len(terms)
+                if score:
+                    matches.append({"text": text, "metadata": meta,
+                                    "distance": 1.0 - score, "backend": "lexical"})
+            return sorted(matches, key=lambda doc: (doc["distance"], doc["text"]))[:n_results]
+        except (sqlite3.Error, ValueError):
             return []
 
     def inject_context(self, bus: ContextBus, task: str, n_results: int = 3) -> int:
@@ -178,11 +200,11 @@ class VectorContextStore:
             # Only inject if reasonably relevant (distance < 0.7)
             if doc["distance"] < 0.7:
                 bus.write(
-                    agent="VectorStore",
+                    agent="ContextStore",
                     role="memory",
-                    key="retrieved_context",
+                    key="retrieved_context_" + hashlib.sha256(doc["text"].encode()).hexdigest()[:12],
                     content=doc["text"],
-                    source="chromadb",
+                    source=doc["backend"],
                     distance=doc["distance"],
                 )
                 injected += 1
@@ -194,6 +216,7 @@ class VectorContextStore:
         if not self.is_ready:
             return 0
         try:
-            return self._collection.count()
-        except Exception:
+            with sqlite3.connect(self._db_path) as conn:
+                return conn.execute("SELECT COUNT(*) FROM snippets").fetchone()[0]
+        except sqlite3.Error:
             return 0

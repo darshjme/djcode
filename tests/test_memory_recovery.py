@@ -135,6 +135,10 @@ def test_conversation_rejects_traversal_and_invalid_payload(memory):
 
 
 def test_chroma_has_no_implicit_embedding_model(monkeypatch, tmp_path):
+    def settings(**options):
+        assert options == {"anonymized_telemetry": False}
+        return options
+    monkeypatch.setitem(sys.modules, "chromadb.config", SimpleNamespace(Settings=settings))
     kwargs = {}
     class Client:
         def get_or_create_collection(self, **options):

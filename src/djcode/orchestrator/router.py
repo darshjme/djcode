@@ -1,4 +1,4 @@
-"""Semantic Router — sentence-transformer based agent dispatch.
+"""Agent dispatch with explicit semantic opt-in and an offline intent fallback.
 
 Uses a small embedding model to classify user intent via cosine similarity
 against pre-computed agent description embeddings. Falls back to regex
@@ -148,6 +148,8 @@ AGENT_EXEMPLARS: dict[AgentRole, list[str]] = {
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
+    if not a or len(a) != len(b):
+        return 0.0
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
@@ -166,14 +168,15 @@ class SemanticRouter:
     Falls back to regex-based routing if embeddings aren't available.
     """
 
-    def __init__(self, provider: Any | None = None) -> None:
+    def __init__(self, provider: Any | None = None, *, semantic: bool = False) -> None:
         self._provider = provider
+        self._semantic_enabled = semantic
         self._exemplar_embeddings: dict[AgentRole, list[list[float]]] = {}
         self._initialized = False
 
     async def initialize(self) -> bool:
-        """Pre-compute exemplar embeddings. Returns True if successful."""
-        if not self._provider:
+        """Embed exemplars only after explicit semantic=True opt-in. Never pull models."""
+        if not self._semantic_enabled or not self._provider:
             return False
 
         try:

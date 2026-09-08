@@ -51,9 +51,12 @@ class VectorStore:
         """Try to initialize ChromaDB. Falls back silently on failure."""
         try:
             import chromadb
+            from chromadb.config import Settings
 
             CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-            self._chroma_client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+            self._chroma_client = chromadb.PersistentClient(
+                path=str(CHROMA_DIR), settings=Settings(anonymized_telemetry=False),
+            )
             self._collection = self._chroma_client.get_or_create_collection(
                 name=self._collection_name,
                 metadata={"hnsw:space": "cosine"},

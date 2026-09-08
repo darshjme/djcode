@@ -34,6 +34,7 @@ def test_source_update_targets_current_python_and_actual_repository(monkeypatch,
 
 
 def test_release_lookup_and_message_use_real_repo(monkeypatch, tmp_path):
+    monkeypatch.delenv("DJCODE_NO_UPDATE_CHECK", raising=False)
     urls = []
     def get(url, **kwargs):
         urls.append(url)
