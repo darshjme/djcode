@@ -205,3 +205,34 @@ def test_native_tool_summary_code_blocks_are_never_reexecuted(tmp_path, monkeypa
         assert operator.messages[-1].role == 'assistant'
         assert not any('[Tool Execution Results]' in message.content for message in operator.messages)
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('marker', ['data: [DONE]', 'data:[DONE]'])
+def test_done_marker_closes_held_open_http_stream(marker):
+    """Protocol completion must not wait for transport EOF or HTTP timeout."""
+    class HeldOpenSSE(httpx.AsyncByteStream):
+        closed = False
+        waited_for_eof = False
+        async def __aiter__(self):
+            yield ('data: ' + json.dumps(event({'content': 'finished'}, finish='stop')) + '\n\n').encode()
+            yield (marker + '\n\n').encode()
+            self.waited_for_eof = True
+            await asyncio.Event().wait()
+        async def aclose(self):
+            self.closed = True
+    async def run():
+        body = HeldOpenSSE()
+        provider = Provider(ProviderConfig('custom', 'https://fixture.test/v1', 'fixture'))
+        await provider._client.aclose()
+        provider._client = httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, stream=body)))
+        try:
+            async def consume():
+                return [part async for part in stream_turn(provider, [Message(role='user', content='test')])]
+            result = await asyncio.wait_for(consume(), timeout=.5)
+            assert result == [('finished', [])]
+            assert body.closed
+            assert not body.waited_for_eof
+        finally:
+            await provider.close()
+    asyncio.run(run())

@@ -800,9 +800,14 @@ class Provider:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
                         line = line.strip()
-                        if line.startswith("data: ") and line != "data: [DONE]":
+                        if line.startswith("data:"):
+                            data = line[5:].lstrip()
+                            if data == "[DONE]":
+                                # SSE completion is independent of transport EOF.
+                                # Returning inside the response context closes it.
+                                return
                             try:
-                                yield json.loads(line[6:])
+                                yield json.loads(data)
                             except json.JSONDecodeError:
                                 continue
             else:
