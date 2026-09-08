@@ -725,7 +725,7 @@ MIT -- see [LICENSE](LICENSE).
 <br/>
 
 *I built this because I believe the best dev tools run on your own hardware.*
-*No subscriptions. No data harvesting. Just you, your code, and 19 specialists that work for free.*
+*Open-source software, with local and hosted inference options. Hardware and provider costs depend on your setup.*
 
 <br/>
 
@@ -736,3 +736,7 @@ MIT -- see [LICENSE](LICENSE).
 <sub>If DJcode saves you from a cloud subscription, star the repo. That's all I ask.</sub>
 
 </div>
+
+## Optional low-memory inference
+
+DJcode can connect to an existing Colibri server and plan its RAM/VRAM/context budget with `djcode-colibri`. Supported MoE experts can stream from disk through Colibri; this trades memory for storage capacity and latency. Setup is opt-in and downloads no model weights. See the [Colibri integration guide](docs/LOW-MEMORY-COLIBRI.md) for preflight checks and limitations.

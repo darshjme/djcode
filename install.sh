@@ -29,11 +29,17 @@ else
 fi
 "$RELEASE/venv/bin/djcode" --version
 # Keep earlier releases for rollback; refuse to replace an unrelated executable.
-if [[ -e "$BIN_DIR/djcode" && ! -L "$BIN_DIR/djcode" ]]; then
-  printf 'Existing %s/djcode is not a symlink; choose DJCODE_BIN_DIR or move it first.\n' "$BIN_DIR" >&2
-  exit 1
-fi
-ln -sfn "$RELEASE/venv/bin/djcode" "$BIN_DIR/djcode"
+for ENTRY in djcode djcode-colibri; do
+  if [[ -e "$RELEASE/venv/bin/$ENTRY" && -e "$BIN_DIR/$ENTRY" && ! -L "$BIN_DIR/$ENTRY" ]]; then
+    printf 'Existing %s/%s is not a symlink; choose DJCODE_BIN_DIR or move it first.\n' "$BIN_DIR" "$ENTRY" >&2
+    exit 1
+  fi
+done
+for ENTRY in djcode djcode-colibri; do
+  if [[ -e "$RELEASE/venv/bin/$ENTRY" ]]; then
+    ln -sfn "$RELEASE/venv/bin/$ENTRY" "$BIN_DIR/$ENTRY"
+  fi
+done
 SUCCEEDED=1
 printf '\nInstalled: %s/djcode\n' "$BIN_DIR"
 case ":$PATH:" in

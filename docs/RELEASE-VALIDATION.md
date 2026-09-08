@@ -1,4 +1,4 @@
-# DJcode 4.0.2 validation
+# DJcode 4.1.0 validation
 
 This release repairs execution paths in the existing agent, rather than measuring a new model. There are 19 engineering profiles, 12 content profiles, 17 built-in tools and 48 registered TUI commands. Profiles are system prompts and tool policies, not people or academic credentials.
 
@@ -19,13 +19,19 @@ This release repairs execution paths in the existing agent, rather than measurin
 | Memory routing | Offline lexical retrieval by default. Semantic search requires explicit embeddings/configuration; no default embedding model download. Existing Chroma data is retained. |
 | Featherless | Named provider and `FEATHERLESS_API_KEY`, official OpenAI-compatible endpoint. No live Featherless account test or invented referral/partnership. |
 
-Release gate: **257 tests passed**, and the 4.0.2 wheel/source distribution built. The clean hosted rerun completed the read/edit/test fixture with exit 0 and no async-generator shutdown warning. An earlier overloaded-provider run correctly returned nonzero; retry now occurs only before any stream data is emitted.
+Current release gate: **286 tests passed**, and the 4.1.0 wheel/source distribution built. The earlier 4.0.2 hosted runtime evidence below remains explicitly tied to that commit. The clean hosted rerun completed the read/edit/test fixture with exit 0 and no async-generator shutdown warning. An earlier overloaded-provider run correctly returned nonzero; retry now occurs only before any stream data is emitted.
 
 Image/video commands draft prompts rather than directly calling media-generation services. Campaign executes its director; launch builds and drafts campaign content, without a guaranteed production deployment. MCP extension servers require separate configuration and were not live-tested.
 
 The automated suite is reproducible with `uv run --with pytest pytest -q`. Tests isolate DJcode configuration and disable update checks. Live hosted evidence is separate from deterministic fixtures. Local Ollama/MLX inference, microphone/voice hardware, all third-party extensions, and every provider/model combination were not exercised. Model context limits and pricing in the bundled registry are estimates; confirm current provider documentation.
 
 A real hosted delegation acceptance on `04fef3d` completed in 39.82 seconds: the parent called `spawn_agent`, the specialist repaired the function and ran tests, the parent returned its result, and an independent rerun passed. The test file was byte-for-byte unchanged. Before the correction, the specialist succeeded but the text fallback replayed summary code blocks and overwrote the disposable fixture test; this was reproduced and fixed with regression coverage. OpenAI-compatible SSE now also closes immediately at `[DONE]`, with held-open connection regression tests.
+
+## Colibri integration acceptance
+
+The opt-in `colibri` provider and `djcode-colibri` helper use an existing external Colibri installation. Nineteen provider tests and ten helper tests cover exact model discovery, optional auth, context/output budgets, native tool/result feedback, unsupported-tool errors, preflight rejection, argv boundaries, dry-run behavior and planning timeout. No weights or engine were downloaded or built.
+
+The actual upstream launcher at `fd93c41aa6ae2c7d1cc1a1e2d6b79dbe6d341708` successfully planned a synthetic 1,273-byte safetensors fixture. Actual doctor metadata recognized its GLM family and rejected inference readiness because the fixture lacks a tokenizer and built engine. This validates inspection and refusal paths, not large-model inference, performance, quality or hardware fit. See [requirements and scope](LOW-MEMORY-COLIBRI.md).
 
 ## Source-informed changes
 

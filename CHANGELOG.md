@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.1.0 — 2026-09-09
+
+- Add opt-in Colibri provider and `djcode-colibri` resource planning, preflight and foreground serving for existing model files. No engine or weights are downloaded.
+- Require native tool capability and explicit memory/context budgets; preserve provider errors, approval and cancellation semantics.
+- Include both CLI entrypoints in the installer. See docs/LOW-MEMORY-COLIBRI.md for verified scope, requirements and limits.
+
 ## 4.0.2 — 2026-09-09
 
 - Stop heuristic text-command extraction after native tool use, preventing final summaries from replaying shell commands or overwriting files.

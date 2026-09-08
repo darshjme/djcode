@@ -1,6 +1,6 @@
 [project]
 name = "djcode"
-version = "4.0.2"
+version = "4.1.0"
 description = "DJcode — local-first coding agent with specialist profiles, tool approvals and recoverable sessions."
 readme = "README.md"
 license = "MIT"
@@ -33,6 +33,7 @@ tokens = ["tiktoken>=0.7"]
 
 [project.scripts]
 djcode = "djcode.cli:main"
+djcode-colibri = "djcode.colibri:main"
 
 [build-system]
 requires = ["hatchling"]
