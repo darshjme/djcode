@@ -3,6 +3,7 @@
 ## 4.0.2 — 2026-09-09
 
 - Stop heuristic text-command extraction after native tool use, preventing final summaries from replaying shell commands or overwriting files.
+- Close OpenAI-compatible SSE responses immediately at `[DONE]`, without waiting for the server to close the connection.
 - Derive TUI profile counts and version from the runtime registry, and fix modal overlay styling.
 
 ## 4.0.1 — 2026-09-09

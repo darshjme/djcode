@@ -1,4 +1,4 @@
-# DJcode 4.0.1 validation
+# DJcode 4.0.2 validation
 
 This release repairs execution paths in the existing agent, rather than measuring a new model. There are 19 engineering profiles, 12 content profiles, 17 built-in tools and 48 registered TUI commands. Profiles are system prompts and tool policies, not people or academic credentials.
 
@@ -12,18 +12,20 @@ This release repairs execution paths in the existing agent, rather than measurin
 | Permissions | Main and nested specialist approvals, native Textual modal, read-only roles, explicit unattended auto-accept and plan-mode tool denial. These are application controls, not an OS sandbox. |
 | Subagents | Parent provider/approval inheritance, finite child rounds/deadlines, nesting/concurrency caps, actual file execution, failed background state, pipeline failure and cancellation. |
 | Sessions/context | Atomic SQLite transcript replacement and schema migration preserve tool IDs/names. Compression preserves complete call/result groups. Atomic concurrent fact writes and restart retrieval tested. |
-| Text-only tools | Extracted actions execute through tools and their results return to the next model turn. Heuristic extraction can misunderstand prose; review approvals. It is not a guarantee that every model is a reliable coding agent. |
+| Text-only tools | Native tool use disables heuristic extraction for the remainder of that run, so final summaries cannot replay commands. Extracted actions execute through tools and their results return to the next model turn. Heuristic extraction can misunderstand prose; review approvals. It is not a guarantee that every model is a reliable coding agent. |
 | Local processes | Shell output bounded while reading; timeout/cancellation kills process groups. Git arguments passed without shell interpolation. |
 | TUI | Real Textual headless startup/render, modal deny/allow, slash dispatch, history/context and cancellation checks. |
 | Install/update | Installer uses isolated release environments, preserves previous releases and config, checks runtime version, exposes prefix/bin overrides and never downloads models. Update commands target the official repository. |
 | Memory routing | Offline lexical retrieval by default. Semantic search requires explicit embeddings/configuration; no default embedding model download. Existing Chroma data is retained. |
 | Featherless | Named provider and `FEATHERLESS_API_KEY`, official OpenAI-compatible endpoint. No live Featherless account test or invented referral/partnership. |
 
-Release gate: **254 tests passed**, and the 4.0.1 wheel/source distribution built. The clean hosted rerun completed the read/edit/test fixture with exit 0 and no async-generator shutdown warning. An earlier overloaded-provider run correctly returned nonzero; retry now occurs only before any stream data is emitted.
+Release gate: **257 tests passed**, and the 4.0.2 wheel/source distribution built. The clean hosted rerun completed the read/edit/test fixture with exit 0 and no async-generator shutdown warning. An earlier overloaded-provider run correctly returned nonzero; retry now occurs only before any stream data is emitted.
 
 Image/video commands draft prompts rather than directly calling media-generation services. Campaign executes its director; launch builds and drafts campaign content, without a guaranteed production deployment. MCP extension servers require separate configuration and were not live-tested.
 
 The automated suite is reproducible with `uv run --with pytest pytest -q`. Tests isolate DJcode configuration and disable update checks. Live hosted evidence is separate from deterministic fixtures. Local Ollama/MLX inference, microphone/voice hardware, all third-party extensions, and every provider/model combination were not exercised. Model context limits and pricing in the bundled registry are estimates; confirm current provider documentation.
+
+A real hosted delegation acceptance on `04fef3d` completed in 39.82 seconds: the parent called `spawn_agent`, the specialist repaired the function and ran tests, the parent returned its result, and an independent rerun passed. The test file was byte-for-byte unchanged. Before the correction, the specialist succeeded but the text fallback replayed summary code blocks and overwrote the disposable fixture test; this was reproduced and fixed with regression coverage. OpenAI-compatible SSE now also closes immediately at `[DONE]`, with held-open connection regression tests.
 
 ## Source-informed changes
 
