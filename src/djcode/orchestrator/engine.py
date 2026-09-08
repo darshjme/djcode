@@ -655,7 +655,7 @@ class ShadowOrchestrator:
         # Inject vector store context
         n_injected = self.vector_store.inject_context(self.bus, task, n_results=3)
         if n_injected:
-            yield context_inject_event("chromadb", n_injected)
+            yield context_inject_event(self.vector_store.backend, n_injected)
 
         # Classify and strategize
         complexity = self.classify_complexity(task)
@@ -742,7 +742,7 @@ class ShadowOrchestrator:
             f"\n  [dim]Orchestration complete. Strategy={strategy.value}, "
             f"{len(self.bus)} entries on context bus, "
             f"{len(agents_completed)} agents completed"
-            + (f", {stored} in vector memory" if stored else "")
+            + (f", {stored} in {self.vector_store.backend} context memory" if stored else "")
             + f" ({total_elapsed:.1f}s).[/]\n"
         )
 

@@ -165,17 +165,44 @@ def test_tui_mount_permission_and_immediate_cancel(monkeypatch, tmp_path):
                 await pilot.pause(.02)
             assert app._operator is not None
             assert app._operator.approval_callback is not None
+            from textual.widgets import Input, RichLog
+            # Execute real read-only dispatch paths; no model inference is needed.
+            for command in ("/help", "/agents", "/models", "/provider", "/auth", "/context", "/stats", "/memory", "/extension", "/recipe", "/history", "/todo", "/tasks", "/cost", "/army", "/docs", "/docs overview", "/skills", "/mcp"):
+                chat = app.query_one("#chat-log", RichLog)
+                before = len(chat.lines)
+                await app._handle_slash_command(command)
+                await pilot.pause()
+                if len(app.screen_stack) > 1:
+                    await pilot.press("escape")
+                added = "\n".join(line.text for line in chat.lines[before:])
+                assert "error:" not in added.lower(), (command, added)
+                assert "Traceback" not in added, (command, added)
+            # Read-only scout must actually read a file through the shared loop.
+            import json
+            source = tmp_path / "scout.txt"
+            source.write_text("scout evidence")
+            scout_provider = ScriptedProvider([[call("file_read", json.dumps({"path": str(source)}))], [final("Scout verified file")]])
+            saved_provider = app._orchestrator._shadow.provider
+            app._orchestrator._shadow.provider = scout_provider
+            await app._handle_agent_command("/scout", "inspect file")
+            assert "scout evidence" in scout_provider.messages[1][-1].content
+            app._orchestrator._shadow.provider = saved_provider
             # /spawn must use this live provider and preserve auto-accept OFF.
             import json
             target = tmp_path / "denied.txt"
             spawn_provider = ScriptedProvider([[call("file_write", json.dumps({"path": str(target), "content": "no"}))], [final("permission denied")]])
             original_provider = app._provider
             app._provider = spawn_provider
-            spawning = asyncio.create_task(app._handle_spawn("coder write a file"))
+            prompt = app.query_one("#prompt-input", Input)
+            app.post_message(Input.Submitted(prompt, "/spawn coder write a file"))
             await pilot.pause()
             assert isinstance(app.screen, ToolApprovalScreen)
             await pilot.click("#deny-tool")
-            await spawning
+            for _ in range(50):
+                if not app._is_generating:
+                    break
+                await pilot.pause(.01)
+            assert not app._is_generating
             assert not target.exists()
             assert "User denied" in spawn_provider.messages[1][-1].content
             app._provider = original_provider
@@ -257,3 +284,36 @@ def test_wave_cli_failure_closes_provider(monkeypatch):
     assert "provider unavailable" in result.output
     assert "Wave execution finished" not in result.output
     assert closed == [True]
+
+
+def test_registry_has_dispatch_for_every_command():
+    import ast
+    import inspect
+    import textwrap
+    from djcode.app import COMMAND_REGISTRY, DJcodeApp
+    tree = ast.parse(textwrap.dedent(inspect.getsource(DJcodeApp._handle_slash_command)))
+    dispatched = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/")}
+    assert all(command in dispatched for command, _ in COMMAND_REGISTRY)
+
+
+@pytest.mark.parametrize("role", list(__import__("djcode.agents.content_registry", fromlist=["ContentRole"]).ContentRole))
+def test_content_specialist_executor_compatibility(role):
+    from djcode.agents.content_registry import get_content_spec
+    bus = ContextBus()
+    provider = ScriptedProvider([[final("Content delivered. CONFIDENCE: 0.8")]])
+    result = asyncio.run(AgentExecutor(get_content_spec(role), provider, bus, enable_ra=False).execute("draft"))
+    assert result.succeeded
+    assert result.confidence_score == .8
+    assert bus.read_all()[0].role == role.value
+
+
+@pytest.mark.parametrize("name,method", [("scout", "investigate"), ("architect", "plan")])
+def test_classic_specialists_use_tool_loop(tmp_path, name, method):
+    import importlib
+    import json
+    path = tmp_path / "input.txt"
+    path.write_text("available evidence")
+    provider = ScriptedProvider([[call("file_read", json.dumps({"path": str(path)}))], [final("complete")]])
+    specialist = getattr(importlib.import_module(f"djcode.agents.{name}"), name.title())(provider)
+    assert asyncio.run(getattr(specialist, method)("inspect")) == "complete"
+    assert "available evidence" in provider.messages[1][-1].content

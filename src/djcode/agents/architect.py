@@ -39,19 +39,14 @@ class Architect:
             Message(role="system", content=ARCHITECT_PROMPT)
         ]
 
-    async def plan(self, requirement: str) -> str:
-        """Generate an implementation plan for the given requirement."""
-        self.messages.append(Message(role="user", content=requirement))
+    async def plan(self, task: str) -> str:
+        """Run the specialist with bounded, read-only tool execution."""
+        from djcode.agents.registry import AgentRole, get_agent
+        from djcode.orchestrator.context_bus import ContextBus
+        from djcode.orchestrator.engine import AgentRunner
 
-        full_response = ""
-        async for chunk in self.provider.chat(self.messages, stream=False):
-            if self.provider.is_ollama:
-                msg = chunk.get("message", {})
-                full_response = msg.get("content", "")
-            else:
-                choices = chunk.get("choices", [])
-                if choices:
-                    full_response = choices[0].get("message", {}).get("content", "")
-
-        self.messages.append(Message(role="assistant", content=full_response))
-        return full_response
+        runner = AgentRunner(self.provider, get_agent(AgentRole.ARCHITECT), ContextBus(), auto_accept=False)
+        self.messages.append(Message(role="user", content=task))
+        response = await runner.run(task)
+        self.messages.append(Message(role="assistant", content=response))
+        return response
