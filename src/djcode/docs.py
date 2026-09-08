@@ -83,7 +83,6 @@ djcode --auto-accept            # Skip tool confirmations
 | /stats [7d|30d] | Usage dashboard with heatmap |
 | /agents | Show all 22 agents |
 | /memory | Memory tier stats |
-| /buddy | Show dharmic ASCII buddy |
 | /skill list|add|remove | Manage teachable skills |
 | /shortcuts | Keyboard shortcuts reference |
 | /config | Show configuration |

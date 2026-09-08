@@ -198,7 +198,6 @@ COMMAND_GROUPS: dict[str, list[tuple[str, str]]] = {
         ("/agents", "Show all 22 agents roster"),
         ("/stats", "Usage dashboard with activity heatmap"),
         ("/memory", "Show memory stats"),
-        ("/buddy", "Show your buddy + speech bubble"),
         ("/shortcuts", "Show keyboard shortcuts"),
     ],
     "Session": [

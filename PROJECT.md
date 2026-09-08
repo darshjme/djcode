@@ -17,7 +17,7 @@
 
 ## 1. Project Overview
 
-DJcode is a local-first AI coding CLI that runs entirely on your machine. No cloud. No subscription. Your code stays yours. It connects to local LLM backends (Ollama, MLX) or cloud providers (OpenAI, Anthropic, Google, Groq, NVIDIA NIM, Together AI, OpenRouter) through a unified interface. It features 22 specialist AI agents (10 dev + 12 content), a multi-agent orchestrator with semantic routing, a smart prompt enhancer, a dharmic ASCII buddy companion, 3-tier memory with ChromaDB vector store, a full TUI with keyboard shortcuts, teachable skills, voice input, and a complete content creation pipeline.
+DJcode is a local-first AI coding CLI that runs entirely on your machine. No cloud. No subscription. Your code stays yours. It connects to local LLM backends (Ollama, MLX) or cloud providers (OpenAI, Anthropic, Google, Groq, NVIDIA NIM, Together AI, OpenRouter) through a unified interface. It features 22 specialist AI agents (10 dev + 12 content), a multi-agent orchestrator with semantic routing, a smart prompt enhancer, 3-tier memory with ChromaDB vector store, a full TUI with keyboard shortcuts, teachable skills, voice input, and a complete content creation pipeline.
 
 ---
 
@@ -86,7 +86,6 @@ graph TB
         REPL["repl.py<br/>Interactive REPL"]
         TUI["tui.py<br/>Keybindings + Modes"]
         STATUS["status.py<br/>Bottom Toolbar"]
-        BUDDY["buddy.py<br/>ASCII Companion"]
     end
 
     subgraph "Intelligence"
@@ -145,7 +144,6 @@ graph TB
     CLI --> REPL
     REPL --> TUI
     REPL --> STATUS
-    REPL --> BUDDY
     REPL --> OPERATOR
     REPL --> ENHANCER
     OPERATOR --> PROMPT
@@ -190,7 +188,6 @@ graph TB
 | 4 | `src/djcode/repl.py` | 1,070 | Interactive REPL loop | `run_repl()`, `handle_slash_command()`, `print_banner()` |
 | 5 | `src/djcode/tui.py` | 456 | TUI keybindings + modes | `ModeState`, `register_keybindings()`, `show_command_picker()`, `ProgressTracker` |
 | 6 | `src/djcode/status.py` | 150 | Bottom toolbar | `StatusBar` |
-| 7 | `src/djcode/buddy.py` | 1,541 | ASCII buddy companion | `Buddy`, `BuddyContext`, speech bubbles, mood system, 6 dharmic species |
 | 8 | `src/djcode/provider.py` | 693 | LLM provider abstraction | `Provider`, `ProviderConfig`, `Message`, streaming, fuzzy model match |
 | 9 | `src/djcode/auth.py` | 239 | Auth + provider registry | `PROVIDERS` (9 entries), `get_api_key()`, `is_uncensored_model()` |
 | 10 | `src/djcode/config.py` | 73 | Config management | `load_config()`, `set_value()`, `ensure_dirs()` |
@@ -254,9 +251,6 @@ graph TB
 | 3-tier memory system | Done | `memory/` |
 | ChromaDB embeddings | Done | `memory/embedder.py` |
 | Persistent facts (/remember, /recall) | Done | `memory/manager.py` |
-| Smart ASCII buddy (6 dharmic species) | Done | `buddy.py` |
-| Mood system + context-aware reactions | Done | `buddy.py` |
-| Speech bubbles | Done | `buddy.py` |
 | Keyboard shortcuts (7 bindings) | Done | `tui.py` |
 | Plan/Act mode toggle | Done | `tui.py` |
 | Interactive command picker (fuzzy /) | Done | `tui.py` |
@@ -355,9 +349,6 @@ graph TB
 | 32 | `/stats` | stats | Usage dashboard with activity heatmap |
 | 33 | `/stats 7d` | stats | Last 7 days stats |
 | 34 | `/stats 30d` | stats | Last 30 days stats |
-| 35 | `/buddy` | buddy | Show your buddy + speech bubble |
-| 36 | `/buddy pet` | buddy | Pet your buddy |
-| 37 | `/buddy species` | buddy | Show all species |
 | 38 | `/raw` | repl | Toggle raw mode (no formatting) |
 | 39 | `/shortcuts` | tui | Show keyboard shortcuts |
 | 40 | `/exit` | repl | Exit DJcode |
@@ -390,7 +381,6 @@ graph TB
 | Specialist agents | 22 | 0 | 0 | 0 | 0 |
 | Multi-agent orchestrator | Yes | No | No | No | No |
 | Content creation pipeline | Yes | No | No | No | No |
-| ASCII buddy companion | Yes | No | No | No | No |
 | Prompt enhancement | Auto | No | No | No | No |
 | Uncensored model support | Yes | No | No | Yes | No |
 | Voice input | Yes | No | No | No | No |
@@ -458,3 +448,5 @@ graph TB
 ---
 
 *Generated 2026-04-07. Source of truth: git log + source code.*
+
+The legacy ASCII Buddy companion has been removed. Historical commit descriptions above describe past releases, not current features. Existing user data is retained.

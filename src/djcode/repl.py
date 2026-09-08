@@ -37,7 +37,6 @@ from djcode.auth import (
     interactive_provider_picker,
     is_uncensored_model,
 )
-from djcode.buddy import BODIES, SPECIES_EMOJI, get_buddy
 from djcode.errors import classify_error, format_error, get_fallback_model
 from djcode.orchestrator import Orchestrator
 from djcode.agents.registry import AgentRole
@@ -131,7 +130,6 @@ def print_banner(provider: Provider) -> None:
     if is_uncensored_model(model_display):
         model_display += " \U0001f513"
 
-    buddy = get_buddy()
 
     inner = (
         f"[bold {GOLD}]{ASCII_BANNER}[/]\n"
@@ -145,7 +143,6 @@ def print_banner(provider: Provider) -> None:
         f"  [bold {GOLD}]Folder:[/]    [white]{cwd_display}[/]\n"
         f"  [bold {GOLD}]Context:[/]   [white]{ctx_str}[/]\n"
         f"  [bold {GOLD}]Mode:[/]      [white]{mode}[/]\n"
-        f"  [bold {GOLD}]Buddy:[/]     [white]{buddy.emoji} {buddy.name} {buddy.title}[/]"
     )
 
     console.print()
@@ -205,9 +202,6 @@ HELP_TEXT = f"""\
   [cyan]/history[/]           Browse past sessions
   [cyan]/history search[/]    Search past conversations
   [cyan]/resume[/]            Resume a past session by ID
-  [cyan]/buddy[/]             Show your buddy + speech bubble
-  [cyan]/buddy pet[/]         Pet your buddy
-  [cyan]/buddy species[/]     Show all species
   [cyan]/raw[/]               Toggle raw mode (no formatting)
   [cyan]/shortcuts[/]         Show keyboard shortcuts
   [cyan]/exit[/]              Exit DJcode
@@ -735,23 +729,6 @@ async def handle_slash_command(
             period = "all"
         render_stats(console, period=period)
 
-    elif command == "/buddy":
-        buddy = get_buddy()
-        sub = arg.strip().lower()
-        if sub == "pet":
-            buddy.speak("success", custom_text=f"*purrs* {buddy.name} loves that!")
-            buddy.set_mood("success")
-            buddy.render_full(console)
-        elif sub == "species":
-            console.print(f"\n[bold {GOLD}]Available Species[/]\n")
-            for sp in BODIES:
-                emoji = SPECIES_EMOJI.get(sp, "")
-                console.print(f"  {emoji}  [white]{sp}[/]")
-            console.print(f"\n[dim]Your buddy: {buddy.emoji} {buddy.display_name} ({buddy.species})[/]\n")
-        else:
-            buddy.speak("idle")
-            buddy.render_full(console)
-
     elif command == "/raw":
         operator.raw = not operator.raw
         state = "on" if operator.raw else "off"
@@ -1066,9 +1043,8 @@ async def run_repl(
     # Initialize orchestrator
     orchestrator = Orchestrator(llm, auto_accept=effective_auto_accept)
 
-    # Initialize buddy and status bar
-    buddy = get_buddy()
-    status_bar = StatusBar(buddy)
+    # Initialize status bar
+    status_bar = StatusBar()
     status_bar.update(
         model=llm.config.model,
         provider=llm.config.name,
@@ -1090,11 +1066,9 @@ async def run_repl(
     # Initialize extension manager
     ext_manager = ExtensionManager()
 
-    # Print banner + permissions warning + buddy greeting
+    # Print banner and permissions warning
     print_banner(llm)
     permissions.show_startup_warning()
-    buddy.react("greeting")
-    buddy.render_full(console)
 
     # Check for updates (non-blocking, once per 24h)
     try:
@@ -1120,7 +1094,6 @@ async def run_repl(
 
     while True:
         try:
-            buddy.set_mood("idle")
 
             # Prompt: ❯ (gold) in ACT mode, ⏸ (magenta) in PLAN mode
             if tui_mode.plan_mode:
@@ -1185,14 +1158,9 @@ async def run_repl(
             if not raw:
                 console.print()  # Spacing
 
-            buddy.ctx.last_user_query = user_input
             if enhanced.was_enhanced:
                 desc = describe_enhancement(enhanced)
-                buddy.react("thinking", response=user_input)
-                buddy.speak("thinking", custom_text=desc)
-                console.print(f"  [dim {GOLD}]{buddy.emoji} {buddy.name}: {desc}[/]")
-            else:
-                buddy.react("thinking", response=user_input)
+                console.print(f"  [dim {GOLD}]{desc}[/]")
 
             # Live thinking indicator: ⏺ Thinking... (Xs · ↓ N tokens)
             import time as _time
@@ -1252,9 +1220,6 @@ async def run_repl(
 
             if full_response:
                 memory.add_session_message("assistant", full_response)
-                buddy.observe(user_input, full_response, success=True)
-                buddy.set_mood("success")
-                buddy.tick()
 
                 # Track usage stats (legacy JSON + SQLite)
                 token_est = len(full_response) // 4
@@ -1276,8 +1241,6 @@ async def run_repl(
                         title="[yellow]Model Censorship Detected[/]",
                         border_style="yellow",
                     ))
-            else:
-                buddy.set_mood("idle")
 
             # Update status bar token count (toolbar auto-updates on next prompt)
             token_est = _estimate_tokens(operator.messages)
@@ -1297,12 +1260,9 @@ async def run_repl(
 
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted.[/]")
-            buddy.set_mood("idle")
         except KeyboardInterrupt:
             raise  # Re-raise to be caught by outer handler
         except Exception as e:
-            buddy.observe(user_input, "", success=False)
-            buddy.set_mood("error")
             err = classify_error(e)
             console.print(f"\n{format_error(err)}")
             # Auto-fallback: suggest smaller model on OOM/timeout

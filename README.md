@@ -363,37 +363,6 @@ Built-in content generation army for marketing, social, video, and distribution:
 
 ---
 
-## Meet Your Buddy
-
-Every DJcode user gets a dharmic ASCII companion. Deterministically assigned from your username. Six species, each with 3 animation frames, idle fidgets, and contextual speech bubbles.
-
-```
-  ┌────────────────────────────────┐
-  │ python code dropped. Looks     │       ,
-  │ clean.                         │      /|\
-  └────────────────────────────────┘     (o*o)
-                                         |___|
-                                        /_____\
-                                    Agni the Illuminated
-```
-
-### The Six Species
-
-```
-     ,           _/\_       .-"-.       ~~~~~~      \|/|\|/       ॐ
-    /|\         / oo \     / o|o \      |    |       (oo)        / \
-   (o*o)        \ ~~ /    (  -o-  )     | oo |       /||\      |o.o|
-   |___|         |  |      \ | /        |    |      / || \      \ /
-  /_____\        \__/       ~~~~~       \____/       _/\_        ~
-
-   Diya         Cobra       Lotus        Chai      Peacock       Om
-  (oil lamp)   (guardian)   (bloom)     (teacup)   (display)   (cosmic)
-```
-
-The buddy watches what's happening: detects languages, tracks file changes, notices error streaks, celebrates momentum, reacts to fixes, observes tool usage, knows when you're idle.
-
----
-
 ## Models
 
 DJcode ships with a 33-model registry spanning every major provider. Fuzzy matching built in.
@@ -468,9 +437,6 @@ djcode> /model gemini-flash
 | `/save` | Save conversation to disk |
 | `/config` | Show current configuration |
 | `/set k=v` | Set a config value |
-| `/buddy` | Show your ASCII buddy |
-| `/buddy pet` | Pet your buddy |
-| `/buddy species` | Show all six species |
 | `/raw` | Toggle raw output mode |
 | `/exit` | Exit DJcode |
 
@@ -522,7 +488,6 @@ graph TB
         MEM["3-Tier Memory<br/><small>session + facts + ChromaDB vectors</small>"]
         COMP["Context Compressor<br/><small>4 strategies (TRIM/SELECTIVE/SUMMARY/HYBRID)</small>"]
         MREG["33-Model Registry<br/><small>fuzzy match + cost tracking</small>"]
-        BUDDY["Buddy System<br/><small>6 species, context-aware ASCII companion</small>"]
     end
 
     subgraph Providers
@@ -566,7 +531,6 @@ graph TB
     ORCH --> MEM
     ORCH --> PE
 
-    BUDDY -.->|observes| ORCH
 
     style CLI fill:#FFD700,stroke:#333,color:#000
     style ORCH fill:#FFD700,stroke:#333,color:#000
@@ -590,7 +554,6 @@ src/djcode/
 ├── provider.py             # 9 providers, auto-fallback, fuzzy model matching
 ├── prompt.py               # Expert system prompt with tool definitions
 ├── prompt_enhancer.py      # Intent detection (8 modes) + context injection
-├── buddy.py                # ASCII buddy: 6 species, smart observer
 ├── config.py               # ~/.djcode/config.json management
 ├── auth.py                 # Provider registry + API key management
 ├── status.py               # Fixed bottom toolbar

@@ -3,7 +3,7 @@
 Detects intent, injects relevant context (cwd, git state, recent files),
 and adds structured instructions so the model gives better answers.
 
-The buddy announces what was enhanced in its speech bubble.
+The interface describes which context was added.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class EnhancedPrompt:
     original: str
     enhanced: str
     intent: str          # detected primary intent
-    context_added: list[str]  # what was injected (for buddy to announce)
+    context_added: list[str]  # what was injected for the interface to describe
     was_enhanced: bool   # False if prompt was already specific enough
 
 
@@ -192,7 +192,7 @@ def enhance_prompt(
     """Enhance a user prompt with context and structured instructions.
 
     Returns an EnhancedPrompt with the enriched version and metadata
-    about what was added (so the buddy can announce it).
+    about what was added for the interface to display.
     """
     # Skip enhancement for very short commands or questions
     stripped = user_input.strip()
@@ -280,7 +280,7 @@ def enhance_prompt(
 
 
 def describe_enhancement(result: EnhancedPrompt) -> str:
-    """Generate a short description of what was enhanced (for buddy bubble)."""
+    """Generate a short description of what was enhanced for display."""
     if not result.was_enhanced:
         return ""
 

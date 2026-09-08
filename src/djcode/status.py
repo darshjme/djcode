@@ -7,12 +7,8 @@ The fixed toolbar stays pinned at the terminal bottom at all times.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
 
 from prompt_toolkit.formatted_text import HTML
-
-if TYPE_CHECKING:
-    from djcode.buddy import Buddy
 
 GOLD = "#FFD700"
 
@@ -37,12 +33,11 @@ class StatusBar:
     """Manages the fixed bottom toolbar state for prompt_toolkit.
 
     Usage with PromptSession:
-        status = StatusBar(buddy)
+        status = StatusBar()
         session = PromptSession(bottom_toolbar=status.render)
     """
 
-    def __init__(self, buddy: Buddy) -> None:
-        self.buddy = buddy
+    def __init__(self) -> None:
         self.model: str = ""
         self.provider: str = ""
         self.token_count: int = 0
@@ -77,9 +72,9 @@ class StatusBar:
     def render(self) -> HTML:
         """Render the bottom toolbar as prompt_toolkit HTML.
 
-        Clean single line: ⏺ Mitra · ACT · gemma4 · ollama · ↓ 2.4k tokens · ~/project · Ctrl+? help
+        Clean single line: ⏺ DJcode · ACT · gemma4 · ollama · ↓ 2.4k tokens · ~/project · Ctrl+? help
         """
-        name = self.buddy.name
+        name = "DJcode"
         cwd = _shorten_cwd()
         tokens = _format_tokens(self.token_count)
 
