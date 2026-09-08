@@ -7,6 +7,11 @@ Shows changelog when a new version is available.
 from __future__ import annotations
 
 import json
+import os
+import re
+import shlex
+import shutil
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -16,7 +21,7 @@ import httpx
 from djcode import __version__
 from djcode.config import CONFIG_DIR
 
-GITHUB_REPO = "darshjme/djcode-python"
+GITHUB_REPO = "darshjme/djcode"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 CHANGELOG_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/CHANGELOG.md"
 UPDATE_CHECK_FILE = CONFIG_DIR / "last_update_check.json"
@@ -57,14 +62,34 @@ def _should_check() -> bool:
 
 def _parse_version(v: str) -> tuple[int, ...]:
     """Parse version string like '0.1.0' or 'v1.2.3' into tuple."""
-    v = v.lstrip("v").strip()
-    parts = []
-    for p in v.split("."):
-        try:
-            parts.append(int(p))
-        except ValueError:
-            parts.append(0)
-    return tuple(parts)
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", v.strip())
+    if not match:
+        raise ValueError("Expected a stable major.minor.patch release")
+    return tuple(int(part) for part in match.groups())
+
+
+def get_update_command() -> str:
+    """Suggest an explicit update for the running installation; never execute it.
+
+    Managed installs create a new release using the same installer and keep the
+    current release for rollback. Source/venv installs update their own interpreter.
+    """
+    prefix = Path(sys.prefix).resolve()
+    source_installer = prefix.parent / "source" / "install.sh"
+    if prefix.name == "venv" and source_installer.is_file():
+        binary = shutil.which("djcode")
+        bin_dir = Path(binary).absolute().parent if binary else Path.home() / ".local" / "bin"
+        values = [
+            f"DJCODE_INSTALL_DIR={shlex.quote(str(prefix.parent.parent))}",
+            f"DJCODE_BIN_DIR={shlex.quote(str(bin_dir))}",
+            "bash", shlex.quote(str(source_installer)),
+        ]
+        return " ".join(values)
+    python = sys.executable
+    repository = f"git+https://github.com/{GITHUB_REPO}.git"
+    if shutil.which("uv"):
+        return shlex.join(["uv", "pip", "install", "--python", python, "--upgrade", repository])
+    return shlex.join([python, "-m", "pip", "install", "--upgrade", repository])
 
 
 def check_for_updates(force: bool = False) -> dict[str, Any] | None:
@@ -74,10 +99,12 @@ def check_for_updates(force: bool = False) -> dict[str, Any] | None:
         dict with keys: latest_version, current_version, update_available, changelog_url, download_url
         None if check was skipped or failed
     """
+    if os.environ.get("DJCODE_NO_UPDATE_CHECK", "").lower() in {"1", "true", "yes"}:
+        return None
     if not force and not _should_check():
         # Check cached result
         data = _load_last_check()
-        if data.get("update_available"):
+        if data.get("current_version") == __version__ and data.get("update_available"):
             return data
         return None
 
@@ -86,6 +113,8 @@ def check_for_updates(force: bool = False) -> dict[str, Any] | None:
         resp.raise_for_status()
         release = resp.json()
 
+        if release.get("draft") or release.get("prerelease"):
+            return None
         latest_tag = release.get("tag_name", "")
         latest_version = latest_tag.lstrip("v")
         current_version = __version__
@@ -128,7 +157,8 @@ def get_update_message() -> str | None:
     msg = f"[yellow]Update available:[/] v{current} → v{latest}"
     if name:
         msg += f" ({name})"
-    msg += f"\n[dim]Run: pip install --upgrade djcode-cli[/]"
+    from rich.markup import escape
+    msg += f"\n[dim]Update explicitly: {escape(get_update_command())}[/]"
     msg += f"\n[dim]Changelog: {info.get('release_url', CHANGELOG_URL)}[/]"
     return msg
 

@@ -8,6 +8,7 @@ Detects available models, lets user pick provider and model.
 from __future__ import annotations
 
 import httpx
+from copy import deepcopy
 import questionary
 from rich.console import Console
 from rich.panel import Panel
@@ -78,19 +79,12 @@ def run_onboarding() -> dict:
     )
     console.print()
 
-    config = dict(DEFAULT_CONFIG)
+    config = deepcopy(DEFAULT_CONFIG)
 
     # --- Provider selection (interactive arrow keys) ---
     provider_choices = [
-        questionary.Choice("Ollama (local, recommended)", value="ollama"),
-        questionary.Choice("OpenAI", value="openai"),
-        questionary.Choice("Anthropic", value="anthropic"),
-        questionary.Choice("NVIDIA NIM", value="nvidia"),
-        questionary.Choice("Google AI", value="google"),
-        questionary.Choice("Groq (fast)", value="groq"),
-        questionary.Choice("Together AI", value="together"),
-        questionary.Choice("OpenRouter (multi-provider)", value="openrouter"),
-        questionary.Choice("MLX-LM (Apple Silicon)", value="mlx"),
+        questionary.Choice(info["name"], value=provider_id)
+        for provider_id, info in PROVIDERS.items()
     ]
 
     provider_choice = questionary.select(
@@ -100,7 +94,7 @@ def run_onboarding() -> dict:
     ).ask()
 
     if not provider_choice:
-        provider_choice = "ollama"
+        raise KeyboardInterrupt("Setup cancelled; no configuration saved")
 
     config["provider"] = provider_choice
 
@@ -123,6 +117,12 @@ def run_onboarding() -> dict:
 
         # Set base URL
         config[f"{provider_choice}_url"] = prov_info["base_url"]
+        if provider_choice == "custom":
+            endpoint = questionary.text("OpenAI-compatible base URL (including /v1):", style=Q_STYLE).ask()
+            if not endpoint or not endpoint.startswith(("https://", "http://")):
+                raise ValueError("A valid HTTP(S) base URL is required")
+            config["base_url"] = endpoint.rstrip("/")
+            config["custom_url"] = endpoint.rstrip("/")
 
         model_name = questionary.text(
             "Model name:",
@@ -130,6 +130,8 @@ def run_onboarding() -> dict:
             style=Q_STYLE,
         ).ask()
         config["model"] = model_name or _default_model_for_provider(provider_choice)
+        if not config["model"]:
+            raise ValueError("Enter a model ID available to your provider account")
 
     elif provider_choice == "mlx":
         console.print()
@@ -157,16 +159,16 @@ def run_onboarding() -> dict:
 
         if not models:
             console.print(
-                f"[yellow]Could not reach Ollama.[/] "
-                f"[dim]Make sure it's running: ollama serve[/]"
+                f"[yellow]No installed models were detected at this Ollama endpoint.[/] "
+                f"[dim]Use an existing model/server or configure a hosted provider. Setup downloads no models.[/]"
             )
             console.print()
             model_name = questionary.text(
-                "Model name:",
-                default="gemma4",
+                "Existing Ollama model name:",
+                default=DEFAULT_CONFIG["model"],
                 style=Q_STYLE,
             ).ask()
-            config["model"] = model_name or "gemma4"
+            config["model"] = model_name or DEFAULT_CONFIG["model"]
         else:
             console.print(f"[green]Found {len(models)} model(s)[/]")
             console.print()
@@ -216,7 +218,9 @@ def _default_model_for_provider(provider_id: str) -> str:
         "groq": "llama-3.3-70b-versatile",
         "together": "meta-llama/Llama-3-70b-chat-hf",
         "openrouter": "meta-llama/llama-3-8b-instruct",
-        "ollama": "gemma4",
+        "ollama": DEFAULT_CONFIG["model"],
+        "featherless": "",
+        "custom": "",
         "mlx": "mlx-community/gemma-2-2b-it-4bit",
     }
-    return defaults.get(provider_id, "gemma4")
+    return defaults.get(provider_id, "")

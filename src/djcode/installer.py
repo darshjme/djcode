@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import platform
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -201,6 +203,8 @@ class SoftwareInstaller:
             if info.binary_name:
                 binary = info.binary_name
 
+        if package == "fd" and shutil.which("fdfind"):
+            return True
         return shutil.which(binary) is not None
 
     # ------------------------------------------------------------------
@@ -212,6 +216,7 @@ class SoftwareInstaller:
 
         For unknown packages, returns a generic message.
         """
+        self._validate_package(package)
         manager = self.detect_package_manager()
         info = KNOWN_PACKAGES.get(package)
 
@@ -265,9 +270,13 @@ class SoftwareInstaller:
         Returns:
             True if installation succeeded, False otherwise.
         """
-        cmd = self.suggest_install(package)
+        try:
+            cmd = self.suggest_install(package)
+        except ValueError as exc:
+            print(str(exc))
+            return False
 
-        if cmd.startswith("Visit:") or cmd.startswith("No install"):
+        if cmd.startswith(("Visit:", "No install", "Search for")):
             print(f"Cannot auto-install '{package}'. {cmd}")
             return False
 
@@ -284,10 +293,10 @@ class SoftwareInstaller:
 
         try:
             # Split into parts for subprocess
-            parts = cmd.split()
+            parts = shlex.split(cmd)
 
             # Use sudo for apt/dnf/pacman if not root
-            needs_sudo = parts[0] in ("apt-get", "dnf", "pacman") and os.geteuid() != 0
+            needs_sudo = parts[0] in ("apt-get", "dnf", "pacman") and getattr(os, "geteuid", lambda: 1)() != 0
             if needs_sudo:
                 parts = ["sudo"] + parts
 
@@ -384,6 +393,11 @@ class SoftwareInstaller:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_package(package: str) -> None:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+@/-]*", package):
+            raise ValueError("Use a single package name, without options or shell syntax")
 
     def _build_install_cmd(self, manager: str, package_name: str) -> str:
         """Build the full install command for a manager + package."""
