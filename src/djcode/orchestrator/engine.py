@@ -163,11 +163,11 @@ class AgentRunner:
         spec: AgentSpec,
         context_bus: ContextBus,
         event_bus: EventBus | None = None,
-        auto_accept: bool = True,
+        auto_accept: bool = False,
     ) -> None:
         self.provider = provider
         self.spec = spec
-        self.bus = context_bus
+        self.bus = context_bus if context_bus is not None else ContextBus()
         self.event_bus = event_bus
         self.auto_accept = auto_accept
 
@@ -194,258 +194,37 @@ class AgentRunner:
         if self.event_bus:
             await self.event_bus.emit(event)
 
-    async def _execute_tool(
-        self, name: str, args_raw: Any, messages: list[Message], tc: dict[str, Any],
-    ) -> str:
-        """Execute a single tool call with policy enforcement and event emission."""
-        # Parse arguments
-        if isinstance(args_raw, str):
-            try:
-                args = json.loads(args_raw)
-            except json.JSONDecodeError:
-                args = {"command": args_raw} if name == "bash" else {}
-        else:
-            args = args_raw
-
-        # Enforce tool policy
-        if name not in self.spec.tools_allowed:
-            result = f"Error: Agent {self.spec.name} is not allowed to use tool '{name}'"
-        elif self.spec.read_only and name in ("file_write", "file_edit", "bash"):
-            result = f"Error: Agent {self.spec.name} is in read-only mode"
-        else:
-            start = time.time()
-            console.print(f"    [dim]{self.spec.name} -> {name}[/]")
-            result = await dispatch_tool(name, args)
-            duration_ms = (time.time() - start) * 1000
-
-            await self._emit(agent_tool_event(
-                agent_name=self.spec.name,
-                agent_role=self.spec.role.value,
-                tool_name=name,
-                tool_args=args,
-                tool_result=result,
-                duration_ms=duration_ms,
-            ))
-
-        messages.append(Message(
-            role="tool",
-            content=result,
-            tool_call_id=tc.get("id", f"call_{name}"),
-            name=name,
-        ))
-        return result
-
-    async def _process_stream(
-        self, messages: list[Message], stream: bool = True,
-    ) -> tuple[str, list[dict[str, Any]]]:
-        """Process a single round of LLM streaming, returning content and tool calls."""
-        chunk_response = ""
-        tool_calls: list[dict[str, Any]] = []
-
-        if self.provider.is_ollama:
-            async for chunk in self.provider.chat_ollama(messages, stream=stream):
-                msg = chunk.get("message", {})
-                content = msg.get("content", "")
-                if content:
-                    chunk_response += content
-                if "tool_calls" in msg:
-                    tool_calls.extend(msg["tool_calls"])
-                if chunk.get("done", False):
-                    if "tool_calls" in msg:
-                        tool_calls.extend(msg.get("tool_calls", []))
-                    break
-        else:
-            tool_calls_acc: dict[int, dict] = {}
-            async for chunk in self.provider.chat_openai_compat(messages, stream=stream):
-                choices = chunk.get("choices", [])
-                if not choices:
-                    continue
-                delta = choices[0].get("delta", {})
-                content = delta.get("content", "")
-                if content:
-                    chunk_response += content
-                if "tool_calls" in delta:
-                    for tc_delta in delta["tool_calls"]:
-                        idx = tc_delta.get("index", 0)
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {
-                                "id": tc_delta.get("id", ""),
-                                "function": {"name": "", "arguments": ""},
-                            }
-                        if "function" in tc_delta:
-                            fn = tc_delta["function"]
-                            if "name" in fn:
-                                tool_calls_acc[idx]["function"]["name"] = fn["name"]
-                            if "arguments" in fn:
-                                tool_calls_acc[idx]["function"]["arguments"] += fn["arguments"]
-                finish = choices[0].get("finish_reason", "")
-                if finish == "tool_calls":
-                    tool_calls = list(tool_calls_acc.values())
-                elif finish == "stop":
-                    break
-
-        return chunk_response, tool_calls
-
     async def run(self, task: str) -> str:
-        """Run the agent on a task. Returns the full response."""
-        messages: list[Message] = [
-            Message(role="system", content=self._build_system_prompt()),
-            Message(role="user", content=task),
-        ]
-
-        await self._emit(agent_start_event(
-            self.spec.name, self.spec.role.value, task,
-        ))
-
-        start_time = time.time()
-        full_response = ""
-        total_tokens = 0
-
-        try:
-            for _round in range(self.spec.max_tool_rounds):
-                chunk_response, tool_calls = await self._process_stream(messages)
-                full_response += chunk_response
-                total_tokens += len(chunk_response.split())  # rough estimate
-
-                if not tool_calls:
-                    break
-
-                messages.append(Message(
-                    role="assistant", content=chunk_response, tool_calls=tool_calls,
-                ))
-
-                for tc in tool_calls:
-                    func = tc.get("function", {})
-                    name = func.get("name", "unknown")
-                    args_raw = func.get("arguments", "{}")
-                    await self._execute_tool(name, args_raw, messages, tc)
-
-            # Write result to context bus
-            self.bus.write(
-                agent=self.spec.name,
-                role=self.spec.role.value,
-                key="result",
-                content=full_response,
-                entry_type=EntryType.RESULT,
-            )
-
-            elapsed = time.time() - start_time
-            await self._emit(agent_complete_event(
-                agent_name=self.spec.name,
-                agent_role=self.spec.role.value,
-                result_preview=full_response[:300],
-                confidence=0.0,
-                elapsed_s=elapsed,
-                tokens=total_tokens,
-            ))
-
-        except Exception as exc:
-            await self._emit(agent_error_event(
-                self.spec.name, self.spec.role.value, str(exc),
-            ))
-            logger.exception("Agent %s failed", self.spec.name)
-            full_response = f"Error: Agent {self.spec.name} failed: {exc}"
-
-        return full_response
+        return "".join([token async for token in self.run_streaming(task)])
 
     async def run_streaming(self, task: str) -> AsyncIterator[str]:
-        """Run the agent and stream tokens as they arrive."""
-        messages: list[Message] = [
-            Message(role="system", content=self._build_system_prompt()),
-            Message(role="user", content=task),
-        ]
-
-        await self._emit(agent_start_event(
-            self.spec.name, self.spec.role.value, task,
-        ))
-
-        start_time = time.time()
-
-        try:
-            for _round in range(self.spec.max_tool_rounds):
-                chunk_response = ""
-                tool_calls: list[dict[str, Any]] = []
-
-                if self.provider.is_ollama:
-                    async for chunk in self.provider.chat_ollama(messages, stream=True):
-                        msg = chunk.get("message", {})
-                        content = msg.get("content", "")
-                        if content:
-                            chunk_response += content
-                            yield content
-                            await self._emit(agent_token_event(
-                                self.spec.name, self.spec.role.value, content,
-                            ))
-                        if "tool_calls" in msg:
-                            tool_calls.extend(msg["tool_calls"])
-                        if chunk.get("done", False):
-                            break
-                else:
-                    tool_calls_acc: dict[int, dict] = {}
-                    async for chunk in self.provider.chat_openai_compat(messages, stream=True):
-                        choices = chunk.get("choices", [])
-                        if not choices:
-                            continue
-                        delta = choices[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            chunk_response += content
-                            yield content
-                            await self._emit(agent_token_event(
-                                self.spec.name, self.spec.role.value, content,
-                            ))
-                        if "tool_calls" in delta:
-                            for tc_delta in delta["tool_calls"]:
-                                idx = tc_delta.get("index", 0)
-                                if idx not in tool_calls_acc:
-                                    tool_calls_acc[idx] = {
-                                        "id": tc_delta.get("id", ""),
-                                        "function": {"name": "", "arguments": ""},
-                                    }
-                                if "function" in tc_delta:
-                                    fn = tc_delta["function"]
-                                    if "name" in fn:
-                                        tool_calls_acc[idx]["function"]["name"] = fn["name"]
-                                    if "arguments" in fn:
-                                        tool_calls_acc[idx]["function"]["arguments"] += fn["arguments"]
-                        finish = choices[0].get("finish_reason", "")
-                        if finish == "tool_calls":
-                            tool_calls = list(tool_calls_acc.values())
-                        elif finish == "stop":
-                            break
-
-                if not tool_calls:
-                    self.bus.write(
-                        agent=self.spec.name,
-                        role=self.spec.role.value,
-                        key="result",
-                        content=chunk_response,
-                        entry_type=EntryType.RESULT,
-                    )
-                    elapsed = time.time() - start_time
-                    await self._emit(agent_complete_event(
-                        self.spec.name, self.spec.role.value,
-                        chunk_response[:300], 0.0, elapsed, 0,
-                    ))
-                    break
-
-                # Handle tool calls
-                messages.append(Message(
-                    role="assistant", content=chunk_response, tool_calls=tool_calls,
-                ))
-
-                for tc in tool_calls:
-                    func = tc.get("function", {})
-                    name = func.get("name", "unknown")
-                    args_raw = func.get("arguments", "{}")
-                    await self._execute_tool(name, args_raw, messages, tc)
-
-        except Exception as exc:
-            await self._emit(agent_error_event(
-                self.spec.name, self.spec.role.value, str(exc),
-            ))
-            logger.exception("Agent %s streaming failed", self.spec.name)
-            yield f"\nError: Agent {self.spec.name} failed: {exc}"
+        """Use the same bounded, provider-neutral tool loop as parallel specialists."""
+        from djcode.agents.executor import AgentExecutor
+        from djcode.agents.state import AgentEventType
+        executor = AgentExecutor(self.spec, self.provider, self.bus, enable_ra=False,
+                                 auto_accept=self.auto_accept)
+        await self._emit(agent_start_event(self.spec.name, self.spec.role.value, task))
+        response = ""
+        async for event in executor.execute_streaming(task):
+            if event.event_type == AgentEventType.TOKEN:
+                token = event.data.get("token", "")
+                response += token
+                yield token
+                await self._emit(agent_token_event(self.spec.name, self.spec.role.value, token))
+            elif event.event_type == AgentEventType.TOOL_CALL:
+                await self._emit(agent_tool_event(
+                    agent_name=self.spec.name, agent_role=self.spec.role.value,
+                    tool_name=event.data["tool"], tool_args=event.data["args"],
+                    tool_result="", duration_ms=0.0))
+            elif event.event_type == AgentEventType.ERROR:
+                error = event.data["error"]
+                await self._emit(agent_error_event(self.spec.name, self.spec.role.value, error))
+                raise RuntimeError(f"Agent {self.spec.name} failed: {error}")
+            elif event.event_type == AgentEventType.COMPLETE:
+                await self._emit(agent_complete_event(
+                    self.spec.name, self.spec.role.value, response[:300],
+                    event.data.get("confidence", 0.0), event.data.get("duration_s", 0.0),
+                    event.data.get("tokens", 0)))
 
 
 # ==============================================================================
@@ -468,7 +247,7 @@ class ShadowOrchestrator:
     def __init__(
         self,
         provider: Provider,
-        auto_accept: bool = True,
+        auto_accept: bool = False,
     ) -> None:
         self.provider = provider
         self.auto_accept = auto_accept
@@ -651,6 +430,8 @@ class ShadowOrchestrator:
         )
 
         for r in results:
+            if isinstance(r, Exception):
+                raise RuntimeError(f"Blocking gate failed: {r}") from r
             if isinstance(r, OrchestratorEvent):
                 gate_events.append(r)
             elif isinstance(r, Exception):
@@ -670,6 +451,7 @@ class ShadowOrchestrator:
 
         async for token in runner.run_streaming(task):
             yield agent_token_event(spec.name, spec.role.value, token)
+        yield agent_complete_event(spec.name, spec.role.value, "", 0.0, 0.0, 0)
 
     async def execute_parallel(
         self, roles: list[AgentRole], task: str,
@@ -701,12 +483,15 @@ class ShadowOrchestrator:
                 yield agent_error_event(spec.name, spec.role.value, str(result))
             else:
                 agent_results[spec.name] = result
+                yield agent_token_event(spec.name, spec.role.value, f"\n## {spec.name}\n{result}\n")
                 yield agent_complete_event(
                     spec.name, spec.role.value, result[:300],
                     0.0, time.time() - start, 0,
                 )
 
         yield wave_complete_event(1, "Parallel Execution", agent_results, time.time() - start)
+        if any(isinstance(result, Exception) for result in results):
+            raise RuntimeError("Parallel execution incomplete: one or more specialists failed")
 
     async def execute_pipeline(
         self, roles: list[AgentRole], task: str,
@@ -732,6 +517,7 @@ class ShadowOrchestrator:
                 # Stream the last agent
                 async for token in runner.run_streaming(agent_task):
                     yield agent_token_event(spec.name, spec.role.value, token)
+                yield agent_complete_event(spec.name, spec.role.value, "", 0.0, 0.0, 0)
             else:
                 start = time.time()
                 result = await runner.run(agent_task)
@@ -755,7 +541,13 @@ class ShadowOrchestrator:
         to all Wave N results via the context bus. Blocking agents in the
         Verify wave can halt the pipeline.
         """
-        for wave_num, wave_def in WAVE_DEFINITIONS.items():
+        definitions = dict(WAVE_DEFINITIONS)
+        if roles is not None:
+            covered = {role for wave in definitions.values() for role in wave["roles"]}
+            additional = [role for role in roles if role not in covered]
+            if additional:
+                definitions[5] = {"name": "Additional specialists", "roles": additional}
+        for wave_num, wave_def in definitions.items():
             wave_name = wave_def["name"]
             wave_roles = wave_def["roles"]
 
@@ -797,14 +589,20 @@ class ShadowOrchestrator:
             wave_results: dict[str, str] = {}
             for r in results:
                 if isinstance(r, Exception):
-                    logger.exception("Wave %d agent failed: %s", wave_num, r)
+                    raise RuntimeError(f"Wave {wave_num} specialist failed: {r}") from r
                 else:
                     name, result = r
                     wave_results[name] = result
+                    yield agent_token_event(name, "", f"\n## {name}\n{result}\n")
                     yield agent_complete_event(
                         name, "", result[:300], 0.0, time.time() - start, 0,
                     )
 
+            for role in wave_roles:
+                if role in BLOCKING_AGENTS:
+                    finding = wave_results.get(get_agent(role).name, "").upper()
+                    if "CRITICAL" in finding and any(word in finding for word in ("HALT", "BLOCK", "FAIL", "REJECT", "VULNERABILITY")):
+                        raise RuntimeError(f"Blocking agent {get_agent(role).name} flagged CRITICAL findings")
             elapsed = time.time() - start
             yield wave_complete_event(wave_num, wave_name, wave_results, elapsed)
 
@@ -1041,7 +839,7 @@ class Orchestrator:
             print(token, end="")
     """
 
-    def __init__(self, provider: Provider, auto_accept: bool = True) -> None:
+    def __init__(self, provider: Provider, auto_accept: bool = False) -> None:
         self._shadow = ShadowOrchestrator(provider, auto_accept)
         self.provider = provider
         self.auto_accept = auto_accept
@@ -1073,6 +871,8 @@ class Orchestrator:
         agent_token events back to plain string tokens for the old API.
         """
         async for event in self._shadow.execute(task):
+            if event.event_type == EventType.ORCHESTRATOR_ERROR:
+                raise RuntimeError(event.data.get("error", "Orchestration failed"))
             # Extract tokens from agent_token events for backwards compat
             if event.event_type == EventType.AGENT_TOKEN:
                 token = event.data.get("token", "")

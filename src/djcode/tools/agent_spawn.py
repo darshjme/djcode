@@ -13,12 +13,35 @@ import asyncio
 import json
 import logging
 import time
+import uuid
+from contextvars import ContextVar
+from contextlib import contextmanager
+from dataclasses import replace
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Track background agents
 _background_tasks: dict[str, dict[str, Any]] = {}
+
+
+_parent_context: ContextVar[tuple[Any, bool] | None] = ContextVar("agent_parent", default=None)
+_spawn_depth: ContextVar[int] = ContextVar("agent_depth", default=0)
+
+@contextmanager
+def agent_context(provider: Any, auto_accept: bool = False):
+    token = _parent_context.set((provider, auto_accept))
+    try:
+        yield
+    finally:
+        _parent_context.reset(token)
+
+async def cancel_background_agents() -> None:
+    tasks = [info.get("async_task") for info in _background_tasks.values()]
+    tasks = [task for task in tasks if task and not task.done()]
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def execute_spawn_agent(
@@ -57,6 +80,15 @@ async def execute_spawn_agent(
         return "Error: 'task' is required"
 
     role = role.lower().strip()
+    if role == "status":
+        return await execute_agent_status(task)
+    if _spawn_depth.get() >= 3:
+        return "Error: Subagent nesting limit reached (3)"
+    if max_tool_rounds is not None and (type(max_tool_rounds) is not int or not 1 <= max_tool_rounds <= 100):
+        return "Error: max_tool_rounds must be an integer between 1 and 100"
+    if background and sum(i["status"] == "running" for i in _background_tasks.values()) >= 8:
+        return "Error: Background agent limit reached (8)"
+
 
     # Validate role exists in registry
     try:
@@ -85,66 +117,42 @@ async def execute_spawn_agent(
 
 async def _spawn_foreground(spec: Any, task: str, max_rounds: int | None) -> str:
     """Run an agent in the foreground and return its full response."""
+    provider = None
+    owns_provider = False
+    depth_token = _spawn_depth.set(_spawn_depth.get() + 1)
     try:
         from djcode.provider import Provider, ProviderConfig
         from djcode.orchestrator.engine import AgentRunner
         from djcode.orchestrator.context_bus import ContextBus
-
-        # Create a fresh provider instance for the sub-agent
-        config = ProviderConfig.from_config()
-        provider = Provider(config)
-
-        # Override max tool rounds if specified
+        parent = _parent_context.get()
+        if parent is None:
+            provider = Provider(ProviderConfig.from_config())
+            auto_accept = False
+            owns_provider = True
+        else:
+            provider, auto_accept = parent
         if max_rounds is not None:
-            # Create a modified spec (AgentSpec is frozen, so we rebuild it)
-            from djcode.agents.registry import AgentSpec
-            spec = AgentSpec(
-                role=spec.role,
-                name=spec.name,
-                title=spec.title,
-                system_prompt=spec.system_prompt,
-                tools_allowed=spec.tools_allowed,
-                tools_denied=spec.tools_denied,
-                read_only=spec.read_only,
-                max_tool_rounds=max_rounds,
-                temperature=spec.temperature,
-                priority=spec.priority,
-                tier=spec.tier,
-            )
-
-        # Create an isolated context bus for this agent
+            spec = replace(spec, max_tool_rounds=max_rounds)
         bus = ContextBus()
         bus.set_task(task, spec.role.value)
-
-        runner = AgentRunner(provider, spec, bus, auto_accept=True)
-
+        runner = AgentRunner(provider, spec, bus, auto_accept=auto_accept)
         start = time.monotonic()
         result = await runner.run(task)
-        elapsed = time.monotonic() - start
-
-        await provider.close()
-
-        # Format the response
-        header = (
-            f"Agent: {spec.name} ({spec.title})\n"
-            f"Role: {spec.role.value} | Read-only: {spec.read_only} | "
-            f"Tools: {len(spec.tools_allowed)} | Time: {elapsed:.1f}s\n"
-            f"Task: {task[:100]}{'...' if len(task) > 100 else ''}\n"
-            f"{'=' * 60}\n"
-        )
-
-        return header + result
-
-    except ConnectionError as e:
-        return f"Error: Agent '{spec.name}' failed — {e}"
+        if result.lstrip().startswith("Error:") or "\nError: Agent " in result:
+            return result.strip()
+        return f"Agent: {spec.name} ({spec.title}) | Time: {time.monotonic() - start:.1f}s\n" + result
     except Exception as e:
         logger.error("Agent spawn failed: %s", e, exc_info=True)
         return f"Error spawning agent '{spec.name}': {e}"
+    finally:
+        _spawn_depth.reset(depth_token)
+        if owns_provider and provider is not None:
+            await provider.close()
 
 
 async def _spawn_background(spec: Any, task: str, max_rounds: int | None) -> str:
     """Spawn an agent in the background and return a tracking ID."""
-    agent_id = f"agent_{spec.role.value}_{int(time.time() * 1000) % 1_000_000}"
+    agent_id = f"agent_{spec.role.value}_{uuid.uuid4().hex[:12]}"
 
     _background_tasks[agent_id] = {
         "id": agent_id,
@@ -161,8 +169,13 @@ async def _spawn_background(spec: Any, task: str, max_rounds: int | None) -> str
         """Run the agent and store results."""
         try:
             result = await _spawn_foreground(spec, task, max_rounds)
-            _background_tasks[agent_id]["status"] = "completed"
+            _background_tasks[agent_id]["status"] = "failed" if result.startswith("Error") else "completed"
+            if result.startswith("Error"):
+                _background_tasks[agent_id]["error"] = result
             _background_tasks[agent_id]["result"] = result
+        except asyncio.CancelledError:
+            _background_tasks[agent_id]["status"] = "cancelled"
+            raise
         except Exception as e:
             _background_tasks[agent_id]["status"] = "failed"
             _background_tasks[agent_id]["error"] = str(e)
@@ -171,7 +184,7 @@ async def _spawn_background(spec: Any, task: str, max_rounds: int | None) -> str
             _background_tasks[agent_id]["elapsed"] = elapsed
 
     # Fire and forget
-    asyncio.create_task(_run())
+    _background_tasks[agent_id]["async_task"] = asyncio.create_task(_run())
 
     return (
         f"Agent spawned in background:\n"

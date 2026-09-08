@@ -120,7 +120,9 @@ class AgentExecutor:
         enable_ra: bool = True,
         ra_timeout_s: float = 15.0,
         execution_timeout_s: float = 300.0,
+        auto_accept: bool = False,
     ) -> None:
+        self.auto_accept = auto_accept
         self.spec = spec
         self.provider = provider
         self.bus = bus
@@ -168,6 +170,19 @@ class AgentExecutor:
         )
 
     async def execute_streaming(self, task: str) -> AsyncIterator[AgentEvent]:
+        try:
+            async with asyncio.timeout(self.execution_timeout_s):
+                async for event in self._execute_streaming(task):
+                    yield event
+        except TimeoutError:
+            error = f"Execution timed out after {self.execution_timeout_s}s"
+            await self._sm.fail(error)
+            yield self._make_event(AgentEventType.ERROR, error=error)
+        except asyncio.CancelledError:
+            await self._sm.fail("Execution cancelled")
+            raise
+
+    async def _execute_streaming(self, task: str) -> AsyncIterator[AgentEvent]:
         """Execute the agent with full event streaming.
 
         Yields AgentEvent instances for: state changes, tokens, tool calls,
@@ -264,7 +279,7 @@ class AgentExecutor:
 
             # No tool calls = final response
             if not tool_calls:
-                break
+                return
 
             # Append assistant message with tool calls
             messages.append(Message(
@@ -284,7 +299,7 @@ class AgentExecutor:
                     try:
                         args = json.loads(args_raw)
                     except json.JSONDecodeError:
-                        args = {"command": args_raw} if tool_name == "bash" else {}
+                        args = None
                 else:
                     args = args_raw
 
@@ -313,67 +328,19 @@ class AgentExecutor:
                     name=tool_name,
                 ))
 
-    async def _stream_response(
-        self,
-        messages: list[Message],
-    ) -> AsyncIterator[tuple[str, list[dict[str, Any]] | None]]:
-        """Stream tokens from the provider, accumulating tool calls.
+        raise RuntimeError(f"Tool round limit reached ({self.spec.max_tool_rounds}); task incomplete")
 
-        Yields (token, None) for content tokens.
-        Yields ("", tool_calls) when tool calls are complete.
-        """
-        tool_calls_acc: dict[int, dict[str, Any]] = {}
-
-        async for chunk in self.provider.chat(messages, stream=True):
-            choices = chunk.get("choices", [])
-            if not choices:
-                # Ollama format
-                msg = chunk.get("message", {})
-                content = msg.get("content", "")
-                if content:
-                    yield content, None
-                if "tool_calls" in msg:
-                    yield "", msg["tool_calls"]
-                if chunk.get("done", False):
-                    break
-                continue
-
-            choice = choices[0]
-            delta = choice.get("delta", {})
-
-            # Content token
-            content = delta.get("content", "")
-            if content:
-                yield content, None
-
-            # Accumulate tool calls
-            if "tool_calls" in delta:
-                for tc_delta in delta["tool_calls"]:
-                    idx = tc_delta.get("index", 0)
-                    if idx not in tool_calls_acc:
-                        tool_calls_acc[idx] = {
-                            "id": tc_delta.get("id", ""),
-                            "function": {"name": "", "arguments": ""},
-                        }
-                    if "function" in tc_delta:
-                        fn = tc_delta["function"]
-                        if "name" in fn and fn["name"]:
-                            tool_calls_acc[idx]["function"]["name"] = fn["name"]
-                        if "arguments" in fn:
-                            tool_calls_acc[idx]["function"]["arguments"] += fn["arguments"]
-
-            # Check finish reason
-            finish = choice.get("finish_reason", "")
-            if finish == "tool_calls":
-                yield "", list(tool_calls_acc.values())
-                break
-            elif finish == "stop":
-                break
+    async def _stream_response(self, messages: list[Message]):
+        from djcode.streaming import stream_turn
+        async for text, calls in stream_turn(self.provider, messages):
+            yield text, calls
 
     # -- Tool policy enforcement -----------------------------------------------
 
     async def _execute_tool_gated(self, tool_name: str, args: dict[str, Any]) -> str:
         """Execute a tool call after enforcing the agent's tool policy."""
+        if not isinstance(args, dict):
+            return "Error: Tool arguments must be a JSON object"
         # Check if tool is in the denied list
         if tool_name in self.spec.tools_denied:
             return f"Error: Tool '{tool_name}' is explicitly denied for agent {self.spec.name}."
@@ -385,25 +352,17 @@ class AgentExecutor:
                 f"Allowed: {', '.join(sorted(self.spec.tools_allowed))}"
             )
 
-        # Enforce read-only mode
-        if self.spec.read_only and tool_name in ("file_write", "file_edit", "bash"):
-            return f"Error: Agent {self.spec.name} is in read-only mode. Cannot use '{tool_name}'."
-
-        # Enforce read-only git for RA and read-only agents
-        if self.spec.read_only and tool_name == "git":
-            subcommand = args.get("subcommand", "")
-            cmd_prefix = subcommand.split()[0] if subcommand.strip() else ""
-            write_commands = {"add", "commit", "push", "merge", "rebase", "reset", "checkout", "cherry-pick"}
-            if cmd_prefix in write_commands:
-                return f"Error: Agent {self.spec.name} cannot run write git commands in read-only mode."
+        # Tools outside this explicit read set require user-approved write mode.
+        read_tools = {"file_read", "grep", "glob", "web_fetch", "web_search", "notebook_read", "task_list", "agent_status"}
+        if tool_name not in read_tools and (self.spec.read_only or not self.auto_accept):
+            return f"Error: Tool '{tool_name}' requires write approval; agent is read-only or auto-accept is off."
 
         # Execute the tool
         start = time.monotonic()
         try:
-            result = await asyncio.wait_for(
-                dispatch_tool(tool_name, args),
-                timeout=120.0,
-            )
+            from djcode.tools.agent_spawn import agent_context
+            with agent_context(self.provider, self.auto_accept):
+                result = await asyncio.wait_for(dispatch_tool(tool_name, args), timeout=120.0)
             elapsed_ms = (time.monotonic() - start) * 1000
             logger.debug(
                 "%s: tool %s completed in %.0fms",

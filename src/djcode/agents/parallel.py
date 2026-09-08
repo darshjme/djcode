@@ -97,7 +97,7 @@ class CoordinatorResult:
 
     @property
     def all_succeeded(self) -> bool:
-        return all(r.succeeded for r in self.results) and not self.halted
+        return bool(self.results) and all(r.succeeded for r in self.results) and not self.halted
 
     @property
     def has_blocking_critical(self) -> bool:
@@ -113,7 +113,9 @@ class CoordinatorResult:
 
         parts: list[str] = []
         for result in self.results:
-            if result.succeeded and result.response.strip():
+            if not result.succeeded:
+                parts.append(f"## {result.agent_name} ({result.agent_role.value})\nFailed: {result.error or result.response}")
+            elif result.response.strip():
                 header = f"## {result.agent_name} ({result.agent_role.value})"
                 confidence = f"*Confidence: {result.confidence_score:.2f}*"
                 parts.append(f"{header}\n{confidence}\n\n{result.response}")
@@ -174,9 +176,11 @@ class ParallelCoordinator:
         per_agent_timeout_s: float = 300.0,
         overall_timeout_s: float = 600.0,
         halt_on_blocking_critical: bool = True,
+        auto_accept: bool = False,
     ) -> None:
+        self.auto_accept = auto_accept
         self.provider = provider
-        self.bus = bus or ContextBus()
+        self.bus = bus if bus is not None else ContextBus()
         self.enable_ra = enable_ra
         self.per_agent_timeout_s = per_agent_timeout_s
         self.overall_timeout_s = overall_timeout_s
@@ -220,6 +224,7 @@ class ParallelCoordinator:
             enable_ra=self.enable_ra,
             ra_timeout_s=15.0,
             execution_timeout_s=self.per_agent_timeout_s,
+            auto_accept=self.auto_accept,
         )
         # Attach global agent event callback if registered
         if hasattr(self, "_agent_callback"):
@@ -239,90 +244,52 @@ class ParallelCoordinator:
         If halt_on_blocking_critical is True and a blocking agent (Kavach, Varuna,
         Mitra, Indra) reports CRITICAL findings, remaining agents are cancelled.
         """
+        if len({s.role for s in specs}) != len(specs):
+            raise ValueError("Duplicate specialist roles in a parallel batch")
         start = time.monotonic()
-        await self._emit(CoordinatorEventType.WAVE_START, agents=[s.name for s in specs])
-
-        # Create tasks for each agent
-        agent_tasks: dict[AgentRole, asyncio.Task[AgentResult]] = {}
-        for spec in specs:
-            executor = self._make_executor(spec)
-            coro = self._run_single_with_timeout(executor, task, spec)
-            agent_tasks[spec.role] = asyncio.create_task(coro, name=f"agent-{spec.name}")
-
         results: list[AgentResult] = []
         halted = False
         halt_reason = ""
-
-        # Wait for all tasks, checking for blocking criticals
-        done: set[asyncio.Task[AgentResult]] = set()
-        pending = set(agent_tasks.values())
-
-        while pending:
-            newly_done, pending = await asyncio.wait(
-                pending, return_when=asyncio.FIRST_COMPLETED,
-            )
-            for completed_task in newly_done:
-                done.add(completed_task)
-                try:
-                    result = completed_task.result()
-                except Exception as e:
-                    # Task-level exception (shouldn't happen, executor catches internally)
-                    role = self._role_for_task(completed_task, agent_tasks)
-                    result = AgentResult(
-                        agent_role=role,
-                        agent_name=AGENT_SPECS[role].name if role in AGENT_SPECS else "unknown",
-                        response="",
-                        confidence_score=0.0,
-                        tokens_used=0,
-                        tools_called=0,
-                        duration_s=0.0,
-                        ra_briefing=None,
-                        state=AgentState.ERROR,
-                        error=f"{type(e).__name__}: {e}",
-                    )
-
-                results.append(result)
-                await self._emit(
-                    CoordinatorEventType.AGENT_COMPLETE,
-                    agent=result.agent_name,
-                    succeeded=result.succeeded,
-                )
-
-                # Check blocking critical gate
-                if (
-                    self.halt_on_blocking_critical
-                    and result.is_blocking_critical
-                    and pending
-                ):
-                    halt_reason = (
-                        f"Blocking agent {result.agent_name} flagged CRITICAL findings. "
-                        f"Cancelling {len(pending)} remaining agents."
-                    )
-                    logger.warning(halt_reason)
-                    halted = True
-                    for p in pending:
-                        p.cancel()
-                    # Collect cancelled tasks
-                    for p in pending:
-                        try:
-                            await p
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                    pending = set()
-                    await self._emit(CoordinatorEventType.HALT, reason=halt_reason)
-                    break
-
-        total_duration = time.monotonic() - start
-        await self._emit(CoordinatorEventType.ALL_COMPLETE, duration_s=total_duration)
-
-        return CoordinatorResult(
-            results=results,
-            halted=halted,
-            halt_reason=halt_reason,
-            total_duration_s=round(total_duration, 3),
-            total_tokens=sum(r.tokens_used for r in results),
-            total_tools=sum(r.tools_called for r in results),
-        )
+        await self._emit(CoordinatorEventType.WAVE_START, agents=[s.name for s in specs])
+        tasks = {
+            asyncio.create_task(self._run_single_with_timeout(self._make_executor(spec), task, spec)): spec
+            for spec in specs
+        }
+        pending = set(tasks)
+        try:
+            async with asyncio.timeout(self.overall_timeout_s):
+                while pending:
+                    done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                    for completed in done:
+                        result = completed.result()
+                        results.append(result)
+                        await self._emit(CoordinatorEventType.AGENT_COMPLETE if result.succeeded else CoordinatorEventType.AGENT_ERROR,
+                                         agent=result.agent_name, succeeded=result.succeeded)
+                        if self.halt_on_blocking_critical and (result.is_blocking_critical or
+                                (result.agent_role in BLOCKING_AGENTS and not result.succeeded)):
+                            halted = True
+                            halt_reason = f"Blocking agent {result.agent_name} failed or flagged CRITICAL findings"
+                    if halted:
+                        break
+        except TimeoutError:
+            halted = True
+            halt_reason = f"Overall execution timed out after {self.overall_timeout_s}s"
+        finally:
+            for child in tasks:
+                if not child.done():
+                    child.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        for child in pending:
+            spec = tasks[child]
+            results.append(AgentResult(spec.role, spec.name, "", 0.0, 0, 0,
+                                       time.monotonic() - start, None, AgentState.ERROR,
+                                       halt_reason or "Execution cancelled"))
+        if halted:
+            await self._emit(CoordinatorEventType.HALT, reason=halt_reason)
+        elapsed = time.monotonic() - start
+        await self._emit(CoordinatorEventType.ALL_COMPLETE, duration_s=elapsed)
+        return CoordinatorResult(results, halted, halt_reason, elapsed,
+                                 sum(r.tokens_used for r in results), sum(r.tools_called for r in results))
 
     # -- Sequential pipeline ---------------------------------------------------
 
@@ -360,7 +327,13 @@ class ParallelCoordinator:
                     f"{self.bus.summary()}"
                 )
 
-            result = await self._run_single_with_timeout(executor, enriched_task, spec)
+            remaining = self.overall_timeout_s - (time.monotonic() - start)
+            try:
+                result = await asyncio.wait_for(self._run_single_with_timeout(executor, enriched_task, spec), timeout=max(0, remaining))
+            except TimeoutError:
+                halted = True
+                halt_reason = "Overall pipeline execution timed out"
+                break
             results.append(result)
 
             await self._emit(
@@ -371,10 +344,10 @@ class ParallelCoordinator:
             )
 
             # Check blocking critical gate
-            if self.halt_on_blocking_critical and result.is_blocking_critical:
+            if not result.succeeded or (self.halt_on_blocking_critical and result.is_blocking_critical):
                 halt_reason = (
                     f"Pipeline halted at stage {i + 1}/{len(specs)}: "
-                    f"{result.agent_name} flagged CRITICAL findings."
+                    f"{result.agent_name} failed or flagged CRITICAL findings."
                 )
                 logger.warning(halt_reason)
                 halted = True
@@ -433,7 +406,13 @@ class ParallelCoordinator:
             )
 
             # Run the wave (all agents in parallel)
-            wave_result = await self.run_parallel(wave_specs, task)
+            remaining = self.overall_timeout_s - (time.monotonic() - start)
+            try:
+                wave_result = await asyncio.wait_for(self.run_parallel(wave_specs, task), timeout=max(0, remaining))
+            except TimeoutError:
+                halted = True
+                halt_reason = "Overall wave execution timed out"
+                break
             all_results.extend(wave_result.results)
 
             await self._emit(
@@ -490,50 +469,33 @@ class ParallelCoordinator:
         Useful for the TUI dashboard.
         """
         event_queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
-        executors: list[AgentExecutor] = []
-
-        for spec in specs:
-            executor = self._make_executor(spec)
-            executors.append(executor)
-
-        async def _run_and_enqueue(executor: AgentExecutor, task: str) -> None:
+        previous_callback = getattr(self, "_agent_callback", None)
+        async def enqueue(event):
+            await event_queue.put(event)
+            if previous_callback:
+                await previous_callback(event)
+        self._agent_callback = enqueue
+        async def run():
             try:
-                async for event in executor.execute_streaming(task):
-                    await event_queue.put(event)
-            except Exception as e:
-                await event_queue.put(AgentEvent(
-                    event_type=AgentEventType.ERROR,
-                    agent_role=executor.spec.role,
-                    agent_name=executor.spec.name,
-                    timestamp=time.time(),
-                    data={"error": str(e)},
-                ))
+                await self.run_parallel(specs, task)
             finally:
-                await event_queue.put(None)  # sentinel for this agent
-
-        # Start all agent tasks
-        tasks = [
-            asyncio.create_task(_run_and_enqueue(ex, task))
-            for ex in executors
-        ]
-
-        # Yield events as they arrive until all agents complete
-        completed_count = 0
-        while completed_count < len(executors):
-            event = await event_queue.get()
-            if event is None:
-                completed_count += 1
-            else:
+                await event_queue.put(None)
+        worker = asyncio.create_task(run())
+        try:
+            while True:
+                event = await event_queue.get()
+                if event is None:
+                    break
                 yield event
-
-        # Ensure all tasks are cleaned up
-        for t in tasks:
-            if not t.done():
-                t.cancel()
-                try:
-                    await t
-                except (asyncio.CancelledError, Exception):
-                    pass
+            await worker
+        finally:
+            if not worker.done():
+                worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+            if previous_callback is None:
+                del self._agent_callback
+            else:
+                self._agent_callback = previous_callback
 
     # -- Internal helpers -------------------------------------------------------
 
