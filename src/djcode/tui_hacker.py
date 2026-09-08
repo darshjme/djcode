@@ -65,31 +65,12 @@ MATRIX_CHARS = (
     "\u30aa\u30ab\u30ac\u30ad\u30ae\u30af\u30b0\u30b1\u30b2\u30b3"
 )
 
-# The 18 PhD agent roster (name, dharmic_title, tier)
+# Use the execution registry so new roles cannot silently disappear from the HUD.
+from djcode import __version__
+from djcode.agents.registry import AGENT_SPECS
+
 AGENT_ROSTER: list[tuple[str, str, int]] = [
-    # Tier 4 - Control
-    ("Vyasa", "The Narrator", 4),
-    ("Brahma", "The Creator", 4),
-    # Tier 3 - Enterprise
-    ("Kubera", "Wealth Lord", 3),
-    ("Chitragupta", "The Scribe", 3),
-    ("Maya", "The Illusionist", 3),
-    # Tier 2 - Architecture
-    ("Vishvakarma", "Divine Architect", 2),
-    ("Saraswati", "Knowledge Keeper", 2),
-    ("Brihaspati", "The Strategist", 2),
-    # Tier 1 - Execution
-    ("Agni", "The Forger", 1),
-    ("Vayu", "The Swift", 1),
-    ("Shiva", "The Destroyer", 1),
-    ("Dharma", "The Judge", 1),
-    ("Sherlock", "The Detective", 1),
-    ("Prometheus", "The Firebringer", 1),
-    # Sentinel / Security
-    ("Kavach", "The Shield", 1),
-    ("Varuna", "The Watcher", 1),
-    ("Mitra", "The Ally", 1),
-    ("Indra", "The Thunder", 1),
+    (spec.name, spec.title, spec.tier) for spec in AGENT_SPECS.values()
 ]
 
 # Agent state -> (icon, color_key)
@@ -347,10 +328,10 @@ class HackerHeader(Widget):
     context_used: reactive[str] = reactive("0K")
     context_max: reactive[str] = reactive("1M")
     active_agents: reactive[int] = reactive(0)
-    total_agents: reactive[int] = reactive(18)
+    total_agents: reactive[int] = reactive(len(AGENT_ROSTER))
     session_cost: reactive[str] = reactive("$0.00")
     mode: reactive[str] = reactive("ACT")
-    version: reactive[str] = reactive("4.0")
+    version: reactive[str] = reactive(__version__)
 
     def compose(self) -> ComposeResult:
         yield Static(self._build_header(), id="hacker-header-display")
@@ -1054,7 +1035,7 @@ class AgentDashboard(Widget):
     def compose(self) -> ComposeResult:
         yield Static(
             f"  [{GOLD}]AGENT COMMAND CENTER[/]"
-            f" [{TEXT_DIM}]-- {len(AGENT_ROSTER)} PhD operatives[/]",
+            f" [{TEXT_DIM}]-- {len(AGENT_ROSTER)} specialist profiles[/]",
             classes="hacker-section",
         )
         yield Static(self._build_summary(), id="dashboard-summary")
