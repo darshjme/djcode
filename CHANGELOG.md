@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.0.2 — 2026-09-09
+
+- Stop heuristic text-command extraction after native tool use, preventing final summaries from replaying shell commands or overwriting files.
+- Derive TUI profile counts and version from the runtime registry, and fix modal overlay styling.
+
 ## 4.0.1 — 2026-09-09
 
 - Repair provider selection, native routing, streamed tool IDs and terminal failure handling.

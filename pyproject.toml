@@ -1,6 +1,6 @@
 [project]
 name = "djcode"
-version = "4.0.1"
+version = "4.0.2"
 description = "DJcode — local-first coding agent with specialist profiles, tool approvals and recoverable sessions."
 readme = "README.md"
 license = "MIT"
