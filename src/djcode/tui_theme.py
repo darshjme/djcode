@@ -99,6 +99,13 @@ ToolApprovalScreen {
     background: rgba(0, 0, 0, 0.60);
 }
 
+/* Fit all dialogs inside small terminals without hiding their controls. */
+#approval-box, #help-box, #agents-box, #model-box, #provider-box, #palette-box, #search-box {
+    max-width: 95%;
+    max-height: 90%;
+}
+#status-bar { color: #A1A1AA; border-top: none; }
+
 /* ── Header — Military HUD bar ────────────────────────────────── */
 
 Header {
@@ -120,7 +127,8 @@ Footer {
     background: #0A0A0A;
     color: #555555;
     dock: bottom;
-    border-top: solid #1E1E1E;
+    height: 1;
+    border: none;
 }
 
 FooterKey {
@@ -139,9 +147,9 @@ FooterKey:hover {
     dock: bottom;
     height: 1;
     background: #0E0E0E;
-    color: #555555;
+    color: #A1A1AA;
     padding: 0 1;
-    border-top: solid #1E1E1E;
+    border-top: none;
     content-align: left middle;
 }
 
@@ -156,21 +164,21 @@ FooterKey:hover {
 
 #chat-panel {
     width: 65%;
-    border: double #1E1E1E;
+    border: solid #1E1E1E;
     border-title-color: #FFD700;
     border-title-style: bold;
     background: #0A0A0A;
 }
 
 #chat-panel:focus-within {
-    border: double #FFD700;
+    border: solid #FFD700;
 }
 
 /* ── Side panel (35%) — Intelligence dashboard ───────────────── */
 
 #side-panel {
     width: 35%;
-    border: double #1E1E1E;
+    border: solid #1E1E1E;
     border-title-color: #00FF41;
     border-title-style: bold;
     background: #0E0E0E;
@@ -178,7 +186,7 @@ FooterKey:hover {
 }
 
 #side-panel:focus-within {
-    border: double #00FF41;
+    border: solid #00FF41;
 }
 
 /* ── SidePanel tabs — HUD navigation ─────────────────────────── */
@@ -280,13 +288,13 @@ SidePanel Underline {
     max-height: 12;
     background: #0E0E0E;
     color: #E8E8E8;
-    border: double #1E1E1E;
+    border: solid #1E1E1E;
     margin: 0 1;
     display: none;
 }
 
 #cmd-suggest:focus {
-    border: double #00FF41;
+    border: solid #00FF41;
 }
 
 #cmd-suggest > .option-list--option-highlighted {
@@ -303,16 +311,16 @@ SidePanel Underline {
     height: 3;
     background: #111111;
     color: #FFD700;
-    border-top: double #1E1E1E;
+    border: solid #333333;
     padding: 0 1;
 }
 
 #prompt-input:focus {
-    border-top: double #FFD700;
+    border: solid #FFD700;
 }
 
 Input > .input--placeholder {
-    color: #333333;
+    color: #85858D;
 }
 
 Input > .input--cursor {
@@ -332,7 +340,7 @@ Input > .input--cursor {
     height: auto;
     max-height: 85%;
     background: #0E0E0E;
-    border: double #FFD700;
+    border: solid #FFD700;
     padding: 1 2;
 }
 
@@ -361,7 +369,7 @@ Input > .input--cursor {
     height: auto;
     max-height: 85%;
     background: #0E0E0E;
-    border: double #FFD700;
+    border: solid #FFD700;
     padding: 1 2;
 }
 
@@ -384,12 +392,12 @@ Input > .input--cursor {
 }
 
 .hacker-border {
-    border: double #1E1E1E;
+    border: solid #1E1E1E;
     background: #0A0A0A;
 }
 
 .hacker-border:focus {
-    border: double #00FF41;
+    border: solid #00FF41;
 }
 
 /* Agent status bar widget */

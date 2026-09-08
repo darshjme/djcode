@@ -22,7 +22,7 @@ import uuid
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from textual import on, work
+from textual import on, work, events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, ScrollableContainer
@@ -58,6 +58,9 @@ from djcode.tui_theme import (
 
 COMMAND_REGISTRY: list[tuple[str, str]] = [
     ("/help", "Show help overlay"),
+    ("/check", "Run runtime and source checks"),
+    ("/lint", "Run runtime and source checks"),
+    ("/update", "Update a managed installation"),
     ("/model", "Switch model (fuzzy match)"),
     ("/models", "List available models"),
     ("/provider", "Switch LLM provider"),
@@ -155,7 +158,7 @@ HELP_TEXT = """\
   [cyan]/help[/]            Show this help
   [cyan]/exit[/]            Quit
 
-[dim]Press Escape to close[/]
+[dim]F4 commands · Ctrl+B sidebar · Ctrl+K cancel · Escape closes[/]
 """
 
 
@@ -165,6 +168,7 @@ class ToolApprovalScreen(ModalScreen[bool]):
     DEFAULT_CSS = """
     ToolApprovalScreen { align: center middle; background: rgba(0, 0, 0, 0.85); }
     #approval-box { width: 76; height: auto; max-height: 85%; border: round #FFD700; background: #111111; padding: 1 2; }
+    #approval-details { height: auto; max-height: 12; overflow-y: auto; }
     #approval-actions { height: 3; margin-top: 1; }
     #approval-actions Button { margin-right: 2; }
     """
@@ -177,10 +181,14 @@ class ToolApprovalScreen(ModalScreen[bool]):
         import json
         with Vertical(id="approval-box"):
             yield Static(f"Approve tool: {self.tool_name}", markup=False)
-            yield Static(json.dumps(self.arguments, indent=2, ensure_ascii=False)[:4000], markup=False)
+            with ScrollableContainer(id="approval-details"):
+                yield Static(json.dumps(self.arguments, indent=2, ensure_ascii=False), markup=False)
             with Horizontal(id="approval-actions"):
                 yield Button("Deny", id="deny-tool")
                 yield Button("Allow once", id="allow-tool", variant="warning")
+
+    def on_mount(self) -> None:
+        self.query_one("#deny-tool", Button).focus()
 
     @on(Button.Pressed)
     def choose(self, event: Button.Pressed) -> None:
@@ -838,6 +846,15 @@ class CommandPalette(ModalScreen[str | None]):
     def on_mount(self) -> None:
         self.query_one("#palette-input", Input).focus()
 
+    def on_key(self, event: events.Key) -> None:
+        if event.key in ("up", "down"):
+            options = self.query_one("#palette-list", OptionList)
+            if options.option_count:
+                current = options.highlighted
+                options.highlighted = max(0, min(options.option_count - 1, (current if current is not None else 0) + (1 if event.key == "down" else -1)))
+            event.stop()
+            event.prevent_default()
+
     @on(Input.Changed, "#palette-input")
     def filter_commands(self, event: Input.Changed) -> None:
         """Filter the command list based on input."""
@@ -860,7 +877,7 @@ class CommandPalette(ModalScreen[str | None]):
         """On Enter in the filter input, select first visible option."""
         option_list = self.query_one("#palette-list", OptionList)
         if option_list.option_count > 0:
-            opt = option_list.get_option_at_index(0)
+            opt = option_list.get_option_at_index(option_list.highlighted or 0)
             if opt.id:
                 self.dismiss(str(opt.id))
 
@@ -917,22 +934,24 @@ class DJcodeApp(App):
     """
 
     CSS = DJCODE_CSS
+    ENABLE_COMMAND_PALETTE = False  # F4 opens DJcode commands; Ctrl+P toggles plan mode.
     TITLE = "DJcode"
     SUB_TITLE = f"v{__version__}"
 
     BINDINGS = [
-        Binding("ctrl+o", "toggle_thinking", "Thinking", show=True),
+        Binding("ctrl+o", "toggle_thinking", "Thinking", show=False),
         Binding("ctrl+p", "toggle_plan", "Plan/Act", show=True),
-        Binding("ctrl+l", "clear_chat", "Clear", show=True),
-        Binding("ctrl+t", "toggle_auto", "Auto", show=True),
+        Binding("ctrl+l", "clear_chat", "Clear", show=False),
+        Binding("ctrl+t", "toggle_auto", "Auto", show=False),
         Binding("ctrl+r", "rerun", "Rerun", show=False),
-        Binding("ctrl+k", "cancel", "Cancel", show=False),
+        Binding("ctrl+k", "cancel", "Cancel", show=True),
         Binding("ctrl+q", "quit", "Quit", show=True),
         Binding("f1", "show_help", "Help", show=True),
         Binding("f2", "show_model_picker", "Model", show=True),
         Binding("f3", "show_provider_picker", "Provider", show=True),
         Binding("f4", "show_palette", "Cmds", show=True),
         Binding("f5", "show_agents", "Agents", show=False),
+        Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=False),
         Binding("tab", "focus_next", "Focus Next", show=False),
         # Vim keys — only active when chat-log is focused
         Binding("j", "scroll_down", "Down", show=False),
@@ -968,6 +987,7 @@ class DJcodeApp(App):
         self._cancel_requested = False
         self._generation_task: asyncio.Task | None = None
         self._approval_lock = asyncio.Lock()
+        self._sidebar_override: bool | None = None
         self._last_input = ""
         self._provider: Any = None
         self._operator: Any = None
@@ -1000,6 +1020,21 @@ class DJcodeApp(App):
         yield Static(self._build_status_text(), id="status-bar")
         yield Footer()
 
+    def on_resize(self, event: events.Resize) -> None:
+        self._update_layout()
+
+    def _update_layout(self) -> None:
+        if not self.is_mounted:
+            return
+        visible = self._sidebar_override if self._sidebar_override is not None else self.size.width >= 110
+        self.query_one("#side-panel").display = visible
+        self.query_one("#chat-panel").styles.width = "65%" if visible else "100%"
+        self._refresh_status_bar()
+
+    def action_toggle_sidebar(self) -> None:
+        self._sidebar_override = not self.query_one("#side-panel").display
+        self._update_layout()
+
     # ── Status bar helpers ────────────────────────────────────────────────
 
     def _build_status_text(self) -> str:
@@ -1028,6 +1063,9 @@ class DJcodeApp(App):
         think = "ON" if self._show_thinking else "OFF"
         auto = "ON" if self._auto_accept else "OFF"
 
+        if self.size.width < 110:
+            return f" {provider} · ↑{in_str} ↓{out_str} · {mode} · Approvals: {'auto' if self._auto_accept else 'ask'} · Ctrl+B sidebar"
+
         return (
             f"  {model} | {provider} | "
             f"\u2191{in_str} \u2193{out_str} tokens | "
@@ -1045,10 +1083,11 @@ class DJcodeApp(App):
 
     async def on_mount(self) -> None:
         """Initialize provider, operator, and welcome message on mount."""
+        self._update_layout()
         chat = self.query_one("#chat-log", RichLog)
         chat.write(
             f"[bold {GOLD}]\u23fa DJcode[/] [dim]v{__version__}[/]  "
-            f"[dim]Local-first AI coding CLI by DarshJ.AI[/]\n"
+            f"[dim]project by Darshan Kumar Joshi[/]\n"
         )
 
         # Focus the input by default
@@ -1075,7 +1114,7 @@ class DJcodeApp(App):
             self._provider = Provider(config)
 
             # Validate model
-            ok, msg = self._provider.validate_model()
+            ok, msg = await asyncio.to_thread(self._provider.validate_model)
             if msg:
                 side.agent_panel.add_tool_call("validate_model", "warning")
             if not ok:
@@ -1154,13 +1193,9 @@ class DJcodeApp(App):
             except Exception:
                 pass
 
-            chat.write(
-                f"  [dim]Model:[/]    [{GOLD}]{model}[/]\n"
-                f"  [dim]Provider:[/] [{GOLD}]{prov}[/]\n"
-                f"  [dim]Mode:[/]     [{GOLD}]{'PLAN' if self._plan_mode else 'ACT'}[/]\n"
-                f"  [dim]Thinking:[/] [{GOLD}]{'ON' if self._show_thinking else 'OFF'}[/]\n"
-            )
-            chat.write(f"[dim]Ready. Type a message, /help, or press F3 for command palette.[/]\n")
+            from rich.text import Text
+            chat.write(Text(f"{prov} · {model} · approvals {'automatic' if self._auto_accept else 'ask first'}"))
+            chat.write("[dim]Ready · F4 commands · F2 model · Ctrl+B sidebar[/]\n")
 
             # Update sidebar panels
             side.agent_panel.set_agent("Operator", "General")
@@ -1373,6 +1408,30 @@ class DJcodeApp(App):
 
         if cmd == "/help":
             self.push_screen(HelpScreen())
+
+        elif cmd in ("/check", "/lint"):
+            from djcode.maintenance import run_checks
+            chat.write("[dim]Running checks…[/]")
+            try:
+                result = await asyncio.to_thread(run_checks)
+                from rich.text import Text
+                chat.write(Text(result["summary"], style="green" if result["ok"] else "yellow"))
+                for check in result.get("checks", []):
+                    chat.write(Text(f"{check['name']}: {check['status']} · {check['detail']}"))
+            except Exception as exc:
+                chat.write(f"[red]Check failed: {type(exc).__name__}[/]")
+
+        elif cmd == "/update":
+            from djcode.updater import perform_update
+            chat.write("[dim]Checking for updates…[/]")
+            try:
+                result = await asyncio.to_thread(perform_update, force=True)
+                from rich.text import Text
+                chat.write(Text(result["message"], style="green" if result["ok"] else "yellow"))
+                if result.get("updated"):
+                    chat.write("Restart DJcode after your current work to use the update.")
+            except Exception as exc:
+                chat.write(f"[red]Update failed: {type(exc).__name__}[/]")
 
         elif cmd == "/clear":
             self.action_clear_chat()
@@ -1861,7 +1920,7 @@ class DJcodeApp(App):
 
         old_model = self._provider.config.model
         self._provider.config.model = model_name
-        ok, msg = self._provider.validate_model()
+        ok, msg = await asyncio.to_thread(self._provider.validate_model)
 
         if ok:
             new_model = self._provider.config.model

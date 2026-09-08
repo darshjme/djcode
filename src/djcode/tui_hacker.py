@@ -244,11 +244,10 @@ class AgentStatusBar(Widget):
     DEFAULT_CSS = """
     AgentStatusBar {
         height: auto;
-        min-height: 2;
-        max-height: 5;
+        min-height: 1;
+        max-height: 3;
         background: #0A0A0A;
         padding: 0 1;
-        border: solid #1E1E1E;
         overflow-y: auto;
     }
     """
@@ -263,22 +262,11 @@ class AgentStatusBar(Widget):
         yield Static(self._build_bar(), id="agent-bar-display")
 
     def _build_bar(self) -> str:
-        """Build the Rich markup string for the agent bar."""
-        chips: list[str] = []
-        for name, _, tier in AGENT_ROSTER:
-            state = self._states.get(name, "idle")
-            icon, color = AGENT_STATES.get(state, ("--", TEXT_DIM))
-            tier_color = TIER_COLORS.get(tier, TEXT_DIM)
-
-            if state == "idle":
-                chip = f"[{TEXT_DIM}][{icon} {name[:6]}][/]"
-            elif state == "error":
-                chip = f"[bold {ERROR}][{icon} {name[:6]}][/]"
-            else:
-                chip = f"[{color}][{icon}[/] [{tier_color}]{name[:6]}[/][{color}]][/]"
-            chips.append(chip)
-
-        return " ".join(chips)
+        """Show active work; idle roles remain available in the agent dashboard."""
+        active = [(name, state) for name, state in self._states.items() if state != "idle"]
+        if not active:
+            return f"[{TEXT_DIM}]{len(self._states)} specialists ready · F5 agents[/]"
+        return " · ".join(f"[{AGENT_STATES.get(state, ('', TEXT_BASE))[1]}]{name}: {state}[/]" for name, state in active)
 
     def set_agent_state(self, agent_name: str, state: str) -> None:
         """Update a single agent's state and refresh display."""
@@ -315,9 +303,9 @@ class HackerHeader(Widget):
 
     DEFAULT_CSS = """
     HackerHeader {
-        height: 3;
+        height: 2;
         background: #0A0A0A;
-        border-bottom: double #1E1E1E;
+        border-bottom: solid #1E1E1E;
         padding: 0 1;
         content-align: center middle;
     }
@@ -355,20 +343,23 @@ class HackerHeader(Widget):
         # Agent count color
         agent_color = SUCCESS if self.active_agents > 0 else TEXT_DIM
 
-        parts = [
-            f"[bold {GOLD}]DJcode[/] [{TEXT_DIM}]v{self.version}[/]",
-            f"[{TEXT_DIM}]|[/]",
-            f"[{TEXT_BASE}]Model:[/] [{TEXT_STRONG}]{self.model_name}[/]",
-            f"[{TEXT_DIM}]|[/]",
-            f"[{TEXT_BASE}]Ctx:[/] [{ctx_color}]{ctx_bar} {self.context_pct}%[/] [{TEXT_DIM}]({self.context_used}/{self.context_max})[/]",
-            f"[{TEXT_DIM}]|[/]",
-            f"[{TEXT_BASE}]Agents:[/] [{agent_color}]{self.active_agents}/{self.total_agents}[/]",
-            f"[{TEXT_DIM}]|[/]",
-            f"[{TEXT_BASE}]Cost:[/] [{GOLD}]{self.session_cost}[/]",
-            f"[{TEXT_DIM}]|[/]",
-            mode_str,
-        ]
-        return "  ".join(parts)
+        width = self.size.width or 120
+        from rich.markup import escape
+        model = self.model_name
+        limit = max(12, width - 65)
+        if len(model) > limit:
+            model = model[:limit - 1] + "…"
+        parts = [f"[bold {GOLD}]DJcode[/] [{TEXT_DIM}]v{self.version}[/]", mode_str]
+        parts.append(f"[{TEXT_STRONG}]{escape(model)}[/]")
+        if width >= 70:
+            parts.append(f"[{ctx_color}]Context {self.context_pct}%[/]")
+        if width >= 110:
+            parts.append(f"[{agent_color}]Agents {self.active_agents}/{self.total_agents}[/]")
+            parts.append(f"[{GOLD}]{self.session_cost}[/]")
+        return "  ·  ".join(parts)
+
+    def on_resize(self) -> None:
+        self._refresh()
 
     @staticmethod
     def _mini_bar(pct: int, width: int = 8) -> str:
