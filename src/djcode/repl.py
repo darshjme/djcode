@@ -367,27 +367,16 @@ def _handle_provider_switch_interactive(operator: Operator, status_bar: StatusBa
 
     prov_info = PROVIDERS.get(provider_id, {})
 
-    # Check if API key is needed and available
-    if prov_info.get("needs_key"):
-        key = get_api_key(provider_id)
-        if not key:
-            console.print(
-                f"[yellow]No API key for {prov_info['name']}.[/] "
-                f"[dim]Run /auth to configure.[/]"
-            )
-            return
+    new_config = ProviderConfig.from_config(provider_override=provider_id)
+    from djcode.account_auth import has_account
+    authenticated = has_account(provider_id) if new_config.auth_method == "account" else bool(new_config.api_key)
+    if prov_info.get("needs_key") and not authenticated:
+        console.print(f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]")
+        return
 
-    new_config = ProviderConfig(
-        name=provider_id,
-        base_url=get_base_url(provider_id),
-        model=operator.provider.config.model,
-        api_key=get_api_key(provider_id),
-        temperature=operator.provider.config.temperature,
-        max_tokens=operator.provider.config.max_tokens,
-    )
     operator.provider = Provider(new_config)
     set_value("provider", provider_id)
-    status_bar.update(provider=provider_id)
+    status_bar.update(provider=provider_id, model=new_config.model)
     console.print(f"[green]Provider switched to:[/] {prov_info.get('name', provider_id)}")
 
 
@@ -423,23 +412,15 @@ async def handle_slash_command(
             # Direct provider switch by name
             if arg in PROVIDERS:
                 prov_info = PROVIDERS[arg]
-                if prov_info.get("needs_key") and not get_api_key(arg):
-                    console.print(
-                        f"[yellow]No API key for {prov_info['name']}.[/] "
-                        f"[dim]Run /auth to configure.[/]"
-                    )
+                new_config = ProviderConfig.from_config(provider_override=arg)
+                from djcode.account_auth import has_account
+                authenticated = has_account(arg) if new_config.auth_method == "account" else bool(new_config.api_key)
+                if prov_info.get("needs_key") and not authenticated:
+                    console.print(f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]")
                 else:
-                    new_config = ProviderConfig(
-                        name=arg,
-                        base_url=get_base_url(arg),
-                        model=operator.provider.config.model,
-                        api_key=get_api_key(arg),
-                        temperature=operator.provider.config.temperature,
-                        max_tokens=operator.provider.config.max_tokens,
-                    )
                     operator.provider = Provider(new_config)
                     set_value("provider", arg)
-                    status_bar.update(provider=arg)
+                    status_bar.update(provider=arg, model=new_config.model)
                     console.print(f"[green]Provider switched to:[/] {prov_info['name']}")
             else:
                 console.print(f"[red]Unknown provider:[/] {arg}")
@@ -451,7 +432,9 @@ async def handle_slash_command(
         # Reload provider after auth
         cfg = load_config()
         provider_id = cfg.get("provider", "ollama")
-        status_bar.update(provider=provider_id)
+        new_config = ProviderConfig.from_config(provider_override=provider_id)
+        operator.provider = Provider(new_config)
+        status_bar.update(provider=provider_id, model=new_config.model)
 
     elif command == "/auto":
         cfg = load_config()
@@ -655,7 +638,7 @@ async def handle_slash_command(
             # Run campaign director
             spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
             from djcode.orchestrator.engine import AgentRunner
-            runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=True)
+            runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
             async for token in runner.run_streaming(campaign_brief):
                 sys.stdout.write(token)
                 sys.stdout.flush()
@@ -669,7 +652,7 @@ async def handle_slash_command(
             console.print(f"\n  [{GOLD}]📢 Content Campaign[/]\n")
             spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
             from djcode.orchestrator.engine import AgentRunner
-            runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=True)
+            runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
             async for token in runner.run_streaming(arg):
                 sys.stdout.write(token)
                 sys.stdout.flush()
@@ -680,7 +663,7 @@ async def handle_slash_command(
         console.print(f"\n  [{GOLD}]🎨 Maya (Image Prompter)[/]\n")
         spec = get_content_spec(ContentRole.IMAGE_PROMPTER)
         from djcode.orchestrator.engine import AgentRunner
-        runner = AgentRunner(llm, spec, orchestrator.bus, auto_accept=True)
+        runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
         async for token in runner.run_streaming(task):
             sys.stdout.write(token)
             sys.stdout.flush()
@@ -691,7 +674,7 @@ async def handle_slash_command(
         console.print(f"\n  [{GOLD}]🎬 Kubera (Video Director)[/]\n")
         spec = get_content_spec(ContentRole.VIDEO_DIRECTOR)
         from djcode.orchestrator.engine import AgentRunner
-        runner = AgentRunner(llm, spec, orchestrator.bus, auto_accept=True)
+        runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
         async for token in runner.run_streaming(task):
             sys.stdout.write(token)
             sys.stdout.flush()
@@ -702,7 +685,7 @@ async def handle_slash_command(
         console.print(f"\n  [{GOLD}]📱 Chitragupta (Social Strategist)[/]\n")
         spec = get_content_spec(ContentRole.SOCIAL_STRATEGIST)
         from djcode.orchestrator.engine import AgentRunner
-        runner = AgentRunner(llm, spec, orchestrator.bus, auto_accept=True)
+        runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
         async for token in runner.run_streaming(task):
             sys.stdout.write(token)
             sys.stdout.flush()
