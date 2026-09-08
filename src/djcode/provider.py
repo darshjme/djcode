@@ -49,6 +49,7 @@ class ProviderConfig:
     api_key: str = ""
     temperature: float = 0.7
     max_tokens: int = 8192
+    context_window: int | None = None
 
     @classmethod
     def from_config(
@@ -69,6 +70,19 @@ class ProviderConfig:
         cfg = load_config()
         provider = provider_override or cfg["provider"]
         model = model_override or cfg["model"]
+        context_window = None
+        max_tokens = cfg.get("max_tokens", 8192)
+        if provider == "colibri":
+            model = model_override or (cfg.get("model") if cfg.get("provider") == "colibri" else None) or "djcode-colibri"
+            try:
+                context_window = int(os.environ.get("DJCODE_COLIBRI_CONTEXT", "8192"))
+                max_tokens = int(os.environ.get("DJCODE_COLIBRI_MAX_TOKENS", "256"))
+            except ValueError as exc:
+                raise ValueError("DJCODE_COLIBRI_CONTEXT and DJCODE_COLIBRI_MAX_TOKENS must be positive integers") from exc
+            if not 1 <= context_window <= 1_048_576:
+                raise ValueError("DJCODE_COLIBRI_CONTEXT must be between 1 and 1048576 and match the served --ctx")
+            if not 1 <= max_tokens < context_window:
+                raise ValueError("DJCODE_COLIBRI_MAX_TOKENS must be positive and smaller than DJCODE_COLIBRI_CONTEXT")
 
         # 1. URL-as-provider: treat http(s) URLs as custom OpenAI-compatible endpoints
         if provider.startswith("http://") or provider.startswith("https://"):
@@ -121,7 +135,8 @@ class ProviderConfig:
             model=model,
             api_key=api_key,
             temperature=cfg.get("temperature", 0.7),
-            max_tokens=cfg.get("max_tokens", 8192),
+            max_tokens=max_tokens,
+            context_window=context_window,
         )
 
 
@@ -681,6 +696,24 @@ class Provider:
         For Ollama, checks against /api/tags.
         For remote providers, we can't validate — always returns ok.
         """
+        if self.config.name == "colibri":
+            base = self.config.base_url.rstrip("/")
+            endpoint = base + ("/models" if base.endswith("/v1") else "/v1/models")
+            headers = {"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}
+            try:
+                response = httpx.get(endpoint, headers=headers, timeout=5.0)
+                response.raise_for_status()
+                data = response.json().get("data")
+                if not isinstance(data, list):
+                    return False, "Colibri /v1/models returned an invalid model list"
+                models = [item["id"] for item in data if isinstance(item, dict) and isinstance(item.get("id"), str)]
+                if self.config.model not in models:
+                    return False, f"Colibri model '{self.config.model}' is not served. Available: {', '.join(models[:10]) or '(none)'}. Set --model to the server's --model-id."
+                return True, ""
+            except httpx.HTTPStatusError as exc:
+                return False, f"Colibri model discovery failed (HTTP {exc.response.status_code}); check the server and COLI_API_KEY."
+            except (httpx.HTTPError, ValueError, AttributeError):
+                return False, "Cannot discover Colibri models within the connection timeout. Start your existing Colibri server and check its URL."
         if self.config.name != "ollama":
             return True, ""
 
@@ -786,6 +819,9 @@ class Provider:
             "tools": TOOL_DEFINITIONS,
         }
 
+        if self.config.name == "colibri":
+            self._check_colibri_context(messages)
+
         base = self.config.base_url.rstrip("/")
         if base.endswith("/v1"):
             url = f"{base}/chat/completions"
@@ -837,6 +873,23 @@ class Provider:
         except httpx.ReadTimeout:
             raise ConnectionError(
                 "Request timed out. Try a smaller model or increase timeout."
+            )
+
+    def _check_colibri_context(self, messages: list[Message]) -> None:
+        """Approximate preflight only; the server tokenizer remains authoritative."""
+        from djcode.context.compressor import _total_tokens, _count_tokens
+        context = self.config.context_window or 8192
+        if not 1 <= self.config.max_tokens < context <= 1_048_576:
+            raise ValueError("Invalid Colibri context/output budget; set DJCODE_COLIBRI_CONTEXT to served --ctx and a smaller positive DJCODE_COLIBRI_MAX_TOKENS")
+        prompt_estimate = _total_tokens(messages) + _count_tokens(json.dumps(TOOL_DEFINITIONS))
+        # Reserve 10% plus framing headroom because local tokenizers differ.
+        estimated_budget = (prompt_estimate * 11 + 9) // 10 + 128 + self.config.max_tokens
+        if estimated_budget > context:
+            raise ValueError(
+                f"Colibri approximate token budget {estimated_budget} exceeds configured context {context} "
+                "(messages + tools + output + estimation headroom). Shorten the conversation, "
+                "reduce DJCODE_COLIBRI_MAX_TOKENS, or explicitly serve a larger --ctx and match "
+                "DJCODE_COLIBRI_CONTEXT. No request was sent; token estimates are approximate."
             )
 
     # -- Anthropic: delegate to new provider with prompt caching + thinking --

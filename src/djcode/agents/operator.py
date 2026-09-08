@@ -123,7 +123,7 @@ class Operator:
         self.plan_mode = False
         self.on_checkpoint = None
         from djcode.context.manager import ContextWindowManager
-        self.context_manager = ContextWindowManager(model=provider.config.model, provider=provider)
+        self.context_manager = ContextWindowManager(model=provider.config.model, provider=provider, max_context=getattr(provider.config, "context_window", None))
         self.messages: list[Message] = [
             Message(role="system", content=build_system_prompt(
                 bypass_rlhf=bypass_rlhf, model=model or provider.config.model

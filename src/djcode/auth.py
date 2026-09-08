@@ -82,6 +82,14 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "base_url": "http://localhost:8899",
         "description": "Apple Silicon native inference",
     },
+    "colibri": {
+        "name": "Colibri (Local)",
+        "needs_key": False,
+        "optional_key": True,
+        "env": "COLI_API_KEY",
+        "base_url": "http://127.0.0.1:8000/v1",
+        "description": "Opt-in existing Colibri server; no model downloads",
+    },
     "featherless": {
         "name": "Featherless AI",
         "needs_key": True,
@@ -115,7 +123,7 @@ def is_uncensored_model(model_name: str) -> bool:
 def get_api_key(provider_id: str) -> str:
     """Get API key for a provider from config or environment."""
     prov = PROVIDERS.get(provider_id)
-    if not prov or not prov.get("needs_key"):
+    if not prov or not (prov.get("needs_key") or prov.get("optional_key")):
         return ""
 
     cfg = load_config()
@@ -191,7 +199,7 @@ def interactive_auth() -> str | None:
 
     prov = PROVIDERS[provider_id]
 
-    if prov["needs_key"]:
+    if prov["needs_key"] or prov.get("optional_key"):
         current_key = get_api_key(provider_id)
         masked = f"***{current_key[-4:]}" if current_key and len(current_key) > 4 else "(none)"
         console.print(f"\n  [dim]Current key: {masked}[/]")
@@ -204,13 +212,16 @@ def interactive_auth() -> str | None:
         if new_key:
             set_api_key(provider_id, new_key)
             console.print(f"  [green]API key saved for {prov['name']}[/]")
-        elif not current_key:
+        elif not current_key and prov["needs_key"]:
             env_var = prov.get("env", "")
             console.print(
                 f"  [yellow]No key configured.[/] "
                 f"[dim]Set {env_var} or run /auth again.[/]"
             )
 
+    # A local server alias must not inherit the previous hosted model name.
+    if provider_id == "colibri" and load_config().get("provider") != "colibri":
+        set_value("model", "djcode-colibri")
     # Set as active provider
     set_value("provider", provider_id)
     console.print(f"\n  [green]Active provider:[/] {prov['name']}")

@@ -133,6 +133,18 @@ def run_onboarding() -> dict:
         if not config["model"]:
             raise ValueError("Enter a model ID available to your provider account")
 
+    elif provider_choice == "colibri":
+        console.print("[dim]Connect to an existing Colibri server. This setup does not install engines or download models.[/]")
+        endpoint = questionary.text("Colibri server URL:", default="http://127.0.0.1:8000/v1", style=Q_STYLE).ask()
+        if endpoint and not endpoint.startswith(("http://", "https://")):
+            raise ValueError("A valid HTTP(S) Colibri URL is required")
+        config["colibri_url"] = (endpoint or "http://127.0.0.1:8000/v1").rstrip("/")
+        key = questionary.password("Optional Colibri API key (or use COLI_API_KEY):", style=Q_STYLE).ask()
+        if key:
+            config["colibri_api_key"] = key
+        model = questionary.text("Served model ID (--model-id):", default="djcode-colibri", style=Q_STYLE).ask()
+        config["model"] = model or "djcode-colibri"
+
     elif provider_choice == "mlx":
         console.print()
         mlx_url = questionary.text(
@@ -219,6 +231,7 @@ def _default_model_for_provider(provider_id: str) -> str:
         "together": "meta-llama/Llama-3-70b-chat-hf",
         "openrouter": "meta-llama/llama-3-8b-instruct",
         "ollama": DEFAULT_CONFIG["model"],
+        "colibri": "djcode-colibri",
         "featherless": "",
         "custom": "",
         "mlx": "mlx-community/gemma-2-2b-it-4bit",
