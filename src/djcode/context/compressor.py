@@ -249,25 +249,42 @@ class ConversationCompressor:
         """
         system: list[Message] = []
         pinned: list[Message] = []
-        rest: list[Message] = []
-
+        groups: list[list[Message]] = []
+        # An assistant request and its following tool results are indivisible.
+        # Moving or removing only half produces invalid provider transcripts.
         for msg in messages:
-            if msg.role == "system" and not rest:
-                # System messages at the start
-                system.append(msg)
-            elif self._is_pinned(msg):
-                pinned.append(msg)
+            if msg.role == "tool" and groups and groups[-1][0].tool_calls:
+                groups[-1].append(msg)
             else:
-                rest.append(msg)
+                groups.append([msg])
+        rest: list[list[Message]] = []
+        for group in groups:
+            if group[0].role == "system" and not rest:
+                system.extend(group)
+            elif any(self._is_pinned(msg) for msg in group):
+                pinned.extend(group)
+            else:
+                rest.append(group)
+        recent_groups: list[list[Message]] = []
+        count = 0
+        while rest and count < max(0, keep_recent):
+            group = rest.pop()
+            recent_groups.insert(0, group)
+            count += len(group)
+        return system, pinned, [m for g in rest for m in g], [m for g in recent_groups for m in g]
 
-        # Split rest into compressible + recent
-        if len(rest) <= keep_recent:
-            return system, pinned, [], rest
-
-        compressible = rest[:-keep_recent]
-        recent = rest[-keep_recent:]
-
-        return system, pinned, compressible, recent
+    @staticmethod
+    def _drop_oldest_group(messages: list[Message]) -> int:
+        """Drop one message and all results belonging to its tool request."""
+        if not messages:
+            return 0
+        first = messages.pop(0)
+        count = 1
+        if first.tool_calls:
+            while messages and messages[0].role == "tool":
+                messages.pop(0)
+                count += 1
+        return count
 
     # ------------------------------------------------------------------
     # Strategy: TRIM
@@ -300,8 +317,7 @@ class ConversationCompressor:
         # Drop from the front of compressible until we fit
         removed = 0
         while compressible and _total_tokens(system + pinned + compressible + recent) > target_tokens:
-            compressible.pop(0)
-            removed += 1
+            removed += self._drop_oldest_group(compressible)
 
         result_msgs = system + pinned + compressible + recent
         compressed_tokens = _total_tokens(result_msgs)
@@ -357,8 +373,7 @@ class ConversationCompressor:
 
         # If still over budget, trim old tool messages from the front
         while tool_msgs and _total_tokens(system + pinned + tool_msgs + recent) > target_tokens:
-            tool_msgs.pop(0)
-            removed += 1
+            removed += self._drop_oldest_group(tool_msgs)
 
         result_msgs = system + pinned + tool_msgs + recent
         compressed_tokens = _total_tokens(result_msgs)
@@ -576,8 +591,7 @@ class ConversationCompressor:
         # If still over budget, start trimming old tool messages
         removed_extra = 0
         while tool_msgs and _total_tokens(result_msgs) > target_tokens:
-            tool_msgs.pop(0)
-            removed_extra += 1
+            removed_extra += self._drop_oldest_group(tool_msgs)
             if chat_msgs and summary_text:
                 result_msgs = system + [summary_msg] + pinned + tool_msgs + recent
             else:

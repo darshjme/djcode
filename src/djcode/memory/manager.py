@@ -2,14 +2,18 @@
 
 Tier 1: Session memory (in-process, conversation context)
 Tier 2: Local persistent memory (~/.djcode/memory/*.json)
-Tier 3: Vector search via Ollama embeddings (optional, local Qdrant or flat file)
+Tier 3: Vector search with explicitly supplied embeddings (optional ChromaDB)
 
-Everything stays local. Zero telemetry.
+Facts stay on disk locally. Embeddings are supplied by the caller; lexical search needs no model.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import re
+import tempfile
+from functools import wraps
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +24,38 @@ from djcode.memory.embedder import VectorStore, cosine_similarity
 
 FACTS_FILE = MEMORY_DIR / "facts.json"
 CONVERSATIONS_DIR = MEMORY_DIR / "conversations"
+
+
+def _locked_facts(method):
+    """Serialize read-modify-write transactions across concurrent CLI sessions."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        with open(MEMORY_DIR / "facts.lock", "a+") as lock:
+            if os.name == "nt":
+                import msvcrt
+                lock.seek(0)
+                if not lock.read(1):
+                    lock.write("0")
+                    lock.flush()
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                self._load_facts()
+                return method(self, *args, **kwargs)
+            except Exception:
+                self._load_facts()
+                raise
+            finally:
+                if os.name == "nt":
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    return wrapped
 
 
 @dataclass
@@ -62,21 +98,56 @@ class MemoryManager:
     def _load_facts(self) -> None:
         """Load persistent facts from disk."""
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        self._facts = {}
         if FACTS_FILE.exists():
             try:
                 with open(FACTS_FILE) as f:
                     data = json.load(f)
+                if not isinstance(data, dict):
+                    raise ValueError("Expected a facts object")
                 for key, entry_data in data.items():
                     self._facts[key] = MemoryEntry.from_dict(entry_data)
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, TypeError, AttributeError, ValueError) as exc:
+                raise ValueError(f"Cannot read memory file {FACTS_FILE}; repair or back it up before saving") from exc
+
+    @staticmethod
+    def _write_json(path: Path, data: Any) -> None:
+        """Replace atomically so interrupted writes leave the last durable version."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        try:
+            with os.fdopen(fd, "w") as handle:
+                json.dump(data, handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
 
     def _save_facts(self) -> None:
-        """Persist facts to disk."""
-        MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-        data = {k: v.to_dict() for k, v in self._facts.items()}
-        with open(FACTS_FILE, "w") as f:
-            json.dump(data, f, indent=2)
+        """Persist facts to disk atomically."""
+        self._write_json(FACTS_FILE, {k: v.to_dict() for k, v in self._facts.items()})
+
+    def search(self, query: str, top_k: int = 5) -> list[tuple[str, float]]:
+        """Lexical token-overlap retrieval, available offline without embeddings."""
+        self._load_facts()
+        terms = set(re.findall(r"\w+", query.casefold()))
+        if not terms or top_k <= 0:
+            return []
+        scored = []
+        for key, entry in self._facts.items():
+            words = set(re.findall(r"\w+", " ".join([key, entry.content, *entry.tags]).casefold()))
+            score = len(terms & words) / len(terms)
+            if score:
+                scored.append((key, score))
+        return sorted(scored, key=lambda item: (-item[1], item[0]))[:top_k]
+
+    @staticmethod
+    def _conversation_path(session_id: str) -> Path:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
+            raise ValueError("Session ID must contain only letters, digits, underscores or hyphens")
+        return CONVERSATIONS_DIR / f"{session_id}.json"
 
     # -- Tier 1: Session --
 
@@ -94,6 +165,7 @@ class MemoryManager:
 
     # -- Tier 2: Persistent facts --
 
+    @_locked_facts
     def remember(
         self,
         key: str,
@@ -110,7 +182,9 @@ class MemoryManager:
         )
         self._save_facts()
 
-        # Also store in ChromaDB vector store
+        # Updating without an embedding must invalidate any old semantic value.
+        if not embedding:
+            self._vectors.delete(key)
         if embedding:
             self._vectors.add(
                 doc_id=key,
@@ -119,6 +193,7 @@ class MemoryManager:
                 metadata={"tags": ",".join(tags or [])},
             )
 
+    @_locked_facts
     def recall(self, key: str) -> str | None:
         """Recall a fact by exact key."""
         entry = self._facts.get(key)
@@ -128,6 +203,7 @@ class MemoryManager:
             return entry.content
         return None
 
+    @_locked_facts
     def forget(self, key: str) -> bool:
         """Remove a fact from persistent storage and vector store."""
         if key in self._facts:
@@ -139,6 +215,7 @@ class MemoryManager:
 
     def list_facts(self) -> list[str]:
         """List all fact keys."""
+        self._load_facts()
         return sorted(self._facts.keys())
 
     # -- Tier 3: Semantic search --
@@ -153,7 +230,8 @@ class MemoryManager:
 
         Uses ChromaDB if available, falls back to in-memory cosine similarity.
         """
-        if not query_embedding:
+        self._load_facts()
+        if not query_embedding or top_k <= 0:
             return []
 
         # Try ChromaDB first
@@ -163,7 +241,8 @@ class MemoryManager:
                 return [
                     (r["id"], r["score"])
                     for r in results
-                    if r["score"] >= min_similarity
+                    if r["score"] >= min_similarity and r["id"] in self._facts
+                    and self._facts[r["id"]].embedding
                 ]
 
         # Fallback: in-memory cosine similarity
@@ -184,30 +263,36 @@ class MemoryManager:
     def save_conversation(self, session_id: str) -> Path:
         """Save the current session to a conversation file."""
         CONVERSATIONS_DIR.mkdir(parents=True, exist_ok=True)
-        path = CONVERSATIONS_DIR / f"{session_id}.json"
-        with open(path, "w") as f:
-            json.dump(self._session, f, indent=2)
+        path = self._conversation_path(session_id)
+        self._write_json(path, self._session)
         return path
 
     def load_conversation(self, session_id: str) -> bool:
         """Load a previous conversation."""
-        path = CONVERSATIONS_DIR / f"{session_id}.json"
+        path = self._conversation_path(session_id)
         if path.exists():
             try:
                 with open(path) as f:
-                    self._session = json.load(f)
+                    messages = json.load(f)
+                if not isinstance(messages, list) or any(
+                    not isinstance(m, dict) or not isinstance(m.get("role"), str)
+                    or not isinstance(m.get("content"), str) for m in messages
+                ):
+                    return False
+                self._session = messages
                 return True
             except (json.JSONDecodeError, OSError):
                 pass
         return False
 
     @property
-    def stats(self) -> dict[str, int]:
+    def stats(self) -> dict[str, int | str]:
         """Return memory statistics."""
         return {
             "session_messages": len(self._session),
             "persistent_facts": len(self._facts),
             "facts_with_embeddings": sum(1 for f in self._facts.values() if f.embedding),
             "vector_store_docs": self._vectors.count(),
-            "vector_store_backend": "chromadb" if self._vectors.is_chroma else "in-memory",
+            "vector_store_backend": "chromadb" if self._vectors.is_chroma else "stored-embedding cosine",
+            "search_backend": "lexical (offline); semantic requires supplied embeddings",
         }

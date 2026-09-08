@@ -182,6 +182,9 @@ class ContextWindowManager:
     @property
     def current_tokens(self) -> int:
         """Total tokens across all messages + injected context."""
+        if any(ic.is_expired for ic in self._injected):
+            self._injected = [ic for ic in self._injected if not ic.is_expired]
+            self._invalidate_cache()
         if self._cached_tokens is None:
             msg_tokens = _total_tokens(self._messages)
             inj_tokens = sum(ic.tokens for ic in self._injected if not ic.is_expired)

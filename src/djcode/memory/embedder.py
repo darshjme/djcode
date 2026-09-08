@@ -57,6 +57,7 @@ class VectorStore:
             self._collection = self._chroma_client.get_or_create_collection(
                 name=self._collection_name,
                 metadata={"hnsw:space": "cosine"},
+                embedding_function=None,  # Never fetch an implicit local embedding model.
             )
             self._use_chroma = True
             logger.debug("ChromaDB initialized at %s", CHROMA_DIR)

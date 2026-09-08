@@ -27,7 +27,7 @@ DB_PATH = CONFIG_DIR / "sessions.db"
 GOLD = "#FFD700"
 
 # Schema version — bump when adding migrations
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -196,6 +196,12 @@ class SessionDB:
                     value TEXT
                 );
             """)
+
+            # Add protocol fields to databases created by earlier releases.
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(conversations)")}
+            for column in ("tool_call_id", "name"):
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE conversations ADD COLUMN {column} TEXT")
 
             # Set schema version
             conn.execute(
@@ -387,6 +393,8 @@ class SessionDB:
         role: str,
         content: str,
         tool_calls: list[dict] | None = None,
+        tool_call_id: str | None = None,
+        name: str | None = None,
     ) -> None:
         """Save a single conversation message."""
         conn = self._connect()
@@ -394,9 +402,9 @@ class SessionDB:
             now = datetime.now().isoformat()
             tc_json = json.dumps(tool_calls) if tool_calls else ""
             conn.execute(
-                """INSERT INTO conversations (session_id, role, content, timestamp, tool_calls_json)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (session_id, role, content, now, tc_json),
+                """INSERT INTO conversations (session_id, role, content, timestamp, tool_calls_json, tool_call_id, name)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (session_id, role, content, now, tc_json, tool_call_id, name),
             )
             conn.commit()
         except sqlite3.Error as e:
@@ -420,18 +428,22 @@ class SessionDB:
                     role = msg.role
                     content = msg.content or ""
                     tc = getattr(msg, "tool_calls", None)
+                    tool_call_id = getattr(msg, "tool_call_id", None)
+                    name = getattr(msg, "name", None)
                 elif isinstance(msg, dict):
                     role = msg.get("role", "")
                     content = msg.get("content", "")
                     tc = msg.get("tool_calls")
+                    tool_call_id = msg.get("tool_call_id")
+                    name = msg.get("name")
                 else:
                     continue
 
                 tc_json = json.dumps(tc) if tc else ""
                 conn.execute(
-                    """INSERT INTO conversations (session_id, role, content, timestamp, tool_calls_json)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (session_id, role, content, now, tc_json),
+                    """INSERT INTO conversations (session_id, role, content, timestamp, tool_calls_json, tool_call_id, name)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (session_id, role, content, now, tc_json, tool_call_id, name),
                 )
 
             conn.commit()
@@ -448,7 +460,7 @@ class SessionDB:
         conn = self._connect()
         try:
             rows = conn.execute(
-                """SELECT role, content, tool_calls_json, timestamp
+                """SELECT role, content, tool_calls_json, timestamp, tool_call_id, name
                    FROM conversations
                    WHERE session_id = ?
                    ORDER BY id ASC""",
@@ -461,6 +473,8 @@ class SessionDB:
                     "role": r["role"],
                     "content": r["content"],
                     "timestamp": r["timestamp"],
+                    "tool_call_id": r["tool_call_id"],
+                    "name": r["name"],
                 }
                 if r["tool_calls_json"]:
                     try:
