@@ -30,3 +30,8 @@ def get_example(pack_id: str) -> str:
     if not isinstance(pack_id, str) or pack_id not in {key for key, _, _ in _PACKS}:
         raise ValueError("Unknown design pack. Choose: " + ", ".join(key for key, _, _ in _PACKS))
     return files("djcode").joinpath("design_patterns", pack_id + ".svg").read_text(encoding="utf-8")
+
+
+def get_license() -> str:
+    """Return the project MIT notice for self-contained reference exports."""
+    return files("djcode").joinpath("design_patterns", "LICENSE").read_text(encoding="utf-8")

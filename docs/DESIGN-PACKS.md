@@ -25,20 +25,21 @@ djcode --design-pack data-table "Improve the releases table"
 djcode --design-pack data-table --design-export ./new-table-reference
 ```
 
-Export requires a new destination directory and refuses an existing path. It writes the selected Markdown/SVG pair so the relative image link remains usable. Listing and reading packs requires no model inference. With a task prompt, the selected guidance becomes reference context for that task; normal provider and tool permissions still apply.
+Export requires a new destination directory and refuses an existing path. It writes the selected Markdown/SVG pair and a `LICENSE` file containing the project MIT notice, so the reference is self-contained and the relative image link remains usable. Listing and reading packs requires no model inference. With a task prompt, the selected guidance becomes reference context for that task; normal provider and tool permissions still apply.
 
 In the interactive TUI or classic REPL, `/design` lists packs, `/design data-table` selects session guidance, and `/design off` clears it. Selection replaces the prior design block instead of accumulating it on every turn.
 
 The package APIs work offline from an installed wheel, including resources loaded through `importlib.resources`:
 
 ```python
-from djcode.design_packs import list_packs, get_pack, get_example
+from djcode.design_packs import list_packs, get_pack, get_example, get_license
 
 for pack in list_packs():
     print(pack["id"], pack["summary"])
 
 markdown = get_pack("data-table")
 svg = get_example("data-table")
+license_notice = get_license()
 ```
 
 Unknown identifiers raise `ValueError`; identifiers are an allowlist, not filesystem paths. Metadata dictionaries returned by `list_packs()` can be modified by the caller without changing the bundled registry. Markdown references the matching SVG with a relative filename, so keep exported pairs together.
