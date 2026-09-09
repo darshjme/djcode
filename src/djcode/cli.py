@@ -92,6 +92,7 @@ def redact_config(value, name=""):
     help="Run a task with wave execution strategy then exit",
 )
 @click.option("--repl", "use_repl", is_flag=True, help="Use the line-oriented REPL instead of the full-screen TUI.")
+@click.option("--revision", is_flag=True, help="Show the installed version and managed build revision without network access.")
 @click.option("--setup", is_flag=True, help="Choose provider, supported authentication method and model.")
 @click.option("--check", "check_install", is_flag=True, help="Check installation syntax, registries and fatal lint.")
 @click.option("--lint", is_flag=True, help="Run the installation quality checks (alias for --check).")
@@ -113,6 +114,7 @@ def main(
     wave: str | None,
     use_repl: bool,
     setup: bool,
+    revision: bool,
     check_install: bool,
     lint: bool,
     update: bool,
@@ -124,6 +126,15 @@ def main(
 
     Run without arguments for the interactive TUI, or pass a prompt for one-shot mode.
     """
+    if revision:
+        from djcode.managed_update import installation
+        managed = installation()
+        if managed:
+            _, receipt = managed
+            console.print(f"DJcode {__version__} · build {receipt.get('commit', 'unknown')}", markup=False)
+        else:
+            console.print(f"DJcode {__version__} · unmanaged installation", markup=False)
+        return
     # --url / -u takes precedence; --provider with an http value also works
     if url:
         provider = url

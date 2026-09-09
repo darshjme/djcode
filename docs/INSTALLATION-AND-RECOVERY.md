@@ -62,3 +62,5 @@ uv run --with pytest pytest tests/test_updates.py tests/test_memory_recovery.py 
 ```
 
 These deterministic checks complement a real installation and provider inference smoke test; they do not replace them.
+
+`djcode --revision` reports the running managed build commit without contacting GitHub. Source and custom installations are labeled unmanaged.
