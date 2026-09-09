@@ -1,26 +1,47 @@
 # Installation, updates and recovery
 
-DJcode needs Python 3.12+ and Git. Choose a hosted provider with an existing account/API key, an already-running Ollama server with an installed model, or an existing MLX server. Installation and onboarding do not download inference or embedding models. Model availability and tool support depend on the selected provider and account.
+DJcode 4.2 requires an existing Python 3.12+ installation. Git is needed for source installation and Git workflows. Choose an existing local model server or a configured hosted provider. Installation and onboarding do not download inference or embedding models.
 
-## Install and update
+project by Darshan Kumar Joshi
 
-The website installer creates a versioned directory under `~/.local/share/djcode/release.*`, with source in `source/` and the runtime in `venv/`. The launcher at `~/.local/bin/djcode` points to that release. The installer keeps earlier successful releases for rollback and does not modify shell startup files.
+## Managed installation and updates
 
 ```sh
 curl -fsSL https://cli.darshj.ai/install.sh | bash
+djcode --version
+djcode --check
 ```
 
-Add `~/.local/bin` to your PATH if necessary. Run `djcode --version` and `djcode --help` after installation.
+The default installer verifies the canonical `darshjme/djcode` main-build manifest and its completed successful push CI run. It checks the wheel URL and SHA-256, creates `~/.local/share/djcode/release.<revision>.<suffix>/venv`, then validates the staged CLI before activation. The `current` symlink selects the active release; `previous` retains the preceding build. Launchers in `~/.local/bin` follow `current`. Add that directory to PATH if needed. The installer does not modify shell startup files.
 
-The release checker queries `darshjme/djcode` on GitHub at most once per day and displays an explicit update command when it finds a newer stable release. It never executes an update. For managed installs, the suggestion uses the existing release's installer and preserves its install/bin directories; a new environment is created before the launcher changes. Ordinary Python/source environments receive a command targeting their current interpreter and the official Git repository. The checker does not depend on a separate `djcode-cli` package.
+The manifest records the full commit, package version, canonical wheel URL, checksum and CI run ID. A build must match the canonical main push workflow `.github/workflows/ci.yml`; this is repository/CI verification, not an independent signature or a guarantee that a build has no defects.
 
-Set `DJCODE_NO_UPDATE_CHECK=1` to disable release-check network requests. You can also rerun the installer yourself, retaining any `DJCODE_INSTALL_DIR` and `DJCODE_BIN_DIR` overrides used for the original installation. Earlier release directories are retained; to roll back, repoint your launcher to the desired earlier release's `venv/bin/djcode` after checking that release's version. User configuration and memory live separately from releases.
+Managed installs check and apply validated updates at startup by default. Updates stage a separate environment and switch `current` atomically after validation; a failed activation attempts to restore the old pointer. Previous releases and user configuration are retained. Network metadata, downloads and staging commands have time and size budgets; dependency installation can still take several minutes. The startup launcher restarts into a successfully updated build. An update requested from the TUI asks you to restart after your current work.
+
+```sh
+djcode --update                 # explicit check and managed update
+djcode --update-mode manual     # only update when requested
+djcode --update-mode disabled   # disable managed updates
+djcode --update-mode auto       # restore startup updates
+djcode --no-update              # skip updates for this invocation
+djcode --rollback              # restore previous release; set mode to manual
+```
+
+`DJCODE_NO_UPDATE_CHECK=1` also disables update network activity. Updates and rollback share a lock. Rollback supports POSIX managed installations and does not delete release directories. User facts, sessions and account credentials live separately from releases.
+
+Developer/source environments are preserved; automatic updates do not replace their checkout or environment. Explicit `DJCODE_REPO_URL` or `DJCODE_REF` installer overrides select a manual source installation rather than the canonical managed channel. Retain any custom `DJCODE_INSTALL_DIR` and `DJCODE_BIN_DIR` values when reinstalling. A missing or invalid managed receipt requires manual installation repair; do not fabricate one to enable automatic switching.
 
 ## Provider setup
 
-The first-run wizard lists the provider registry, including Featherless and custom OpenAI-compatible endpoints. Hosted providers accept a key or the provider's documented environment variable. Featherless and custom setup require the exact model ID available to your account; custom setup also requires the HTTP(S) base URL, including `/v1` when the server uses that prefix. Setup does not claim a model is available before a real inference call succeeds.
+Startup probes the configured provider with bounded model discovery. Missing credentials or a missing model lead to interactive selection when a terminal is available. Offline discovery preserves existing configuration rather than silently changing providers. `djcode --setup` explicitly opens setup. A successful model-list response establishes discovery, not successful inference or tool compatibility.
 
-Ollama discovery reads the existing server's `/api/tags` list. An empty list means no installed models were detected at that endpoint; it is not proof that Ollama is unreachable. Setup never calls `/api/pull`. Cancelling provider selection saves no configuration. Tool auto-accept starts disabled.
+Setup lists the provider registry, authentication choices and available model IDs where discovery is supported. API keys may come from the provider's documented environment variable. Custom endpoints require an HTTP(S) base URL and an exact model ID. Ollama discovery uses `/api/tags`; setup never calls `/api/pull`. Cancelled setup preserves existing configuration. Tool auto-accept starts disabled.
+
+Account sign-in is limited to supported integrations and provider eligibility. xAI device authorization requires a separately approved client registration; ordinary installs offer API-key mode. DJcode does not import credentials from other coding agents or provide direct ChatGPT/Claude subscription login. See [account authentication](ACCOUNT-AUTH.md) for protocol, storage, cancellation and provider restrictions.
+
+## Installation checks
+
+`djcode --check` and `djcode --lint` check runtime syntax, registries and fatal source lint. They do not run model inference or replace the test suite. The TUI exposes `/check`, `/lint` and `/update` in its command palette. Review a failed check before continuing to rely on the installation.
 
 ## Durable facts and conversations
 
@@ -29,6 +50,8 @@ Facts use atomic local JSON writes and a file lock so two open sessions do not o
 SQLite session schema migrations retain existing conversation rows and preserve tool-call IDs and tool names. Compaction treats an assistant tool request and its contiguous results as one group in all four strategies. Pinned results keep the associated request, and recent-message boundaries do not split tool groups. Compression may remain above its target if protected system, pinned, or recent context alone exceeds that target; a model's context size still imposes a real limit.
 
 ## Verification
+
+`tests/test_managed_update.py` uses real temporary release directories and symlinks with mocked network/staging to cover atomic activation, failed staging, rollback, locks, metadata validation, offline behavior and preservation of unmanaged installs.
 
 `tests/test_updates.py` covers managed/source update commands, the actual GitHub repository, opt-out, stable versions, package-argument validation, cancellation, Featherless/custom setup, and empty Ollama discovery. These tests do not install software, download models or call live inference.
 

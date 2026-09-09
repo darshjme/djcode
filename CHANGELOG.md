@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.2.0 — 2026-09-09
+
+- Remove the ASCII Buddy companion and `/buddy` commands; retain existing user data and the separate Mitra legal specialist.
+- Add a compact responsive TUI, usable keyboard command selection, visible shortcuts and scrollable tool approvals.
+- Add canonical CI-verified managed updates, atomic release switching, rollback, and automatic/manual/disabled update modes.
+- Add `--check`/`--lint` and TUI maintenance commands, plus provider discovery and configuration-preserving startup selection.
+- Preserve account authentication across provider switching and specialist permission policy in classic commands. Account sign-in availability remains provider-specific; see docs/ACCOUNT-AUTH.md.
+- Distinguish 15 model-callable tool schemas from 2 additional internal dispatch helpers.
+
+project by Darshan Kumar Joshi
+
 ## 4.1.0 — 2026-09-09
 
 - Add opt-in Colibri provider and `djcode-colibri` resource planning, preflight and foreground serving for existing model files. No engine or weights are downloaded.

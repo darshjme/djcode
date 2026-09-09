@@ -202,3 +202,9 @@ def test_staging_failure_after_download_cleans_only_staged_build(managed, monkey
         with pytest.raises(subprocess.TimeoutExpired):
             updater.stage_build(prefix, updater.installation()[1], manifest(), client)
     assert sorted(p.name for p in prefix.glob('release.*')) == sorted([old.name, previous.name])
+
+
+def test_rollback_non_posix_returns_without_lock_import(managed, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(updater, 'os', SimpleNamespace(name='nt'))
+    assert updater.rollback()['status'] == 'manual_required'

@@ -200,7 +200,7 @@ def perform_update(force=False) -> dict:
 
 def rollback() -> dict:
     managed = installation()
-    if not managed:
+    if not managed or os.name != "posix":
         return result("manual_required", "Rollback is available only for managed installations.", ok=False)
     prefix, _ = managed
     lock = None

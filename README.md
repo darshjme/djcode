@@ -9,7 +9,7 @@
   ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 ```
 
-### 19 engineering profiles. 12 content profiles. 17 tools.
+### 19 engineering profiles. 12 content profiles. 15 model-callable tools.
 
 A local-first coding agent with explicit provider choice, tool approvals, and recoverable sessions.
 
@@ -35,7 +35,7 @@ Install into an isolated Python environment. Requires git and Python 3.12+ (or a
 curl -fsSL https://cli.darshj.ai/install.sh | bash
 ```
 
-The installer keeps previous releases for rollback and downloads no models. Select an existing local model or configure a hosted provider. See [installation and recovery](docs/INSTALLATION-AND-RECOVERY.md).
+Version 4.2 installs a canonical CI-validated build into a managed environment, keeps previous releases for rollback, and downloads no models. Managed installations check for and apply validated updates at startup by default; use `djcode --update-mode manual` or `disabled` to change this. Select an existing local model or configure a hosted provider. See [installation and recovery](docs/INSTALLATION-AND-RECOVERY.md).
 
 <details>
 <summary><b>Manual install (from source)</b></summary>
@@ -55,21 +55,9 @@ uv run python -m djcode
 
 ## Why
 
-I was paying $200/month for AI coding tools.
+DJcode connects local or hosted models to file, shell, Git and specialist-agent workflows. It keeps sessions and memory on disk, exposes tool approvals, and supports bounded parallel and wave execution. Local inference requires an existing model server; hosted inference uses your configured provider.
 
-Every prompt I typed, every file I opened, every half-baked idea I explored -- all of it shipped to someone else's servers. I was renting access to my own thought process. And the moment I cancelled, it was gone. No local model. No offline fallback. Nothing.
-
-I kept thinking: my MacBook has a GPU. Apple Silicon can run 7B-26B models natively in unified memory. Ollama exists. The models are open-weight and getting better every month. Why am I paying a subscription to run inference on hardware I already own?
-
-So I stopped paying and started building.
-
-DJcode is the result. Not a toy. Not a wrapper. A full-blown multi-agent coding system with 19 specialist profiles, 17 tools, parallel execution, a hacker TUI, smart context compression, and a model registry that tracks 33 LLMs across every major provider. It runs entirely on your machine. Zero cloud dependency for local use. Zero telemetry. Your code never leaves your disk unless you explicitly choose a cloud provider.
-
-It took months of late nights. Debugging agent coordination at 2am. Getting parallel execution right with asyncio. Building a context compression engine that respects the selected model budget and preserves tool-call/result groups. Summarization can lose detail; full sessions remain stored separately. Designing a state machine so every agent has a lifecycle you can watch in real-time on a cyberpunk dashboard.
-
-But now it exists. And it's free. And it runs on a MacBook.
-
--- **[Darsh J](https://darshj.ai)**, creator of [DarshjDB](https://github.com/darshjme/darshjdb) and [DarshJ.AI](https://darshj.ai)
+project by Darshan Kumar Joshi
 
 ---
 
@@ -85,15 +73,7 @@ Illustrative transcript, not a measured benchmark or an actual execution log.
   ██████╔╝╚█████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
   ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 
-  v4.0.1 · ollama/gemma4 · Apple Silicon · 100% local
-
-  ┌────────────────────────────────┐
-  │ lights your path. Let's code.  │       ,
-  └────────────────────────────────┘      /|\
-                                         (o*o)
-                                         |___|
-                                        /_____\
-                                       Agni the Illuminated
+  v4.2.0 · ollama/gemma4 · Apple Silicon · 100% local
 
   djcode> /orchestra build a JWT auth system with refresh rotation
 
@@ -147,9 +127,9 @@ Agent confidence is model-reported, not a calibrated accuracy score. Critical bl
 
 See the [full agent roster below](#agents).
 
-### 17 Built-in Tools
+### 15 Model-callable Tools and 2 Internal Dispatch Helpers
 
-The agents don't just talk. They act.
+The provider schema exposes 15 tools to models. The dispatch layer also includes `agent_status` and `parallel_execute` as internal helpers; these two are not advertised in the native model tool schema.
 
 | Tool | What it does |
 |------|-------------|
@@ -168,8 +148,8 @@ The agents don't just talk. They act.
 | `notebook_read` | Read Jupyter notebook cells and outputs |
 | `notebook_edit` | Edit notebook cells programmatically |
 | `spawn_agent` | Spawn a specialist agent for a sub-task |
-| `agent_status` | Check status of spawned agents |
-| `parallel_execute` | Run multiple tool calls concurrently |
+| `agent_status` (internal) | Check status of spawned agents |
+| `parallel_execute` (internal) | Run multiple tool calls concurrently |
 
 The model decides which tools to use, chains them together, and loops until the task is done. Full agentic execution with confirmation prompts before anything destructive.
 
@@ -644,7 +624,7 @@ Override anything with CLI flags or `/set` in the REPL.
 
 ## How We Stack Up
 
-DJcode focuses on local/provider choice, 19 engineering and 12 content profiles, explicit tool approval, persistent sessions and 17 built-in tools. Evaluate it on your repository and model; no speed, quality or feature-parity advantage over another coding agent has been established.
+DJcode focuses on local/provider choice, 19 engineering and 12 content profiles, explicit tool approval, persistent sessions and 15 model-callable tools plus 2 internal dispatch helpers. Evaluate it on your repository and model; no speed, quality or feature-parity advantage over another coding agent has been established.
 
 The repair drew on public engineering patterns from Hermes, Pi and Codex. See [source references and acceptance coverage](docs/RELEASE-VALIDATION.md) for exact commits, licenses, tested paths and remaining limits. Claude Code documentation informed the loop review; its published repository was not treated as permissively licensed engine source.
 
@@ -687,12 +667,12 @@ MIT -- see [LICENSE](LICENSE).
 
 <br/>
 
-*I built this because I believe the best dev tools run on your own hardware.*
+*Use an existing local model or your configured hosted provider.*
 *Open-source software, with local and hosted inference options. Hardware and provider costs depend on your setup.*
 
 <br/>
 
-**[DarshJ](https://darshj.ai)** · Built on Apple Silicon · Open source forever
+project by Darshan Kumar Joshi
 
 <br/>
 
