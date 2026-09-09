@@ -142,14 +142,16 @@ def main(
     if design_export and not design_pack:
         raise click.UsageError("--design-export requires --design-pack ID")
     if design_pack:
-        from djcode.design_packs import get_pack, get_example
+        from djcode.design_packs import get_pack, get_example, get_license
         try:
             reference = get_pack(design_pack)
             if design_export:
                 example = get_example(design_pack)
+                license_text = get_license()
                 design_export.mkdir(parents=True, exist_ok=False)
                 (design_export / f"{design_pack}.md").write_text(reference)
                 (design_export / f"{design_pack}.svg").write_text(example)
+                (design_export / "LICENSE").write_text(license_text)
                 console.print(f"Exported original design reference to {design_export.resolve()}", markup=False)
                 return
         except (ValueError, OSError) as error:

@@ -47,6 +47,7 @@ def test_offline_list_read_export_and_existing_directory_preserved(tmp_path):
     assert exported.exit_code == 0, exported.output
     original = (destination / "dashboard.md").read_bytes()
     assert (destination / "dashboard.svg").is_file()
+    assert "MIT License" in (destination / "LICENSE").read_text()
     again = runner.invoke(main, ["--design-pack", "dashboard", "--design-export", str(destination)])
     assert again.exit_code != 0
     assert (destination / "dashboard.md").read_bytes() == original
