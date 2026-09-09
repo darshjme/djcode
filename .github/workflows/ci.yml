@@ -1,12 +1,31 @@
 name: CLI checks
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --python 3.12
-      - run: uv run --with pytest pytest -q
-      - run: uv build
-      - run: bash -n install.sh
+      - run: uv sync --python 3.12 --locked
+      - name: Fatal lint
+        run: uv run ruff check --select E9,F63,F7,F82 src tests scripts
+      - name: Tests
+        run: uv run --with pytest pytest -q
+      - name: Standalone installer and publisher checks
+        run: |
+          uv run python scripts/test_release_helpers.py
+          cp install.sh /tmp/djcode-install-before.sh
+          uv run python scripts/build_installer.py
+          cmp install.sh /tmp/djcode-install-before.sh
+          bash -n install.sh
+      - name: Build distributions
+        run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error

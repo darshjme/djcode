@@ -1,0 +1,35 @@
+name: Publish verified main update
+on:
+  workflow_run:
+    workflows: [CLI checks]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: publish-canonical-main-update
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: >-
+      github.repository == 'darshjme/djcode' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == 'darshjme/djcode' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out trusted canonical publisher
+        uses: actions/checkout@v4
+        with:
+          repository: darshjme/djcode
+          ref: main
+          persist-credentials: false
+      - name: Publish immutable artifacts and verified rolling manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: python3 scripts/publish_update.py
