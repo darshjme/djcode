@@ -115,6 +115,18 @@ $ djcode --wave "review this service and propose improvements"
 
 ---
 
+## Original design references
+
+Seven bundled packs cover dashboards, settings, command palettes, onboarding, data tables, usage/billing, and empty/error states. Each includes an original SVG example and responsive, keyboard, accessibility and state guidance. No design-service account is needed.
+
+```sh
+djcode --design-packs
+djcode --design-pack dashboard "Build a project status page"
+djcode --design-pack dashboard --design-export ./dashboard-reference
+```
+
+In either terminal interface, `/design dashboard` selects guidance for the current conversation and `/design off` clears it. [Pack documentation and provenance](docs/DESIGN-PACKS.md).
+
 ## Features
 
 ### 19 Engineering Profiles + 12 Content Agents

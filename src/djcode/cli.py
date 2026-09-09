@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -92,6 +93,9 @@ def redact_config(value, name=""):
     help="Run a task with wave execution strategy then exit",
 )
 @click.option("--repl", "use_repl", is_flag=True, help="Use the line-oriented REPL instead of the full-screen TUI.")
+@click.option("--design-packs", is_flag=True, help="List seven bundled original design references (offline).")
+@click.option("--design-pack", type=str, help="Print a design reference, or add it to the supplied prompt.")
+@click.option("--design-export", type=click.Path(path_type=Path), help="Export the selected design reference and original SVG to a new directory.")
 @click.option("--revision", is_flag=True, help="Show the installed version and managed build revision without network access.")
 @click.option("--setup", is_flag=True, help="Choose provider, supported authentication method and model.")
 @click.option("--check", "check_install", is_flag=True, help="Check installation syntax, registries and fatal lint.")
@@ -115,6 +119,9 @@ def main(
     use_repl: bool,
     setup: bool,
     revision: bool,
+    design_packs: bool,
+    design_pack: str | None,
+    design_export,
     check_install: bool,
     lint: bool,
     update: bool,
@@ -126,6 +133,31 @@ def main(
 
     Run without arguments for the interactive TUI, or pass a prompt for one-shot mode.
     """
+    if design_packs:
+        from djcode.design_packs import list_packs
+        for pack in list_packs():
+            console.print(f"{pack['id']}: {pack['title']} · {pack['summary']}", markup=False)
+        console.print("Use --design-pack ID to read, or --design-pack ID 'your task' to apply. No design-service account required.", markup=False)
+        return
+    if design_export and not design_pack:
+        raise click.UsageError("--design-export requires --design-pack ID")
+    if design_pack:
+        from djcode.design_packs import get_pack, get_example
+        try:
+            reference = get_pack(design_pack)
+            if design_export:
+                example = get_example(design_pack)
+                design_export.mkdir(parents=True, exist_ok=False)
+                (design_export / f"{design_pack}.md").write_text(reference)
+                (design_export / f"{design_pack}.svg").write_text(example)
+                console.print(f"Exported original design reference to {design_export.resolve()}", markup=False)
+                return
+        except (ValueError, OSError) as error:
+            raise click.ClickException(str(error)) from error
+        if not prompt:
+            console.print(reference, markup=False, highlight=False)
+            return
+        prompt = f"{prompt}\n\nOptional original design reference (adapt to this task):\n{reference}"
     if revision:
         from djcode.managed_update import installation
         managed = installation()

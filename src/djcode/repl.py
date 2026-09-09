@@ -160,6 +160,7 @@ HELP_TEXT = f"""\
 [bold {GOLD}]Slash Commands[/]
 
   [cyan]/help[/]              Show this help
+  [cyan]/design ID[/]         Select original design guidance; /design lists
   [cyan]/model[/]             Interactive model picker (arrow keys)
   [cyan]/model[/] <name>      Switch model (fuzzy match supported)
   [cyan]/models[/]            List available models
@@ -394,6 +395,19 @@ async def handle_slash_command(
 
     if command == "/help":
         console.print(Panel(HELP_TEXT, title=f"[bold {GOLD}]DJcode Help[/]", border_style=GOLD))
+
+    elif command == "/design":
+        from djcode.design_packs import list_packs
+        from djcode.design_selection import select_pack
+        if not arg.strip():
+            for pack in list_packs():
+                console.print(f"{pack['id']}: {pack['title']} · {pack['summary']}", markup=False)
+            console.print("Use /design ID to select, or /design off to clear.")
+        else:
+            try:
+                console.print(select_pack(operator, arg.strip()), markup=False)
+            except ValueError as error:
+                console.print(str(error), markup=False)
 
     elif command == "/models":
         _handle_models_list(operator.provider)

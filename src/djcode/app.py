@@ -61,6 +61,7 @@ COMMAND_REGISTRY: list[tuple[str, str]] = [
     ("/check", "Run runtime and source checks"),
     ("/lint", "Run runtime and source checks"),
     ("/update", "Update a managed installation"),
+    ("/design", "List/select an original design reference; off clears"),
     ("/model", "Switch model (fuzzy match)"),
     ("/models", "List available models"),
     ("/provider", "Switch LLM provider"),
@@ -146,6 +147,7 @@ HELP_TEXT = """\
   [cyan]/review[/]          Code review
   [cyan]/debug[/]           Root cause analysis
   [cyan]/test[/]            Generate tests
+  [cyan]/design ID[/]       Select original design guidance; /design lists
   [cyan]/memory[/]          Memory stats
   [cyan]/extension[/]       MCP extensions
   [cyan]/recipe[/]          Run recipes
@@ -1463,6 +1465,20 @@ class DJcodeApp(App):
 
         if cmd == "/help":
             self.push_screen(HelpScreen())
+
+        elif cmd == "/design":
+            from djcode.design_packs import list_packs
+            from djcode.design_selection import select_pack
+            from rich.text import Text
+            if not arg.strip():
+                for pack in list_packs():
+                    chat.write(Text(f"{pack['id']}: {pack['title']} — {pack['summary']}"))
+                chat.write("Use /design ID to select one reference, or /design off to clear it.")
+            else:
+                try:
+                    chat.write(Text(select_pack(self._operator, arg.strip())))
+                except ValueError as error:
+                    chat.write(Text(str(error), style="yellow"))
 
         elif cmd in ("/check", "/lint"):
             from djcode.maintenance import run_checks

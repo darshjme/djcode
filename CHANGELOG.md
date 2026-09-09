@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.2.1 — original design references
+
+- Bundle seven original design-context packs with accessible SVG examples, responsive states and implementation guidance; no design-service account is required.
+- Add offline `--design-packs`, `--design-pack ID`, and `--design-export DIR` commands. A selected pack can guide a one-shot prompt.
+- Add `/design ID` and `/design off` in both terminal interfaces, preserving operational rules and tool history while selecting or clearing a reference.
+- Keep examples and guidance original and MIT-licensed; cite public standards as references and include no proprietary library assets.
+
+
 ## 4.2.0 — 2026-09-09
 
 - Remove the ASCII Buddy companion and `/buddy` commands; retain existing user data and the separate Mitra legal specialist.
