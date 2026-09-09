@@ -133,3 +133,93 @@ def test_real_loopback_model_discovery():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_account_refresh_failure_requires_nonblank_model(monkeypatch):
+    from djcode import account_auth
+    monkeypatch.setattr(account_auth, "has_account", lambda provider: True)
+    monkeypatch.setattr(account_auth, "get_account_token", Mock(side_effect=account_auth.AccountAuthError("offline")))
+    config = {"provider": "xai", "model": "grok", "xai_auth_method": "account"}
+    assert startup.probe(config)["status"] == "offline"
+    for model in ("", "   ", None):
+        config["model"] = model
+        assert startup.probe(config)["status"] == "missing"
+
+
+def test_empty_model_still_discovers_choices(monkeypatch, cfg):
+    cfg["model"] = ""
+    reply(monkeypatch, payload={"data": [{"id": "available-model"}]})
+    result = startup.probe(cfg)
+    assert result["status"] == "missing"
+    assert result["models"] == ["available-model"]
+
+
+def test_setup_reuses_account_and_defaults_current_method(monkeypatch):
+    from djcode import account_auth
+    config = {"provider": "xai", "model": "grok", "xai_auth_method": "account"}
+    before = deepcopy(config)
+    calls = []
+    def select(label, **kwargs):
+        calls.append((label, kwargs))
+        return Mock(ask=lambda: "xai" if label == "Provider" else kwargs["default"])
+    monkeypatch.setenv("DJCODE_XAI_OAUTH_CLIENT_ID", "test-registration")
+    monkeypatch.setattr(startup.questionary, "select", select)
+    monkeypatch.setattr(startup.questionary, "autocomplete", lambda *a, **kw: Mock(ask=lambda: "grok"))
+    monkeypatch.setattr(startup.questionary, "password", Mock(side_effect=AssertionError("no password needed")))
+    monkeypatch.setattr(account_auth, "has_account", lambda provider: True)
+    login = Mock(side_effect=AssertionError("connected account must not log in again"))
+    monkeypatch.setattr(account_auth, "authenticate_account", login)
+    monkeypatch.setattr(startup, "probe", lambda *a: {"status": "ready", "models": ["grok"]})
+    saved = Mock()
+    monkeypatch.setattr(startup, "save_config", saved)
+    result = startup.setup(config)
+    assert result["xai_auth_method"] == "account"
+    assert config == before
+    assert calls[1][1]["default"] == "account"
+    saved.assert_called_once_with(result)
+    login.assert_not_called()
+
+
+def test_cancel_after_new_key_does_not_save_or_mutate(monkeypatch, cfg):
+    before = deepcopy(cfg)
+    selections = iter(["openai", "api_key"])
+    monkeypatch.setattr(startup.questionary, "select", lambda *a, **kw: Mock(ask=lambda: next(selections)))
+    monkeypatch.setattr(startup.questionary, "password", lambda *a, **kw: Mock(ask=lambda: "replacement-key"))
+    monkeypatch.setattr(startup.questionary, "autocomplete", lambda *a, **kw: Mock(ask=lambda: None))
+    monkeypatch.setattr(startup, "probe", lambda *a: {"status": "ready", "models": ["chosen-model"]})
+    saved = Mock()
+    monkeypatch.setattr(startup, "save_config", saved)
+    with pytest.raises(KeyboardInterrupt):
+        startup.setup(cfg)
+    saved.assert_not_called()
+    assert cfg == before
+
+
+def test_discovery_total_deadline_cancels_slow_body(monkeypatch):
+    import asyncio
+    from time import monotonic
+    closed = []
+    class SlowBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            while True:
+                yield b" "
+                await asyncio.sleep(0.03)
+        async def aclose(self):
+            closed.append(True)
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(startup, "DISCOVERY_DEADLINE", 0.08)
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, stream=SlowBody()))
+    monkeypatch.setattr(startup.httpx, "AsyncClient", lambda **kw: original_client(transport=transport))
+    started = monotonic()
+    with pytest.raises(ValueError, match="time budget"):
+        startup.discover("https://example.com/models", {})
+    assert monotonic() - started < 1.0
+    assert closed
+
+
+def test_discovery_body_size_cap(monkeypatch):
+    original_client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=b"x" * (2 * 1024 * 1024 + 1)))
+    monkeypatch.setattr(startup.httpx, "AsyncClient", lambda **kw: original_client(transport=transport))
+    with pytest.raises(ValueError, match="size budget"):
+        startup.discover("https://example.com/models", {})

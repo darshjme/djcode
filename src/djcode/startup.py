@@ -1,9 +1,9 @@
 """Bounded provider discovery and an explicit, configuration-preserving setup flow."""
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 import os
-import time
 import sys
 
 import click
@@ -15,6 +15,7 @@ from djcode.auth import PROVIDERS
 from djcode.config import CONFIG_FILE, load_config, save_config
 
 console = Console(stderr=True)
+DISCOVERY_DEADLINE = 5.0
 
 
 def connection(config: dict, provider: str | None = None, model: str | None = None) -> dict:
@@ -31,22 +32,34 @@ def connection(config: dict, provider: str | None = None, model: str | None = No
     selected_model = model or custom.get("model") or config.get("model", "")
     if selected == "colibri":
         selected_model = model or (config.get("model") if config.get("provider") == "colibri" else None) or "djcode-colibri"
+    selected_model = selected_model.strip() if isinstance(selected_model, str) else ""
     return {"provider": selected, "base": (base or "").rstrip("/"), "key": key or "",
             "model": selected_model, "method": method, "needs_key": bool(info.get("needs_key"))}
 
 
 def discover(endpoint: str, headers: dict) -> httpx.Response:
-    """Cap streaming discovery time and size, including slow response bodies."""
-    deadline = time.monotonic() + 5
-    chunks = []
-    size = 0
-    with httpx.stream("GET", endpoint, headers=headers, timeout=2.0) as response:
-        for chunk in response.iter_bytes():
-            size += len(chunk)
-            if size > 2 * 1024 * 1024 or time.monotonic() > deadline:
-                raise ValueError("Provider discovery exceeded its budget")
-            chunks.append(chunk)
-        return httpx.Response(response.status_code, content=b"".join(chunks), request=response.request)
+    """Bound the whole discovery request, including headers and slow response bodies."""
+    async def request() -> httpx.Response:
+        chunks = []
+        size = 0
+        async with httpx.AsyncClient(timeout=2.0, follow_redirects=False) as client:
+            async with client.stream("GET", endpoint, headers=headers) as response:
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > 2 * 1024 * 1024:
+                        raise ValueError("Provider discovery exceeded its size budget")
+                    chunks.append(chunk)
+                return httpx.Response(
+                    response.status_code, content=b"".join(chunks), request=response.request
+                )
+
+    async def bounded() -> httpx.Response:
+        return await asyncio.wait_for(request(), timeout=DISCOVERY_DEADLINE)
+
+    try:
+        return asyncio.run(bounded())
+    except TimeoutError:
+        raise ValueError("Provider discovery exceeded its time budget") from None
 
 
 def probe(config: dict, provider: str | None = None, model: str | None = None) -> dict:
@@ -65,6 +78,8 @@ def probe(config: dict, provider: str | None = None, model: str | None = None) -
         try:
             key = get_account_token(name)
         except AccountAuthError:
+            if not details["model"]:
+                return outcome("missing", "Select an explicit model ID.")
             return outcome("offline", "Account refresh unavailable; saved setup retained.")
     elif details["needs_key"] and not key:
         return outcome("missing", "An API key or supported account sign-in is required.")
@@ -134,7 +149,9 @@ def setup(existing: dict | None = None) -> dict:
             if not item["available"]:
                 console.print(f"[dim]{item['label']}: {item['reason']}[/]")
         choices = [questionary.Choice(item["label"], value=item["id"]) for item in available]
-        method = answer(questionary.select("Authentication", choices=choices).ask())
+        current_method = config.get(f"{selected}_auth_method", "api_key")
+        default_method = current_method if current_method in {item["id"] for item in available} else "api_key"
+        method = answer(questionary.select("Authentication", choices=choices, default=default_method).ask())
         config[f"{selected}_auth_method"] = method
         if method == "account":
             if not has_account(selected) and not authenticate_account(selected, method, on_status=lambda text: console.print(text, markup=False)):
