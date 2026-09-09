@@ -103,3 +103,33 @@ def test_nested_configuration_redacts_secrets():
     assert "private" not in str(redacted)
     assert "public" in str(redacted)
     assert config["refresh_token"] == "private"
+
+
+def test_real_loopback_model_discovery():
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            assert self.path == "/api/tags"
+            body = b'{"models":[{"name":"existing:latest"}]}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        config = {"provider": "ollama", "model": "existing", "ollama_url": f"http://127.0.0.1:{server.server_port}"}
+        assert startup.probe(config)["status"] == "ready"
+        config["model"] = "not-installed"
+        assert startup.probe(config)["status"] == "missing"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
