@@ -6,6 +6,7 @@ from importlib import resources
 from pathlib import PurePosixPath
 
 import pytest
+
 from djcode.design_packs import get_example, get_pack, list_packs
 
 PACK_IDS = {
