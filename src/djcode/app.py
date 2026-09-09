@@ -519,7 +519,7 @@ class ModelPicker(ModalScreen[str | None]):
 
 
 class ProviderPicker(ModalScreen[dict | None]):
-    """Interactive provider selection with API key input — KiloCode-style."""
+    """Native provider and authentication selection with cancellable device sign-in."""
 
     BINDINGS = [Binding("escape", "dismiss", "Close")]
 
@@ -529,8 +529,10 @@ class ProviderPicker(ModalScreen[dict | None]):
         background: rgba(0, 0, 0, 0.85);
     }
     #provider-box {
-        width: 72;
+        width: 90%;
+        max-width: 72;
         height: 30;
+        max-height: 90%;
         background: #141414;
         border: double #FFD700;
         padding: 1 2;
@@ -661,8 +663,11 @@ class ProviderPicker(ModalScreen[dict | None]):
             needs_key = ""
             try:
                 from djcode.auth import PROVIDERS
+                from djcode.account_auth import has_account
+                from djcode.config import load_config
                 if PROVIDERS.get(pid, {}).get("needs_key"):
-                    needs_key = " [key]"
+                    account = load_config().get(f"{pid}_auth_method") == "account"
+                    needs_key = " [account]" if account and has_account(pid) else " [auth]"
             except Exception:
                 pass
             label = f"  {name:<24}{needs_key:<8}{desc}"
@@ -679,6 +684,9 @@ class ProviderPicker(ModalScreen[dict | None]):
             return
 
         provider_id = str(event.option.id)
+        if self._mode == "auth":
+            self._select_auth_method(provider_id)
+            return
 
         if provider_id == "__custom_url__":
             # Show URL + key inputs
@@ -692,36 +700,94 @@ class ProviderPicker(ModalScreen[dict | None]):
             self.query_one("#provider-url-input", Input).focus()
             return
 
-        # Check if provider needs API key
-        needs_key = False
-        try:
-            from djcode.auth import PROVIDERS, get_api_key
-            info = PROVIDERS.get(provider_id, {})
-            needs_key = info.get("needs_key", False)
-            existing_key = get_api_key(provider_id) if needs_key else ""
-        except Exception:
-            existing_key = ""
-
-        if needs_key and not existing_key:
-            # Show key input
-            self._mode = "configure"
+        from djcode.auth import PROVIDERS
+        if PROVIDERS.get(provider_id, {}).get("needs_key"):
+            from djcode.account_auth import auth_methods, has_account
+            from djcode.config import load_config
             self._selected_provider = provider_id
-            url_section = self.query_one("#provider-url-section")
-            url_section.styles.display = "block"
-            try:
-                name = PROVIDERS.get(provider_id, {}).get("name", provider_id)
-            except Exception:
-                name = provider_id
-            self.query_one("#provider-config-label", Static).update(
-                f"[bold #FFD700]Configure {name}[/]\n[dim]Enter your API key:[/]"
-            )
-            url_input = self.query_one("#provider-url-input", Input)
-            url_input.styles.display = "none"
-            self.query_one("#provider-key-input", Input).focus()
+            self._mode = "auth"
+            self.query_one("#provider-title", Static).update("Authentication method")
+            self.query_one("#provider-search", Input).styles.display = "none"
+            options = self.query_one("#provider-list", OptionList)
+            options.clear_options()
+            current = load_config().get(f"{provider_id}_auth_method", "api_key")
+            for method in auth_methods(provider_id):
+                label = method["label"]
+                if method["id"] == "account" and has_account(provider_id):
+                    label += " · use connected account"
+                if method["id"] == current:
+                    label += " (current)"
+                if not method["available"]:
+                    label += " — " + method["reason"]
+                options.add_option(Option(label, id=method["id"], disabled=not method["available"]))
+                if method["id"] == current and method["available"]:
+                    options.highlighted = options.option_count - 1
+            options.focus()
             return
+        self._selected_provider = provider_id
+        self._finish_auth("api_key")
 
-        # Provider ready — dismiss with selection
-        self.dismiss({"provider": provider_id})
+    def _select_auth_method(self, method: str) -> None:
+        from djcode.account_auth import auth_methods, has_account
+        from djcode.auth import get_api_key
+        provider = self._selected_provider
+        if not provider or method not in {item["id"] for item in auth_methods(provider) if item["available"]}:
+            return
+        if method == "account":
+            if has_account(provider):
+                self._finish_auth("account")
+            else:
+                self._mode = "signing_in"
+                self.query_one("#provider-url-section").styles.display = "block"
+                self.query_one("#provider-url-input").styles.display = "none"
+                self.query_one("#provider-key-input").styles.display = "none"
+                self.run_worker(self._sign_in_account(), group="account-sign-in", exclusive=True)
+            return
+        if get_api_key(provider):
+            self._finish_auth("api_key")
+            return
+        self._mode = "configure"
+        self.query_one("#provider-url-section").styles.display = "block"
+        self.query_one("#provider-config-label", Static).update("Enter API key · Escape cancels")
+        self.query_one("#provider-url-input", Input).styles.display = "none"
+        self.query_one("#provider-key-input", Input).focus()
+
+    async def _sign_in_account(self) -> None:
+        from rich.text import Text
+        from djcode.account_auth import AccountAuthError, begin_xai_login, finish_xai_login
+        label = self.query_one("#provider-config-label", Static)
+        try:
+            device = await begin_xai_login()
+            label.update(Text(f"Open {device.verification_url}\nCode: {device.user_code}\nWaiting… Escape cancels"))
+            await finish_xai_login(device)
+            self._finish_auth("account")
+        except (AccountAuthError, OSError):
+            label.update("Sign-in failed or expired. Escape closes; existing setup retained.")
+
+    def _finish_auth(self, method: str, *, key: str = "", url: str = "") -> None:
+        from djcode.config import load_config, save_config
+        provider = self._selected_provider or "custom"
+        cfg = load_config()
+        if cfg.get("provider") != provider:
+            cfg["base_url"] = ""
+        cfg["provider"] = provider
+        cfg[f"{provider}_auth_method"] = method
+        if key:
+            cfg[f"{provider}_api_key"] = key
+        if url:
+            cfg[f"{provider}_url"] = url
+        try:
+            save_config(cfg)
+        except OSError:
+            self.query_one("#provider-url-section").styles.display = "block"
+            self.query_one("#provider-config-label", Static).update("Unable to save credentials. Existing setup retained.")
+            return
+        result = {"provider": provider, "auth_method": method}
+        if key:
+            result["api_key"] = key
+        if url:
+            result["base_url"] = url
+        self.dismiss(result)
 
     @on(Input.Submitted, "#provider-url-input")
     def submit_url(self, event: Input.Submitted) -> None:
@@ -737,26 +803,15 @@ class ProviderPicker(ModalScreen[dict | None]):
         if self._selected_provider == "custom" and not url:
             return  # Need URL for custom
 
-        result: dict = {"provider": self._selected_provider or "custom"}
-        if url:
-            result["base_url"] = url
-        if key:
-            result["api_key"] = key
-
-        # Save key to config if provided
-        if key and self._selected_provider:
-            try:
-                from djcode.config import load_config, save_config
-                cfg = load_config()
-                key_field = f"{self._selected_provider}_api_key"
-                cfg[key_field] = key
-                if url:
-                    cfg["base_url"] = url
-                save_config(cfg)
-            except Exception:
-                pass
-
-        self.dismiss(result)
+        from djcode.auth import get_api_key, PROVIDERS
+        provider = self._selected_provider or "custom"
+        if PROVIDERS.get(provider, {}).get("needs_key") and not key and not get_api_key(provider):
+            self.query_one("#provider-config-label", Static).update("Enter an API key or Escape to retain your setup.")
+            return
+        if url and not url.startswith(("http://", "https://")):
+            self.query_one("#provider-config-label", Static).update("Enter an HTTP(S) API endpoint.")
+            return
+        self._finish_auth("api_key", key=key, url=url)
 
     @on(Input.Submitted, "#provider-search")
     def submit_search(self, event: Input.Submitted) -> None:

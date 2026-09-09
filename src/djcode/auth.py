@@ -174,65 +174,66 @@ def get_base_url(provider_id: str) -> str:
 
 
 def interactive_auth() -> str | None:
-    """Interactive provider authentication. Returns provider_id or None."""
+    """Select an auth method; cancellation leaves the current configuration intact."""
+    from copy import deepcopy
+
+    from djcode.account_auth import auth_methods, authenticate_account, has_account
+    from djcode.config import save_config
+
+    cfg = deepcopy(load_config())
     choices = []
     for pid, prov in PROVIDERS.items():
-        key_status = ""
-        if prov["needs_key"]:
-            has_key = bool(get_api_key(pid))
-            key_status = " [configured]" if has_key else " [needs key]"
-        else:
-            key_status = " [local]"
-
-        choices.append(
-            questionary.Choice(
-                title=f"{prov['name']}{key_status} -- {prov.get('description', '')}",
-                value=pid,
-            )
+        account = cfg.get(f"{pid}_auth_method") == "account" and has_account(pid)
+        status = (
+            "account connected"
+            if account
+            else ("key configured" if get_api_key(pid) else "needs setup")
+            if prov["needs_key"]
+            else "local"
         )
-
-    provider_id = questionary.select(
-        "Select provider to configure:",
-        choices=choices,
-        style=questionary.Style([
-            ("selected", "fg:#FFD700 bold"),
-            ("pointer", "fg:#FFD700 bold"),
-            ("highlighted", "fg:#FFD700"),
-        ]),
-    ).ask()
-
+        choices.append(questionary.Choice(f"{prov['name']} [{status}]", value=pid))
+    provider_id = questionary.select("Select provider to configure:", choices=choices).ask()
     if not provider_id:
         return None
-
     prov = PROVIDERS[provider_id]
-
-    if prov["needs_key"] or prov.get("optional_key"):
-        current_key = get_api_key(provider_id)
-        masked = f"***{current_key[-4:]}" if current_key and len(current_key) > 4 else "(none)"
-        console.print(f"\n  [dim]Current key: {masked}[/]")
-        console.print(f"  [dim]Environment variable: {prov.get('env', 'N/A')}[/]")
-
-        new_key = questionary.password(
-            f"Enter API key for {prov['name']} (leave blank to keep current):"
+    method = "api_key"
+    if prov["needs_key"]:
+        methods = auth_methods(provider_id)
+        available = [item for item in methods if item["available"]]
+        for item in methods:
+            if not item["available"]:
+                console.print(f"{item['label']}: {item['reason']}", markup=False)
+        choices = [questionary.Choice(item["label"], value=item["id"]) for item in available]
+        current = cfg.get(f"{provider_id}_auth_method", "api_key")
+        default = current if current in {item["id"] for item in available} else "api_key"
+        method = questionary.select(
+            "Authentication method:", choices=choices, default=default
         ).ask()
-
-        if new_key:
-            set_api_key(provider_id, new_key)
-            console.print(f"  [green]API key saved for {prov['name']}[/]")
+        if not method:
+            return None
+    if method == "account":
+        if not has_account(provider_id) and not authenticate_account(
+            provider_id, method, on_status=lambda text: console.print(text, markup=False)
+        ):
+            return None
+    elif prov["needs_key"] or prov.get("optional_key"):
+        current_key = get_api_key(provider_id)
+        new_key = questionary.password(
+            f"API key for {prov['name']} (leave blank to keep existing/environment key):"
+        ).ask()
+        if new_key is None:
+            return None
+        if new_key.strip():
+            cfg[f"{provider_id}_api_key"] = new_key.strip()
         elif not current_key and prov["needs_key"]:
-            env_var = prov.get("env", "")
-            console.print(
-                f"  [yellow]No key configured.[/] "
-                f"[dim]Set {env_var} or run /auth again.[/]"
-            )
-
-    # A local server alias must not inherit the previous hosted model name.
-    if provider_id == "colibri" and load_config().get("provider") != "colibri":
-        set_value("model", "djcode-colibri")
-    # Set as active provider
-    set_value("provider", provider_id)
-    console.print(f"\n  [green]Active provider:[/] {prov['name']}")
-
+            console.print("No key configured; existing provider retained.", markup=False)
+            return None
+    cfg[f"{provider_id}_auth_method"] = method
+    if provider_id == "colibri" and cfg.get("provider") != "colibri":
+        cfg["model"] = "djcode-colibri"
+    cfg["provider"] = provider_id
+    save_config(cfg)
+    console.print(f"Active provider: {prov['name']}", markup=False)
     return provider_id
 
 
@@ -246,8 +247,11 @@ def interactive_provider_picker() -> str | None:
         marker = " (current)" if pid == current else ""
         ready = ""
         if prov["needs_key"]:
+            from djcode.account_auth import has_account
+
+            account = cfg.get(f"{pid}_auth_method") == "account" and has_account(pid)
             has_key = bool(get_api_key(pid))
-            ready = " [ready]" if has_key else " [no key]"
+            ready = " [account]" if account else " [ready]" if has_key else " [needs setup]"
         else:
             ready = " [local]"
 
@@ -261,11 +265,13 @@ def interactive_provider_picker() -> str | None:
     provider_id = questionary.select(
         "Switch provider:",
         choices=choices,
-        style=questionary.Style([
-            ("selected", "fg:#FFD700 bold"),
-            ("pointer", "fg:#FFD700 bold"),
-            ("highlighted", "fg:#FFD700"),
-        ]),
+        style=questionary.Style(
+            [
+                ("selected", "fg:#FFD700 bold"),
+                ("pointer", "fg:#FFD700 bold"),
+                ("highlighted", "fg:#FFD700"),
+            ]
+        ),
     ).ask()
 
     return provider_id

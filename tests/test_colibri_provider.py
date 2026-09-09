@@ -207,6 +207,6 @@ def test_interactive_switch_to_colibri_resets_unrelated_model(settings, monkeypa
     from djcode import auth
     monkeypatch.setattr(auth.questionary, 'select', lambda *a, **kw: SimpleNamespace(ask=lambda: 'colibri'))
     monkeypatch.setattr(auth.questionary, 'password', lambda *a, **kw: SimpleNamespace(ask=lambda: ''))
-    monkeypatch.setattr(auth, 'set_value', lambda key, value: settings.update({key: value}))
+    monkeypatch.setattr('djcode.config.save_config', lambda value: settings.update(value))
     assert auth.interactive_auth() == 'colibri'
     assert settings['provider'] == 'colibri' and settings['model'] == 'djcode-colibri'
