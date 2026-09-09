@@ -983,11 +983,7 @@ async def run_repl(
     """Run the interactive REPL."""
     ensure_dirs()
 
-    # Check for first-run onboarding
-    from djcode.onboarding import needs_onboarding, run_onboarding
-
-    if needs_onboarding():
-        run_onboarding()
+    # Provider setup is handled once by the CLI startup flow.
 
     # Apply auto_accept from CLI flag or config
     cfg = load_config()
@@ -1052,15 +1048,6 @@ async def run_repl(
     # Print banner and permissions warning
     print_banner(llm)
     permissions.show_startup_warning()
-
-    # Check for updates (non-blocking, once per 24h)
-    try:
-        from djcode.updater import get_update_message
-        update_msg = get_update_message()
-        if update_msg:
-            console.print(f"\n{update_msg}\n")
-    except Exception:
-        pass
 
     # Set up prompt toolkit session with FIXED bottom toolbar
     session: PromptSession[str] = PromptSession(

@@ -167,3 +167,9 @@ def format_changelog(body: str, max_lines: int = 20) -> str:
     """Format release body for terminal display."""
     lines = body.strip().split("\n")[:max_lines]
     return "\n".join(lines)
+
+
+def perform_update(force: bool = False) -> dict:
+    """Install a verified canonical build only into a managed installation."""
+    from djcode.managed_update import perform_update as managed_update
+    return managed_update(force=force)

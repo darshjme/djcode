@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 import click
@@ -22,6 +23,16 @@ from rich.console import Console
 from djcode import __version__
 
 console = Console()
+
+
+def redact_config(value, name=""):
+    if any(word in name.lower() for word in ("key", "token", "secret", "password")):
+        return "***" if value else value
+    if isinstance(value, dict):
+        return {key: redact_config(item, key) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_config(item) for item in value]
+    return value
 
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
@@ -81,6 +92,13 @@ console = Console()
     help="Run a task with wave execution strategy then exit",
 )
 @click.option("--repl", "use_repl", is_flag=True, help="Use the line-oriented REPL instead of the full-screen TUI.")
+@click.option("--setup", is_flag=True, help="Choose provider, supported authentication method and model.")
+@click.option("--check", "check_install", is_flag=True, help="Check installation syntax, registries and fatal lint.")
+@click.option("--lint", is_flag=True, help="Run the installation quality checks (alias for --check).")
+@click.option("--update", is_flag=True, help="Install the latest CI-validated canonical build into a managed install.")
+@click.option("--rollback", is_flag=True, help="Restore the previous managed build and switch updates to manual.")
+@click.option("--update-mode", type=click.Choice(["auto", "manual", "disabled"]), help="Set automatic, manual or disabled updates.")
+@click.option("--no-update", is_flag=True, help="Skip update checks for this invocation.")
 @click.version_option(version=__version__, prog_name="djcode")
 def main(
     prompt: str | None,
@@ -94,6 +112,13 @@ def main(
     army: bool,
     wave: str | None,
     use_repl: bool,
+    setup: bool,
+    check_install: bool,
+    lint: bool,
+    update: bool,
+    rollback: bool,
+    update_mode: str | None,
+    no_update: bool,
 ) -> None:
     """DJcode — Local-first AI coding CLI by DarshJ.AI
 
@@ -102,6 +127,28 @@ def main(
     # --url / -u takes precedence; --provider with an http value also works
     if url:
         provider = url
+    if no_update:
+        os.environ["DJCODE_NO_UPDATE_CHECK"] = "1"
+    if check_install or lint:
+        from djcode.maintenance import run_checks
+        checked = run_checks()
+        for item in checked["checks"]:
+            console.print(f"{item['name']}: {item['status']} · {item['detail']}", markup=False)
+        if not checked["ok"]:
+            raise click.ClickException(checked["summary"])
+        return
+    if update_mode:
+        from djcode.config import set_value
+        set_value("update_mode", update_mode)
+        console.print(f"Update mode: {update_mode}", markup=False)
+        return
+    if update or rollback:
+        from djcode.managed_update import perform_update, rollback as restore_previous
+        result = restore_previous() if rollback else perform_update(force=True)
+        console.print(result["message"], markup=False)
+        if not result["ok"]:
+            raise click.ClickException("The requested maintenance operation did not complete.")
+        return
     from djcode.auth import PROVIDERS
     from djcode.config import load_config
     known = set(PROVIDERS) | {"remote"} | set(load_config().get("custom_providers", {}))
@@ -117,12 +164,26 @@ def main(
         table.add_column("Key", style="cyan")
         table.add_column("Value", style="white")
         for k, v in sorted(cfg.items()):
-            display = "***" if "key" in k.lower() and v else str(v)
+            display = str(redact_config(v, k))
             table.add_row(k, display)
         console.print(table)
         return
 
     try:
+        from djcode.startup import prepare
+        if not setup and not os.environ.get("DJCODE_UPDATE_REEXEC"):
+            from djcode.updater import perform_update
+            status_console = Console(stderr=True)
+            with status_console.status("Checking validated DJcode updates…", spinner="dots"):
+                changed = perform_update(force=False)
+            if changed["status"] not in {"disabled", "manual_required", "manual"}:
+                status_console.print(changed["message"], markup=False)
+            if changed.get("updated") and changed.get("entrypoint"):
+                env = {**os.environ, "DJCODE_UPDATE_REEXEC": changed["commit"]}
+                os.execve(changed["entrypoint"], [changed["entrypoint"], *sys.argv[1:]], env)
+        provider, model = prepare(provider, model, force_setup=setup)
+        if setup:
+            return
         if wave:
             # Wave execution mode: run a task with multi-agent wave strategy
             from djcode.provider import Provider, ProviderConfig
