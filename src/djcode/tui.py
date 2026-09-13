@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import questionary
 from prompt_toolkit.key_binding import KeyBindings
+from djcode.commands import command_groups
 from prompt_toolkit.keys import Keys
 from rich.console import Console
 from rich.panel import Panel
@@ -93,6 +94,7 @@ def register_keybindings(
     session: PromptSession,
     operator: Operator,
     status_bar: StatusBar,
+    orchestrator=None,
 ) -> KeyBindings:
     """Register all DJcode keyboard shortcuts on the given PromptSession.
 
@@ -125,29 +127,30 @@ def register_keybindings(
     # Ctrl+T — Toggle auto-accept tools
     @kb.add("c-t")
     def _toggle_auto_accept(event: Any) -> None:
-        from djcode.config import set_value, load_config
+        from djcode.config import set_value
 
-        cfg = load_config()
-        new_val = not cfg.get("auto_accept", False)
+        new_val = not operator.auto_accept
         set_value("auto_accept", new_val)
         operator.auto_accept = new_val
+        if orchestrator is not None:
+            orchestrator.auto_accept = new_val
+            orchestrator._shadow.auto_accept = new_val
         _mode.auto_accept = new_val
         status_bar.update(auto_accept=new_val)
         label = "ON" if new_val else "OFF"
         event.app.output.write(f"\r\033[K[auto-accept: {label}]\n")
         event.app.output.flush()
 
-    # Ctrl+K — Kill current generation
+    # Input shortcuts are active only while the prompt is accepting input.
     @kb.add("c-k")
     def _kill_generation(event: Any) -> None:
-        _mode.cancel_generation()
-        event.app.output.write("\r\033[K[generation cancelled]\n")
-        event.app.output.flush()
+        event.app.current_buffer.delete(len(event.app.current_buffer.text_after_cursor))
 
     # Ctrl+P — Toggle plan/act mode
     @kb.add("c-p")
     def _toggle_plan_mode(event: Any) -> None:
         _mode.plan_mode = not _mode.plan_mode
+        operator.plan_mode = _mode.plan_mode
         label = _mode.mode_label
         status_bar.update(mode=label)
         event.app.output.write(f"\r\033[K[mode: {label}]\n")
@@ -169,43 +172,7 @@ def register_keybindings(
 # Interactive slash command picker
 # ---------------------------------------------------------------------------
 
-COMMAND_GROUPS: dict[str, list[tuple[str, str]]] = {
-    "Build": [
-        ("/orchestra", "Multi-agent orchestration (auto-dispatch)"),
-        ("/review", "Code review (Dharma agent)"),
-        ("/debug", "Root cause analysis (Sherlock agent)"),
-        ("/test", "Write tests (Agni agent)"),
-        ("/refactor", "Restructure code (Shiva agent)"),
-        ("/devops", "Docker/CI/CD (Vayu agent)"),
-        ("/docs", "Generate docs (Saraswati agent)"),
-    ],
-    "Content": [
-        ("/campaign", "Content campaign (12 content agents)"),
-        ("/launch", "Build + Ship + Campaign (full pipeline)"),
-        ("/image", "Generate image prompts (Maya)"),
-        ("/video", "Cinematic video prompts (Kubera)"),
-        ("/social", "Social media content (Chitragupta)"),
-    ],
-    "Tools": [
-        ("/model", "Interactive model picker"),
-        ("/provider", "Interactive provider picker"),
-        ("/auth", "Configure provider + API key"),
-        ("/config", "Show current config"),
-        ("/set", "Set a config value"),
-    ],
-    "Info": [
-        ("/help", "Show help"),
-        ("/agents", "Show all 22 agents roster"),
-        ("/stats", "Usage dashboard with activity heatmap"),
-        ("/memory", "Show memory stats"),
-        ("/shortcuts", "Show keyboard shortcuts"),
-    ],
-    "Session": [
-        ("/clear", "Clear conversation history"),
-        ("/save", "Save conversation to disk"),
-        ("/exit", "Exit DJcode"),
-    ],
-}
+COMMAND_GROUPS = command_groups("repl")
 
 Q_STYLE = questionary.Style([
     ("selected", "fg:#FFD700 bold"),
@@ -405,8 +372,12 @@ SHORTCUTS_TABLE = [
     ("Ctrl+L", "Clear screen"),
     ("Ctrl+T", "Toggle auto-accept"),
     ("Ctrl+P", "Toggle plan/act mode"),
-    ("Ctrl+R", "Rerun last command"),
-    ("Ctrl+K", "Kill generation"),
+    ("Ctrl+R", "Recall last prompt for editing"),
+    ("Ctrl+K", "Delete input after the cursor"),
+    ("Ctrl+C", "Cancel input or the current response"),
+    ("Ctrl+D", "Exit at an empty prompt"),
+    ("Tab", "Complete a slash command"),
+    ("Up / Down", "Browse prompt history"),
     ("Escape", "Cancel current input"),
     ("/", "Interactive command picker"),
 ]

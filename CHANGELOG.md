@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — terminal command flow and session recovery
+
+- Share command discovery across the TUI and REPL, with ranked slash completion and accurate help.
+- Preserve unsent drafts while a TUI response runs; add prompt history and reliable Ctrl+K cancellation.
+- Keep chat, command suggestions, input, status and footer separate in narrow terminals; wrap long output.
+- Restore TUI SQLite persistence by using the session ID returned by the database and saving on exit.
+- Make REPL Plan mode enforce the operator tool gate and keep specialist dispatch from bypassing it.
+- Add REPL `/plan`, `/thinking`, `/check`, `/lint` and `/update`; restore the built-in `/docs` browser.
+- Use a compact REPL startup summary, asynchronous prompts and approvals, Ctrl+C response cancellation, and conversation checkpoints.
+- Recover from command failures without closing the interface. See `docs/TERMINAL-INTERACTION.md` for controls and validation.
+
 ## 4.2.1 — original design references
 
 - Bundle seven original design-context packs with accessible SVG examples, responsive states and implementation guidance; no design-service account is required.

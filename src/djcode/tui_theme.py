@@ -144,7 +144,7 @@ FooterKey:hover {
 /* ── Status bar — system telemetry ───────────────────────────── */
 
 #status-bar {
-    dock: bottom;
+    dock: none;
     height: 1;
     background: #0E0E0E;
     color: #A1A1AA;
@@ -241,6 +241,8 @@ SidePanel Underline {
 
 #chat-log {
     height: 1fr;
+    overflow-y: scroll;
+    overflow-x: hidden;
     background: #0A0A0A;
     color: #8A8A8A;
     scrollbar-color: #1E1E1E;
@@ -283,9 +285,9 @@ SidePanel Underline {
 /* ── Input — Command line interface ──────────────────────────── */
 
 #cmd-suggest {
-    dock: bottom;
+    dock: none;
     height: auto;
-    max-height: 12;
+    max-height: 7;
     background: #0E0E0E;
     color: #E8E8E8;
     border: solid #1E1E1E;
@@ -307,7 +309,7 @@ SidePanel Underline {
 }
 
 #prompt-input {
-    dock: bottom;
+    dock: none;
     height: 3;
     background: #111111;
     color: #FFD700;
