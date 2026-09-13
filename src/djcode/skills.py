@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from djcode.config import CONFIG_DIR
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +104,7 @@ class Skill:
         return Skill(
             name=name,
             description=description,
-            instructions=instructions,
+            instructions=instructions or body.strip(),
             example=example,
             created=created,
             tags=tags,
@@ -117,7 +118,7 @@ class Skill:
 class SkillManager:
     """Manages user-defined skills stored at ~/.djcode/skills/."""
 
-    SKILLS_DIR = Path.home() / ".djcode" / "skills"
+    SKILLS_DIR = CONFIG_DIR / "skills"
 
     def __init__(self, skills_dir: Path | None = None) -> None:
         self.skills_dir = skills_dir or self.SKILLS_DIR
@@ -141,10 +142,15 @@ class SkillManager:
         self._ensure_dir()
         skills: dict[str, Skill] = {}
 
-        for path in sorted(self.skills_dir.glob("*.skill.md")):
+        paths = [*self.skills_dir.glob("*.skill.md"), *self.skills_dir.glob("*/SKILL.md")]
+        if self.skills_dir == self.SKILLS_DIR:
+            paths += list((Path.cwd() / ".djcode" / "skills").glob("*/SKILL.md"))
+        for path in sorted(paths):
             try:
+                if path.stat().st_size > 131072:
+                    continue
                 text = path.read_text(encoding="utf-8")
-                skill = Skill.from_markdown(text, filename=path.name)
+                skill = Skill.from_markdown(text, filename=path.parent.name if path.name == "SKILL.md" else path.name)
                 if skill.name:
                     skills[skill.name] = skill
             except (OSError, UnicodeDecodeError):

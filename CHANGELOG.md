@@ -2,6 +2,11 @@
 
 ## Unreleased — terminal command flow and session recovery
 
+- Use repaired DAF GraphExecutor and real DDAL loopback transport for operator and specialist tools by default; include locked Rust sources and explicit fallback selection.
+- Add model-visible skills, MCP, browser/desktop, background processes, durable schedules and dependency workflows.
+- Introduce transactional provider/auth/model onboarding with OpenRouter browser PKCE, screenshot model inputs and a restrained conversation-first TUI.
+- Add queued follow-ups, session branching/new-session controls and collision-free session IDs; preserve context during model changes.
+
 - Share command discovery across the TUI and REPL, with ranked slash completion and accurate help.
 - Preserve unsent drafts while a TUI response runs; add prompt history and reliable Ctrl+K cancellation.
 - Keep chat, command suggestions, input, status and footer separate in narrow terminals; wrap long output.

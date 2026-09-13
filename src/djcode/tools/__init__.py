@@ -40,6 +40,14 @@ TOOL_DISPATCH: dict[str, Any] = {
 }
 
 
+from djcode.scheduler import schedule_tool
+TOOL_DISPATCH["schedule"] = schedule_tool
+
+from functools import partial
+from djcode.capabilities import dispatch_capability
+for _name in ("skill", "mcp", "process", "browser", "computer", "workflow"):
+    TOOL_DISPATCH[_name] = partial(dispatch_capability, _name)
+
 async def dispatch_tool(name: str, arguments: dict[str, Any]) -> str:
     """Execute a tool by name with the given arguments. Returns result as string."""
     handler = TOOL_DISPATCH.get(name)

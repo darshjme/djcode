@@ -92,7 +92,8 @@ class OpenAIProvider(BaseProvider):
                     entry["tool_calls"] = msg["tool_calls"]
                 result.append(entry)
             else:
-                result.append({"role": role, "content": content})
+                from djcode.vision import openai_content
+                result.append({"role": role, "content": openai_content(content, msg.get("images", []))})
 
         return result
 

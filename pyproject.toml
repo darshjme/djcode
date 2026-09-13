@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 authors = [
-    { name = "Darshan Kumar Joshi", email = "darsh@darshj.ai" },
+    { name = "Darshankumar Joshi", email = "darsh@darshj.ai" },
 ]
 keywords = ["ai", "cli", "coding", "ollama", "local-first", "agent", "apple-silicon", "multi-agent", "parallel", "tui"]
 classifiers = [
@@ -29,6 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+computer = ["playwright>=1.49", "pyautogui>=0.9.54", "pillow>=10"]
 voice = ["sounddevice>=0.4"]
 tokens = ["tiktoken>=0.7"]
 

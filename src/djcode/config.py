@@ -30,6 +30,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "bypass_rlhf": False,
     "telemetry": False,
     "theme": "dark",
+    "workflow_engine": "daf",
     "auto_approve_tools": False,
     "auto_accept": False,
     "base_url": "",

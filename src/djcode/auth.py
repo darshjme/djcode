@@ -211,7 +211,19 @@ def interactive_auth() -> str | None:
         ).ask()
         if not method:
             return None
-    if method == "account":
+    if method == "browser" and provider_id == "openrouter":
+        import asyncio
+        import webbrowser
+        from djcode.openrouter_auth import begin, exchange
+        verifier, url = begin()
+        console.print(url, markup=False)
+        webbrowser.open(url)
+        code = questionary.password("One-time code from OpenRouter:").ask()
+        if code is None:
+            return None
+        cfg[f"{provider_id}_api_key"] = asyncio.run(exchange(code, verifier))
+        method = "api_key"
+    elif method == "account":
         if not has_account(provider_id) and not authenticate_account(
             provider_id, method, on_status=lambda text: console.print(text, markup=False)
         ):

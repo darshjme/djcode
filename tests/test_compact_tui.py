@@ -16,7 +16,7 @@ def test_responsive_layout_palette_and_approval(monkeypatch, tmp_path, width):
         async with app.run_test(size=(width, 28)) as pilot:
             await pilot.pause()
             side = app.query_one('#side-panel')
-            assert side.display == (width >= 110)
+            assert not side.display
             assert app.query_one('#prompt-input').region.bottom < 28
             assert app.query_one('#chat-log').size.height >= 12
             await pilot.press('ctrl+p')
@@ -24,7 +24,7 @@ def test_responsive_layout_palette_and_approval(monkeypatch, tmp_path, width):
             await pilot.press('ctrl+p')
             assert not app._plan_mode
             await pilot.press('ctrl+b')
-            assert side.display == (width < 110)
+            assert side.display
             await pilot.press('ctrl+b')
             selected = []
             app.push_screen(CommandPalette(), selected.append)
@@ -34,7 +34,7 @@ def test_responsive_layout_palette_and_approval(monkeypatch, tmp_path, width):
             await pilot.pause()
             await pilot.press('down', 'enter')
             await pilot.pause()
-            assert selected == ['/check']
+            assert selected == ['/workflow']
             pending = asyncio.create_task(app._approve_tool('file_write', {'path': 'sample.py', 'content': '\n'.join(str(i) for i in range(200))}))
             await pilot.pause()
             assert isinstance(app.screen, ToolApprovalScreen)

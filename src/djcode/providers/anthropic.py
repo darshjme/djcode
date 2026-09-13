@@ -147,7 +147,11 @@ class AnthropicProvider(BaseProvider):
                 # Cache large user context messages (file contents, etc.)
                 if self._enable_caching and _estimate_tokens(content) >= _CACHE_MIN_TOKENS:
                     block["cache_control"] = {"type": "ephemeral"}
-                result.append({"role": "user", "content": [block]})
+                blocks = [block]
+                for image in msg.get("images", []):
+                    mime, data = image.split(",", 1)
+                    blocks.append({"type": "image", "source": {"type": "base64", "media_type": mime[5:].split(";")[0], "data": data}})
+                result.append({"role": "user", "content": blocks})
             else:
                 result.append({"role": role, "content": content})
 

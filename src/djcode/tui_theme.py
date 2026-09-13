@@ -1,45 +1,40 @@
-"""DJcode v4.0 Hacker TUI Theme -- Cyberpunk military command center aesthetic.
-
-Matrix-meets-terminal dark theme with electric gold identity, neon green active
-states, agent-tier glow accents, HUD-style borders, and scanline effects.
-Optimized for dark terminals. Supports light terminals gracefully.
-"""
+"""Conversation-first terminal styling with a warm accent and quiet status controls."""
 
 from __future__ import annotations
 
 # ── Color palette ─────────────────────────────────────────────────────────
 
 # Brand / Primary
-GOLD = "#FFD700"
+GOLD = "#C79B7A"
 DIM_GOLD = "#B8960F"
 DARK_GOLD = "#3D2E00"
-ELECTRIC_GOLD = "#FFD700"
+ELECTRIC_GOLD = "#C79B7A"
 
 # Backgrounds (deep black layered depth)
-BG_PRIMARY = "#0A0A0A"
+BG_PRIMARY = "#17191D"
 BG_SECONDARY = "#121212"
-BG_PANEL = "#0E0E0E"
-BG_HEADER = "#0A0A0A"
-BG_INPUT = "#111111"
+BG_PANEL = "#1B1E23"
+BG_HEADER = "#17191D"
+BG_INPUT = "#202329"
 
 # Text hierarchy
 TEXT_STRONG = "#E8E8E8"
-TEXT_BASE = "#8A8A8A"
-TEXT_DIM = "#555555"
+TEXT_BASE = "#C2BFB8"
+TEXT_DIM = "#96928C"
 DIM_TEXT = TEXT_DIM  # compat alias
 MUTED_TEXT = TEXT_BASE  # compat alias
 
 # Borders
 BORDER = "#1E1E1E"
-BORDER_FOCUS = "#FFD700"
-BORDER_GLOW = "#FFD700"
+BORDER_FOCUS = "#C79B7A"
+BORDER_GLOW = "#C79B7A"
 BORDER_SUBTLE = "#1A1A1A"
 
 # Interactive
 LINK = "#2196F3"
 
 # Status — vibrant cyberpunk palette
-SUCCESS = "#00FF41"       # Matrix neon green
+SUCCESS = "#A2BA9A"       # Matrix neon green
 ERROR = "#FF1744"         # Blood red
 WARNING = "#FF8C00"       # Amber
 INFO = "#2196F3"          # Electric blue
@@ -47,13 +42,13 @@ THINKING = "#00BCD4"      # Cyan/teal for AI thinking
 
 # Modes
 PLAN_MODE = "#9C27B0"     # Purple — architecture mode
-ACT_MODE = "#00FF41"      # Neon green — execution mode
+ACT_MODE = "#A2BA9A"      # Neon green — execution mode
 
 # Agent tier accents
-TIER_4_CONTROL = "#FFD700"   # Pure gold — Vyasa, Control tier
+TIER_4_CONTROL = "#C79B7A"   # Pure gold — Vyasa, Control tier
 TIER_3_ENTERPRISE = "#2196F3"  # Electric blue — Enterprise tier
 TIER_2_ARCHITECTURE = "#9C27B0"  # Purple — Architecture tier
-TIER_1_EXECUTION = "#00FF41"   # Neon green — Execution tier
+TIER_1_EXECUTION = "#A2BA9A"   # Neon green — Execution tier
 
 # Threat agents
 THREAT_KAVACH = "#FF1744"
@@ -67,20 +62,24 @@ SYN_PRIMITIVE = "#FFB74D"
 SYN_PROPERTY = "#F06292"
 SYN_TYPE = "#90CAF9"
 SYN_KEYWORD = "#CE93D8"
-SYN_COMMENT = "#555555"
-SYN_FUNCTION = "#FFD700"
+SYN_COMMENT = "#96928C"
+SYN_FUNCTION = "#C79B7A"
 SYN_NUMBER = "#FF8A80"
 
 # HUD elements
 HUD_BORDER = "#333333"
-HUD_ACTIVE = "#00FF41"
+HUD_ACTIVE = "#A2BA9A"
 HUD_INACTIVE = "#1A1A1A"
 SCANLINE = "rgba(0, 255, 65, 0.03)"
-MATRIX_GREEN = "#00FF41"
+MATRIX_GREEN = "#A2BA9A"
 
 # ── Main CSS ──────────────────────────────────────────────────────────────
 
 DJCODE_CSS = """
+#hacker-header { height: 1; border: none; background: #17191D; }
+#agent-status-bar { height: 1; border: none; background: #17191D; }
+#workflow-state { height: 1; padding: 0 2; color: #A2BA9A; background: #17191D; }
+
 
 /* ================================================================
    DJcode v4.0 — HACKER COMMAND CENTER THEME
@@ -90,8 +89,8 @@ DJCODE_CSS = """
 /* ── Screen ───────────────────────────────────────────────────── */
 
 Screen {
-    background: #0A0A0A;
-    color: #8A8A8A;
+    background: #17191D;
+    color: #C2BFB8;
 }
 
 /* Preserve the application beneath a tool permission dialog. */
@@ -109,36 +108,36 @@ ToolApprovalScreen {
 /* ── Header — Military HUD bar ────────────────────────────────── */
 
 Header {
-    background: #0A0A0A;
-    color: #FFD700;
+    background: #17191D;
+    color: #C79B7A;
     dock: top;
     height: 1;
     border-bottom: solid #1E1E1E;
 }
 
 HeaderTitle {
-    color: #FFD700;
+    color: #C79B7A;
     text-style: bold;
 }
 
 /* ── Footer — Status telemetry strip ─────────────────────────── */
 
 Footer {
-    background: #0A0A0A;
-    color: #555555;
+    background: #17191D;
+    color: #96928C;
     dock: bottom;
     height: 1;
     border: none;
 }
 
 FooterKey {
-    background: #111111;
-    color: #00FF41;
+    background: #202329;
+    color: #A2BA9A;
 }
 
 FooterKey:hover {
     background: #1A1A1A;
-    color: #FFD700;
+    color: #C79B7A;
 }
 
 /* ── Status bar — system telemetry ───────────────────────────── */
@@ -146,7 +145,7 @@ FooterKey:hover {
 #status-bar {
     dock: none;
     height: 1;
-    background: #0E0E0E;
+    background: #1B1E23;
     color: #A1A1AA;
     padding: 0 1;
     border-top: none;
@@ -164,14 +163,14 @@ FooterKey:hover {
 
 #chat-panel {
     width: 65%;
-    border: solid #1E1E1E;
-    border-title-color: #FFD700;
+    border: none;
+    border-title-color: #C79B7A;
     border-title-style: bold;
-    background: #0A0A0A;
+    background: #17191D;
 }
 
 #chat-panel:focus-within {
-    border: solid #FFD700;
+    border: none;
 }
 
 /* ── Side panel (35%) — Intelligence dashboard ───────────────── */
@@ -179,44 +178,44 @@ FooterKey:hover {
 #side-panel {
     width: 35%;
     border: solid #1E1E1E;
-    border-title-color: #00FF41;
+    border-title-color: #A2BA9A;
     border-title-style: bold;
-    background: #0E0E0E;
+    background: #1B1E23;
     padding: 0;
 }
 
 #side-panel:focus-within {
-    border: solid #00FF41;
+    border: solid #A2BA9A;
 }
 
 /* ── SidePanel tabs — HUD navigation ─────────────────────────── */
 
 SidePanel TabbedContent {
     height: 100%;
-    background: #0E0E0E;
+    background: #1B1E23;
 }
 
 SidePanel ContentSwitcher {
     height: 1fr;
-    background: #0E0E0E;
+    background: #1B1E23;
 }
 
 SidePanel TabPane {
     padding: 0;
     height: 1fr;
-    background: #0E0E0E;
+    background: #1B1E23;
 }
 
 SidePanel Tabs {
-    background: #0A0A0A;
+    background: #17191D;
     dock: top;
     height: 3;
     border-bottom: solid #1E1E1E;
 }
 
 SidePanel Tab {
-    background: #111111;
-    color: #555555;
+    background: #202329;
+    color: #96928C;
     padding: 0 2;
     text-style: bold;
     min-width: 8;
@@ -224,17 +223,17 @@ SidePanel Tab {
 
 SidePanel Tab:hover {
     background: #1A1A1A;
-    color: #00FF41;
+    color: #A2BA9A;
 }
 
 SidePanel Tab.-active {
-    background: #00FF41;
-    color: #0A0A0A;
+    background: #A2BA9A;
+    color: #17191D;
     text-style: bold;
 }
 
 SidePanel Underline {
-    color: #00FF41;
+    color: #A2BA9A;
 }
 
 /* ── Chat log — Terminal output ──────────────────────────────── */
@@ -243,20 +242,20 @@ SidePanel Underline {
     height: 1fr;
     overflow-y: scroll;
     overflow-x: hidden;
-    background: #0A0A0A;
-    color: #8A8A8A;
+    background: #17191D;
+    color: #C2BFB8;
     scrollbar-color: #1E1E1E;
-    scrollbar-color-hover: #00FF41;
-    scrollbar-color-active: #FFD700;
-    padding: 0 1;
+    scrollbar-color-hover: #A2BA9A;
+    scrollbar-color-active: #C79B7A;
+    padding: 1 2;
 }
 
 /* ── Agent panel sections — Operative status ─────────────────── */
 
 #agent-header {
     height: 3;
-    background: #0E0E0E;
-    color: #FFD700;
+    background: #1B1E23;
+    color: #C79B7A;
     text-style: bold;
     padding: 0 1;
     border-bottom: double #1E1E1E;
@@ -265,18 +264,18 @@ SidePanel Underline {
 
 #agent-log {
     height: 1fr;
-    background: #0A0A0A;
-    color: #8A8A8A;
+    background: #17191D;
+    color: #C2BFB8;
     scrollbar-color: #1E1E1E;
-    scrollbar-color-hover: #00FF41;
-    scrollbar-color-active: #FFD700;
+    scrollbar-color-hover: #A2BA9A;
+    scrollbar-color-active: #C79B7A;
     padding: 0 1;
 }
 
 #stats-bar {
     height: 3;
-    background: #0E0E0E;
-    color: #555555;
+    background: #1B1E23;
+    color: #96928C;
     padding: 0 1;
     border-top: solid #1E1E1E;
     content-align: left middle;
@@ -288,7 +287,7 @@ SidePanel Underline {
     dock: none;
     height: auto;
     max-height: 7;
-    background: #0E0E0E;
+    background: #1B1E23;
     color: #E8E8E8;
     border: solid #1E1E1E;
     margin: 0 1;
@@ -296,12 +295,12 @@ SidePanel Underline {
 }
 
 #cmd-suggest:focus {
-    border: solid #00FF41;
+    border: solid #A2BA9A;
 }
 
 #cmd-suggest > .option-list--option-highlighted {
-    background: #00FF41 15%;
-    color: #00FF41;
+    background: #A2BA9A 15%;
+    color: #A2BA9A;
 }
 
 #cmd-suggest > .option-list--option {
@@ -311,14 +310,15 @@ SidePanel Underline {
 #prompt-input {
     dock: none;
     height: 3;
-    background: #111111;
-    color: #FFD700;
-    border: solid #333333;
+    background: #202329;
+    color: #C79B7A;
+    border: round #55514A;
+    margin: 0 1;
     padding: 0 1;
 }
 
 #prompt-input:focus {
-    border: solid #FFD700;
+    border: round #C79B7A;
 }
 
 Input > .input--placeholder {
@@ -326,7 +326,7 @@ Input > .input--placeholder {
 }
 
 Input > .input--cursor {
-    color: #00FF41;
+    color: #A2BA9A;
     text-style: bold reverse;
 }
 
@@ -341,20 +341,20 @@ Input > .input--cursor {
     width: 72;
     height: auto;
     max-height: 85%;
-    background: #0E0E0E;
-    border: solid #FFD700;
+    background: #1B1E23;
+    border: solid #C79B7A;
     padding: 1 2;
 }
 
 #help-title {
     text-style: bold;
-    color: #FFD700;
+    color: #C79B7A;
     text-align: center;
     margin-bottom: 1;
 }
 
 #help-content {
-    color: #8A8A8A;
+    color: #C2BFB8;
     height: auto;
     max-height: 100%;
 }
@@ -370,8 +370,8 @@ Input > .input--cursor {
     width: 84;
     height: auto;
     max-height: 85%;
-    background: #0E0E0E;
-    border: solid #FFD700;
+    background: #1B1E23;
+    border: solid #C79B7A;
     padding: 1 2;
 }
 
@@ -379,8 +379,8 @@ Input > .input--cursor {
 
 .hacker-header {
     height: 3;
-    background: #0A0A0A;
-    color: #FFD700;
+    background: #17191D;
+    color: #C79B7A;
     text-style: bold;
     padding: 0 1;
     border-bottom: double #1E1E1E;
@@ -388,25 +388,25 @@ Input > .input--cursor {
 }
 
 .hacker-section {
-    color: #00FF41;
+    color: #A2BA9A;
     text-style: bold;
     padding: 1 0 0 0;
 }
 
 .hacker-border {
     border: solid #1E1E1E;
-    background: #0A0A0A;
+    background: #17191D;
 }
 
 .hacker-border:focus {
-    border: solid #00FF41;
+    border: solid #A2BA9A;
 }
 
 /* Agent status bar widget */
 
 .agent-status-bar {
     height: 3;
-    background: #0A0A0A;
+    background: #17191D;
     padding: 0 1;
     border: solid #1E1E1E;
 }
@@ -418,12 +418,12 @@ Input > .input--cursor {
 }
 
 .agent-chip-executing {
-    color: #00FF41;
+    color: #A2BA9A;
     text-style: bold;
 }
 
 .agent-chip-researching {
-    color: #FFD700;
+    color: #C79B7A;
     text-style: italic;
 }
 
@@ -444,28 +444,28 @@ Input > .input--cursor {
 
 .progress-hud {
     height: 3;
-    background: #0E0E0E;
+    background: #1B1E23;
     border: solid #1E1E1E;
     padding: 0 1;
 }
 
 .progress-hud:focus {
-    border: solid #00FF41;
+    border: solid #A2BA9A;
 }
 
 /* Token burn rate sparkline */
 
 .burn-rate {
     height: 1;
-    color: #00FF41;
-    background: #0A0A0A;
+    color: #A2BA9A;
+    background: #17191D;
     padding: 0 1;
 }
 
 /* Agent dashboard grid */
 
 .agent-dashboard {
-    background: #0A0A0A;
+    background: #17191D;
     padding: 1;
 }
 
@@ -473,23 +473,23 @@ Input > .input--cursor {
     height: auto;
     min-height: 6;
     width: 1fr;
-    background: #0E0E0E;
+    background: #1B1E23;
     border: solid #1E1E1E;
     padding: 1;
     margin: 0 1 1 0;
 }
 
 .agent-card:hover {
-    border: solid #00FF41;
+    border: solid #A2BA9A;
 }
 
 .agent-card-name {
-    color: #FFD700;
+    color: #C79B7A;
     text-style: bold;
 }
 
 .agent-card-title {
-    color: #555555;
+    color: #96928C;
     text-style: italic;
 }
 
@@ -498,7 +498,7 @@ Input > .input--cursor {
 }
 
 .agent-card-state-active {
-    color: #00FF41;
+    color: #A2BA9A;
     text-style: bold;
 }
 
@@ -531,11 +531,11 @@ Input > .input--cursor {
 .context-bar-container {
     height: 3;
     padding: 0 1;
-    background: #0E0E0E;
+    background: #1B1E23;
 }
 
 .context-bar-fill {
-    color: #00FF41;
+    color: #A2BA9A;
 }
 
 .context-bar-fill-warning {
@@ -549,22 +549,22 @@ Input > .input--cursor {
 /* Army view grid */
 
 .army-grid {
-    background: #0A0A0A;
+    background: #17191D;
     padding: 1;
 }
 
 .army-cell {
     height: 3;
     width: 1fr;
-    background: #0E0E0E;
+    background: #1B1E23;
     border: solid #1E1E1E;
     padding: 0 1;
     content-align: center middle;
 }
 
 .army-cell-active {
-    border: solid #00FF41;
-    color: #00FF41;
+    border: solid #A2BA9A;
+    color: #A2BA9A;
 }
 
 .army-cell-idle {
@@ -574,23 +574,23 @@ Input > .input--cursor {
 /* Matrix rain overlay */
 
 .matrix-rain {
-    background: #0A0A0A;
-    color: #00FF41;
+    background: #17191D;
+    color: #A2BA9A;
     overflow: hidden;
 }
 
 /* ── Utility classes ──────────────────────────────────────────── */
 
 .gold {
-    color: #FFD700;
+    color: #C79B7A;
 }
 
 .dim {
-    color: #555555;
+    color: #96928C;
 }
 
 .muted {
-    color: #8A8A8A;
+    color: #C2BFB8;
 }
 
 .strong {
@@ -603,7 +603,7 @@ Input > .input--cursor {
 }
 
 .success {
-    color: #00FF41;
+    color: #A2BA9A;
 }
 
 .error {
@@ -624,7 +624,7 @@ Input > .input--cursor {
 }
 
 .neon {
-    color: #00FF41;
+    color: #A2BA9A;
     text-style: bold;
 }
 
@@ -638,7 +638,7 @@ Input > .input--cursor {
 }
 
 .tier-4 {
-    color: #FFD700;
+    color: #C79B7A;
 }
 
 .tier-3 {
@@ -650,7 +650,7 @@ Input > .input--cursor {
 }
 
 .tier-1 {
-    color: #00FF41;
+    color: #A2BA9A;
 }
 
 .tool-name {
@@ -659,7 +659,7 @@ Input > .input--cursor {
 }
 
 .user-msg {
-    color: #FFD700;
+    color: #C79B7A;
 }
 
 .assistant-msg {
@@ -667,7 +667,7 @@ Input > .input--cursor {
 }
 
 .system-msg {
-    color: #555555;
+    color: #96928C;
     text-style: italic;
 }
 
@@ -698,11 +698,11 @@ Input > .input--cursor {
 }
 
 .syn-comment {
-    color: #555555;
+    color: #96928C;
 }
 
 .syn-function {
-    color: #FFD700;
+    color: #C79B7A;
 }
 
 .syn-number {

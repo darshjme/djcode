@@ -16,6 +16,19 @@ class Command:
 
 
 COMMANDS = (
+    Command("/connect", "Connect provider, sign in and select model", "Models & setup"),
+    Command("/workflow", "Default DAF/DDAL engine status or explicit engine selection", "Context & tools"),
+    Command("/skills", "Discover user skills", "Context & tools"),
+    Command("/skill", "Load a skill by name", "Context & tools"),
+    Command("/schedule", "Manage durable command schedules (JSON arguments)", "Context & tools"),
+    Command("/jobs", "Inspect and control background jobs", "Context & tools"),
+    Command("/browser", "Browser actions using JSON arguments", "Context & tools"),
+    Command("/computer", "Desktop actions using JSON arguments", "Context & tools"),
+    Command("/compact", "Compact the current model context", "Session"),
+    Command("/session", "Show active session and workspace", "Session"),
+    Command("/fork", "Branch into a new session with current context", "Session"),
+    Command("/new", "Save and begin a fresh session", "Session"),
+    Command("/queue", "Inspect queued follow-ups; clear removes them", "Session", repl=False),
     Command("/help", "Browse commands and keyboard shortcuts", "Session"),
     Command("/check", "Run runtime and source checks", "Models & setup"),
     Command("/lint", "Run runtime and source checks", "Models & setup"),

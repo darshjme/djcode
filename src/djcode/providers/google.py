@@ -103,6 +103,10 @@ class GoogleProvider(BaseProvider):
             if content:
                 parts.append({"text": content})
 
+            for image in msg.get("images", []):
+                mime, data = image.split(",", 1)
+                parts.append({"inlineData": {"mimeType": mime[5:].split(";")[0], "data": data}})
+
             # Handle tool calls from assistant
             tool_calls = msg.get("tool_calls", [])
             for tc in tool_calls:

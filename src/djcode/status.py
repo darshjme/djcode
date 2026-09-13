@@ -11,7 +11,7 @@ from html import escape
 
 from prompt_toolkit.formatted_text import HTML
 
-GOLD = "#FFD700"
+GOLD = "#C79B7A"
 
 
 def _shorten_cwd() -> str:

@@ -127,6 +127,8 @@ class AgentExecutor:
         self.approval_callback = approval_callback
         self.spec = spec
         self.provider = provider
+        from djcode.workflow import WorkflowEngine
+        self.workflow = WorkflowEngine()
         self.bus = bus
         self.enable_ra = enable_ra
         self.ra_timeout_s = ra_timeout_s
@@ -370,7 +372,7 @@ class AgentExecutor:
         try:
             from djcode.tools.agent_spawn import agent_context
             with agent_context(self.provider, self.auto_accept, self.approval_callback):
-                result = await asyncio.wait_for(dispatch_tool(tool_name, args), timeout=120.0)
+                result = await asyncio.wait_for(self.workflow.one(tool_name, args, dispatch_tool), timeout=120.0)
             elapsed_ms = (time.monotonic() - start) * 1000
             logger.debug(
                 "%s: tool %s completed in %.0fms",

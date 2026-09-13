@@ -78,13 +78,13 @@ from djcode.tui import (
 
 console = Console()
 
-GOLD = "#FFD700"
+GOLD = "#C79B7A"
 
 Q_STYLE = questionary.Style([
-    ("selected", "fg:#FFD700 bold"),
-    ("pointer", "fg:#FFD700 bold"),
-    ("highlighted", "fg:#FFD700"),
-    ("question", "fg:#FFD700 bold"),
+    ("selected", "fg:#C79B7A bold"),
+    ("pointer", "fg:#C79B7A bold"),
+    ("highlighted", "fg:#C79B7A"),
+    ("question", "fg:#C79B7A bold"),
     ("answer", "fg:#FFFFFF bold"),
 ])
 
@@ -108,99 +108,36 @@ def print_banner(provider: Provider, *, auto_accept: bool = False) -> None:
 HELP_TEXT = command_help("repl") + "\n\n[dim]Tab completes commands · Up/Down history · /shortcuts for keys[/]"
 
 
+def _discover_current_models(provider):
+    from djcode.startup import probe
+    config = load_config()
+    config.update(provider=provider.config.name, model=provider.config.model, base_url=provider.config.base_url)
+    config[f"{provider.config.name}_api_key"] = provider.config.api_key
+    config[f"{provider.config.name}_auth_method"] = provider.config.auth_method
+    return probe(config)
+
+
 def _handle_models_list(provider: Provider) -> None:
-    """List all available models from the current provider."""
-    if provider.config.name != "ollama":
-        console.print(f"[yellow]Model listing only available for Ollama provider.[/]")
-        console.print(f"[dim]Current model: {provider.config.model}[/]")
+    found = _discover_current_models(provider)
+    if not found["models"]:
+        console.print(found["message"], markup=False)
         return
-
-    models = fetch_ollama_models_sync(provider.config.base_url)
-    if not models:
-        console.print(
-            "[yellow]No models found.[/] "
-            "[dim]Is Ollama running? Start with: ollama serve[/]"
-        )
-        return
-
-    table = Table(
-        title=f"[bold {GOLD}]Available Models[/]",
-        border_style=GOLD,
-        show_header=True,
-        header_style=f"bold {GOLD}",
-    )
-    table.add_column("Model", style="white")
-    table.add_column("Size", style="dim")
-    table.add_column("", style="green")
-    table.add_column("", style="dim")
-
-    for m in models:
-        name = m.get("name", "unknown")
-        size = format_model_size(m.get("size", 0))
-        current = "\u2605 current" if name == provider.config.model else ""
-        uncensored = "\U0001f513 uncensored" if is_uncensored_model(name) else ""
-        table.add_row(name, size, current, uncensored)
-
+    table = Table(title="Available models", border_style=GOLD)
+    table.add_column("Model")
+    for name in found["models"]:
+        table.add_row(name + (" · current" if name == provider.config.model else ""))
     console.print(table)
-    console.print(f"\n[dim]Switch with: /model (interactive) or /model <name>[/]")
 
 
 async def _handle_model_switch_interactive(operator: Operator, status_bar: StatusBar) -> None:
-    """Interactive model picker using questionary arrow keys."""
-    provider = operator.provider
-
-    if provider.config.name != "ollama":
-        console.print(f"[yellow]Interactive picker only available for Ollama.[/]")
-        console.print(f"[dim]Current model: {provider.config.model}[/]")
-        return
-
-    models = fetch_ollama_models_sync(provider.config.base_url)
-    if not models:
-        console.print(
-            "[yellow]No models found.[/] "
-            "[dim]Is Ollama running? Start with: ollama serve[/]"
-        )
-        return
-
-    choices = []
-    for m in models:
-        name = m.get("name", "unknown")
-        size = format_model_size(m.get("size", 0))
-        label = f"{name}  ({size})"
-        if name == provider.config.model:
-            label += " \u2605 current"
-        if is_uncensored_model(name):
-            label += " \U0001f513 uncensored"
-        choices.append(questionary.Choice(label, value=name))
-
-    # Run questionary in a thread to avoid blocking the async event loop
-    import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor() as pool:
-        selected = await asyncio.get_event_loop().run_in_executor(
-            pool,
-            lambda: questionary.select(
-                "Select model:",
-                choices=choices,
-                style=Q_STYLE,
-            ).ask()
-        )
-
+    found = await asyncio.to_thread(_discover_current_models, operator.provider)
+    if found["models"]:
+        selected = await questionary.autocomplete("Select model:", choices=found["models"], match_middle=True, ignore_case=True).ask_async()
+    else:
+        console.print(found["message"], markup=False)
+        selected = await questionary.text("Exact model ID:").ask_async()
     if selected:
-        provider.config.model = selected
-        set_value("model", selected)
-        uncensored = is_uncensored_model(selected)
-        status_bar.update(model=selected, uncensored=uncensored)
-
-        # Rebuild system prompt if uncensored status changed
-        if uncensored or operator.bypass_rlhf:
-            from djcode.prompt import build_system_prompt
-            operator.messages[0].content = build_system_prompt(
-                bypass_rlhf=operator.bypass_rlhf, model=selected
-            )
-
-        console.print(f"[green]Model switched to:[/] {selected}")
-        if uncensored:
-            console.print(f"  [dim]\U0001f513 Uncensored mode active[/]")
+        _handle_model_switch(selected, operator, status_bar)
 
 
 def _handle_model_switch(arg: str, operator: Operator, status_bar: StatusBar) -> None:
@@ -294,6 +231,22 @@ async def handle_slash_command(
         orchestrator.auto_accept = operator.auto_accept
         orchestrator._shadow.auto_accept = operator.auto_accept
 
+    from djcode.session_commands import NAMES, handle
+    if command in NAMES:
+        console.print(await handle(operator, command, arg), markup=False)
+        return True
+    if command == "/connect":
+        from djcode.startup import setup
+        configured = await asyncio.to_thread(setup, load_config())
+        previous = operator.provider
+        operator.provider = Provider(ProviderConfig.from_config(configured["provider"], configured["model"]))
+        operator.provider._session_runtimes = [operator.capabilities]
+        previous._session_runtimes = []
+        operator.context_manager.provider = operator.provider
+        await previous.close()
+        status_bar.update(model=operator.provider.config.model, provider=operator.provider.config.name)
+        return True
+
     if command == "/help":
         console.print(Panel(HELP_TEXT, title=f"[bold {GOLD}]DJcode Help[/]", border_style=GOLD))
 
@@ -337,7 +290,7 @@ async def handle_slash_command(
                 console.print(str(error), markup=False)
 
     elif command == "/models":
-        _handle_models_list(operator.provider)
+        await asyncio.to_thread(_handle_models_list, operator.provider)
 
     elif command == "/model":
         if not arg:
@@ -345,10 +298,17 @@ async def handle_slash_command(
             await _handle_model_switch_interactive(operator, status_bar)
         else:
             _handle_model_switch(arg, operator, status_bar)
+        if getattr(operator.provider, "_new_provider", None) is not None:
+            await operator.provider._new_provider.close()
+            operator.provider._new_provider = None
+        if hasattr(operator, "context_manager"):
+            from djcode.context.manager import ContextWindowManager
+            operator.context_manager = ContextWindowManager(model=operator.provider.config.model, provider=operator.provider)
+            operator.context_manager.replace_messages(operator.messages)
 
     elif command == "/provider":
         if not arg:
-            _handle_provider_switch_interactive(operator, status_bar)
+            await asyncio.to_thread(_handle_provider_switch_interactive, operator, status_bar)
         else:
             # Direct provider switch by name
             if arg in PROVIDERS:
@@ -369,7 +329,7 @@ async def handle_slash_command(
                 console.print(f"[dim]Options: {names}[/]")
 
     elif command == "/auth":
-        interactive_auth()
+        await asyncio.to_thread(interactive_auth)
         # Reload provider after auth
         cfg = load_config()
         provider_id = cfg.get("provider", "ollama")
@@ -892,7 +852,7 @@ async def handle_slash_command(
                             role=role,
                             content=content,
                             tool_calls=tc or [],
-                            tool_call_id=m.get("tool_call_id"), name=m.get("name"),
+                            tool_call_id=m.get("tool_call_id"), name=m.get("name"), images=m.get("images", []),
                         ))
                         restored += 1
 
@@ -1001,8 +961,9 @@ async def run_repl(
     session_id = record_session_start(llm.config.model, llm.config.name)
     session_db = SessionDB()
     session_db.migrate_from_json()  # One-time migration, no-op if already done
-    sqlite_session_id = session_db.create_session(llm.config.model, llm.config.name)
-    operator.on_checkpoint = lambda messages: session_db.save_conversation(sqlite_session_id, messages)
+    operator.session_id = session_db.create_session(llm.config.model, llm.config.name)
+    operator.session_db = session_db
+    operator.on_checkpoint = lambda messages: session_db.save_conversation(operator.session_id, messages)
     files_touched: list[str] = []
 
     # Initialize extension manager
@@ -1036,7 +997,7 @@ async def run_repl(
                 if tui_mode.plan_mode:
                     _prompt_html = HTML("<style fg='#FF00FF'><b>\u23f8 </b></style>")
                 else:
-                    _prompt_html = HTML("<style fg='#FFD700'><b>\u276f </b></style>")
+                    _prompt_html = HTML("<style fg='#C79B7A'><b>\u276f </b></style>")
 
                 user_input = await session.prompt_async(_prompt_html)
             except KeyboardInterrupt:
@@ -1156,10 +1117,10 @@ async def run_repl(
                         token_est = len(full_response) // 4
                         record_session_update(session_id, tokens=token_est, messages=1)
                         session_db.update_session(
-                            sqlite_session_id, tokens_out=token_est, messages=1,
+                            operator.session_id, tokens_out=token_est, messages=1,
                         )
                         # Persist conversation for /resume
-                        session_db.save_conversation(sqlite_session_id, operator.messages)
+                        session_db.save_conversation(operator.session_id, operator.messages)
 
                         # Tool extraction router — for models without native tool calling
                         # Censorship detection — warn if aligned model refuses
@@ -1202,7 +1163,7 @@ async def run_repl(
             if await run_interruptible(respond()) is None:
                 sys.stdout.write("\r\033[K")
                 console.print("[yellow]Response cancelled. Ready for another prompt.[/]")
-            session_db.save_conversation(sqlite_session_id, operator.messages)
+            session_db.save_conversation(operator.session_id, operator.messages)
 
     finally:
         try:
@@ -1217,8 +1178,8 @@ async def run_repl(
             console.print(f"  [dim]Saved djcode.md[/]")
 
             record_session_end(session_id)
-            session_db.end_session(sqlite_session_id)
-            session_db.save_conversation(sqlite_session_id, operator.messages)
+            session_db.end_session(operator.session_id)
+            session_db.save_conversation(operator.session_id, operator.messages)
         finally:
             await ext_manager.shutdown()
             await llm.close()

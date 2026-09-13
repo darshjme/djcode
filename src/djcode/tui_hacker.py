@@ -355,7 +355,7 @@ class HackerHeader(Widget):
             parts.append(f"[{ctx_color}]Context {self.context_pct}%[/]")
         if width >= 110:
             parts.append(f"[{agent_color}]Agents {self.active_agents}/{self.total_agents}[/]")
-            parts.append(f"[{GOLD}]{self.session_cost}[/]")
+
         return "  ·  ".join(parts)
 
     def on_resize(self) -> None:

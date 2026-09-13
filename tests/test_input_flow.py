@@ -39,12 +39,14 @@ def test_busy_submit_preserves_draft_and_running_worker(monkeypatch, tmp_path):
             prompt.value = "keep this draft"
             await pilot.press("enter")
             await pilot.pause()
-            assert prompt.value == "keep this draft"
+            assert prompt.value == ""
+            assert app._followups == ["keep this draft"]
             assert cancelled == []
             await pilot.press("ctrl+k")
             await pilot.pause()
             assert cancelled == ["first task"]
-            assert prompt.value == "keep this draft"
+            assert prompt.value == ""
+            assert app._followups == ["keep this draft"]
 
     asyncio.run(run())
 
@@ -268,7 +270,7 @@ def test_tui_real_initialization_persists_conversation(monkeypatch, tmp_path):
     monkeypatch.setattr(Provider, "validate_model", lambda _: (True, ""))
 
     async def run():
-        app = DJcodeApp()
+        app = DJcodeApp(provider_name="openai")
         async with app.run_test(size=(80, 28)) as pilot:
             for _ in range(50):
                 if app._sqlite_session_id:

@@ -64,7 +64,7 @@ COMMAND_REGISTRY = [(command.name, command.description) for command in commands_
 # ── Help overlay screen ────────────────────────────────────────────────
 
 HELP_TEXT = """\
-[bold #FFD700]Keyboard Shortcuts[/]
+[bold #C79B7A]Keyboard Shortcuts[/]
 
   [cyan]j / k[/]      Scroll chat down / up
   [cyan]g[/]          Jump to top of chat
@@ -96,7 +96,7 @@ class ToolApprovalScreen(ModalScreen[bool]):
     BINDINGS = [Binding("escape", "deny", "Deny")]
     DEFAULT_CSS = """
     ToolApprovalScreen { align: center middle; background: rgba(0, 0, 0, 0.85); }
-    #approval-box { width: 76; height: auto; max-height: 85%; border: round #FFD700; background: #111111; padding: 1 2; }
+    #approval-box { width: 76; height: auto; max-height: 85%; border: round #C79B7A; background: #111111; padding: 1 2; }
     #approval-details { height: auto; max-height: 12; overflow-y: auto; }
     #approval-actions { height: 3; margin-top: 1; }
     #approval-actions Button { margin-right: 2; }
@@ -142,7 +142,7 @@ class HelpScreen(ModalScreen[None]):
         height: auto;
         max-height: 85%;
         background: #111111;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
         overflow-y: auto;
     }
@@ -156,7 +156,7 @@ class HelpScreen(ModalScreen[None]):
 # ── Agents overlay screen ──────────────────────────────────────────────
 
 AGENTS_TEXT = """\
-[bold #FFD700]DJcode Agent Roster[/]
+[bold #C79B7A]DJcode Agent Roster[/]
 
 [bold]Build Agents[/]
   [cyan]Operator[/]    Default — general coding
@@ -197,7 +197,7 @@ class AgentsScreen(ModalScreen[None]):
         height: auto;
         max-height: 80%;
         background: #111111;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
     }
     """
@@ -224,12 +224,12 @@ class ModelPicker(ModalScreen[str | None]):
         width: 76;
         height: 36;
         background: #141414;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
     }
     #model-title {
         height: 1;
-        color: #FFD700;
+        color: #C79B7A;
         text-style: bold;
         text-align: center;
         margin-bottom: 1;
@@ -237,12 +237,12 @@ class ModelPicker(ModalScreen[str | None]):
     #model-search {
         height: 3;
         background: #1a1a1a;
-        color: #FFD700;
+        color: #C79B7A;
         border: solid #2a2a2a;
         margin-bottom: 1;
     }
     #model-search:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     #model-info {
         height: 1;
@@ -254,11 +254,11 @@ class ModelPicker(ModalScreen[str | None]):
         height: 1fr;
         background: #101010;
         scrollbar-color: #2a2a2a;
-        scrollbar-color-hover: #FFD700;
+        scrollbar-color-hover: #C79B7A;
     }
     #model-list > .option-list--option-highlighted {
-        background: #FFD700 20%;
-        color: #FFD700;
+        background: #C79B7A 20%;
+        color: #C79B7A;
     }
     #model-list > .option-list--option {
         padding: 0 1;
@@ -298,51 +298,13 @@ class ModelPicker(ModalScreen[str | None]):
         cfg = load_config()
         self._recent = cfg.get("recent_models", [])
 
-        if self._provider_name == "ollama":
-            try:
-                from djcode.provider import fetch_ollama_models_sync
-                url = self._base_url or cfg.get("ollama_url", "http://localhost:11434")
-                models = fetch_ollama_models_sync(url)
-                self._models = models or []
-            except Exception:
-                self._models = []
-        else:
-            # For non-Ollama providers, show common models
-            provider_models = {
-                "openai": [
-                    "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4",
-                    "o1", "o1-mini", "o1-preview", "o3-mini",
-                ],
-                "anthropic": [
-                    "claude-sonnet-4-6", "claude-opus-4-6",
-                    "claude-haiku-4-5-20251001",
-                    "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022",
-                ],
-                "google": [
-                    "gemini-2.5-pro", "gemini-2.5-flash",
-                    "gemini-2.0-flash", "gemini-1.5-pro",
-                ],
-                "nvidia": [
-                    "deepseek-ai/deepseek-r1", "google/gemma-3-27b-it",
-                    "meta/llama-3.3-70b-instruct",
-                ],
-                "groq": [
-                    "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
-                    "mixtral-8x7b-32768", "gemma2-9b-it",
-                ],
-                "together": [
-                    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
-                    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-                    "mistralai/Mixtral-8x22B-Instruct-v0.1",
-                ],
-                "openrouter": [
-                    "anthropic/claude-sonnet-4-6",
-                    "openai/gpt-4o", "google/gemini-2.5-pro",
-                    "meta-llama/llama-3.3-70b-instruct",
-                ],
-            }
-            model_names = provider_models.get(self._provider_name, [])
-            self._models = [{"name": m} for m in model_names]
+        from djcode.startup import probe
+        if self._base_url:
+            cfg["base_url"] = self._base_url
+        found = await asyncio.to_thread(probe, cfg, self._provider_name)
+        self._models = [{"name": name} for name in found.get("models", [])]
+        if not self._models:
+            self.query_one("#model-info", Static).update(found["message"] + " Enter an exact model ID.")
 
         self._render_models("")
 
@@ -463,12 +425,12 @@ class ProviderPicker(ModalScreen[dict | None]):
         height: 30;
         max-height: 90%;
         background: #141414;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
     }
     #provider-title {
         height: 1;
-        color: #FFD700;
+        color: #C79B7A;
         text-style: bold;
         text-align: center;
         margin-bottom: 1;
@@ -476,22 +438,22 @@ class ProviderPicker(ModalScreen[dict | None]):
     #provider-search {
         height: 3;
         background: #1a1a1a;
-        color: #FFD700;
+        color: #C79B7A;
         border: solid #2a2a2a;
         margin-bottom: 1;
     }
     #provider-search:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     #provider-list {
         height: 1fr;
         background: #101010;
         scrollbar-color: #2a2a2a;
-        scrollbar-color-hover: #FFD700;
+        scrollbar-color-hover: #C79B7A;
     }
     #provider-list > .option-list--option-highlighted {
-        background: #FFD700 20%;
-        color: #FFD700;
+        background: #C79B7A 20%;
+        color: #C79B7A;
     }
     #provider-list > .option-list--option {
         padding: 0 1;
@@ -510,7 +472,7 @@ class ProviderPicker(ModalScreen[dict | None]):
         border: solid #2a2a2a;
     }
     #provider-url-input:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     #provider-key-input {
         height: 3;
@@ -520,7 +482,7 @@ class ProviderPicker(ModalScreen[dict | None]):
         margin-top: 1;
     }
     #provider-key-input:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     """
 
@@ -624,7 +586,7 @@ class ProviderPicker(ModalScreen[dict | None]):
             url_section = self.query_one("#provider-url-section")
             url_section.styles.display = "block"
             self.query_one("#provider-config-label", Static).update(
-                f"[bold #FFD700]Configure Custom Endpoint[/]"
+                f"[bold #C79B7A]Configure Custom Endpoint[/]"
             )
             self.query_one("#provider-url-input", Input).focus()
             return
@@ -773,12 +735,12 @@ class CommandPalette(ModalScreen[str | None]):
         width: 72;
         height: 32;
         background: #111111;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
     }
     #palette-title {
         height: 1;
-        color: #FFD700;
+        color: #C79B7A;
         text-style: bold;
         text-align: center;
         margin-bottom: 1;
@@ -786,22 +748,22 @@ class CommandPalette(ModalScreen[str | None]):
     #palette-input {
         height: 3;
         background: #1a1a1a;
-        color: #FFD700;
+        color: #C79B7A;
         border: solid #333333;
         margin-bottom: 1;
     }
     #palette-input:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     #palette-list {
         height: 1fr;
         background: #0a0a0a;
         scrollbar-color: #333333;
-        scrollbar-color-hover: #FFD700;
+        scrollbar-color-hover: #C79B7A;
     }
     #palette-list > .option-list--option-highlighted {
-        background: #FFD700 20%;
-        color: #FFD700;
+        background: #C79B7A 20%;
+        color: #C79B7A;
     }
     #palette-list > .option-list--option {
         padding: 0 1;
@@ -886,13 +848,13 @@ class SearchBar(ModalScreen[str | None]):
         width: 60;
         margin-top: 2;
         background: #111111;
-        border: solid #FFD700;
+        border: solid #C79B7A;
         padding: 0 1;
         height: 3;
     }
     #search-input {
         background: #111111;
-        color: #FFD700;
+        color: #C79B7A;
         height: 3;
     }
     """
@@ -979,6 +941,7 @@ class DJcodeApp(App):
         self._prompt_history: list[str] = []
         self._history_index = 0
         self._draft = ""
+        self._followups = []
         self._provider: Any = None
         self._operator: Any = None
         self._memory: Any = None
@@ -1001,10 +964,11 @@ class DJcodeApp(App):
                     auto_scroll=True,
                 )
                 yield OptionList(id="cmd-suggest")
+                yield Static("DAF + DDAL · default engine", id="workflow-state", markup=False)
                 yield AgentStatusBar(id="agent-status-bar")
                 yield Input(
                     id="prompt-input",
-                    placeholder="Message or /command · Tab completes · ↑ history",
+                    placeholder="❯ Ask anything, or / for commands",
                 )
             yield SidePanel(project_path=Path.cwd(), id="side-panel")
         yield Static(self._build_status_text(), id="status-bar", markup=False)
@@ -1016,7 +980,7 @@ class DJcodeApp(App):
     def _update_layout(self) -> None:
         if not self.is_mounted:
             return
-        visible = self._sidebar_override if self._sidebar_override is not None else self.size.width >= 110
+        visible = self._sidebar_override if self._sidebar_override is not None else False
         self.query_one("#side-panel").display = visible
         self.query_one("#chat-panel").styles.width = "65%" if visible else "100%"
         self._refresh_status_bar()
@@ -1096,11 +1060,22 @@ class DJcodeApp(App):
 
         try:
             from djcode.provider import Provider, ProviderConfig
+            from djcode.config import CONFIG_FILE
+            if not CONFIG_FILE.exists() and not self._provider_name:
+                self._show_provider_picker()
+                return
 
             config = ProviderConfig.from_config(
                 provider_override=self._provider_name,
                 model_override=self._model_name,
             )
+            from djcode.auth import PROVIDERS
+            from djcode.account_auth import has_account
+            if PROVIDERS.get(config.name, {}).get("needs_key") and not (
+                has_account(config.name) if config.auth_method == "account" else config.api_key
+            ):
+                self._show_provider_picker()
+                return
             self._provider = Provider(config)
 
             # Validate model
@@ -1109,6 +1084,7 @@ class DJcodeApp(App):
                 side.agent_panel.add_tool_call("validate_model", "warning")
             if not ok:
                 chat.write(f"[{ERROR}]Model error: {msg}[/]")
+                self._show_provider_picker()
                 return
 
             # Create operator
@@ -1124,6 +1100,7 @@ class DJcodeApp(App):
                 approval_callback=self._approve_tool,
             )
             self._operator.auto_accept = self._auto_accept
+            self._operator.workflow.event_callback = self._workflow_event
 
             # Initialize memory manager
             try:
@@ -1381,8 +1358,15 @@ class DJcodeApp(App):
             self._select_suggestion()
             return
 
+        if self._is_generating and not text.startswith("/"):
+            self._followups.append(text)
+            inp.value = ""
+            self._remember_prompt(text)
+            self.notify(f"Queued follow-up {len(self._followups)} · /queue to inspect")
+            return
+
         if self._is_generating and text.split()[0].lower() not in {
-            "/cancel", "/help", "/shortcuts", "/exit", "/quit", "/q",
+            "/cancel", "/help", "/shortcuts", "/exit", "/quit", "/q", "/queue", "/jobs",
         }:
             self.notify("Response running. Draft kept; Ctrl+K cancels.", severity="warning")
             return
@@ -1443,6 +1427,30 @@ class DJcodeApp(App):
         from djcode.commands import plan_blocks_command
         if self._plan_mode and plan_blocks_command(cmd, arg):
             chat.write("[yellow]Plan mode: switch to Act with /plan before running this command.[/]")
+            return
+
+        from djcode.session_commands import NAMES, handle
+        if cmd in NAMES:
+            from rich.text import Text
+            if self._operator:
+                self._operator.session_db = self._session_db
+                self._operator.session_id = self._sqlite_session_id
+            chat.write(Text(await handle(self._operator, cmd, arg)))
+            if cmd == "/workflow" and self._operator:
+                self.query_one("#workflow-state", Static).update(
+                    "DAF + DDAL · default engine" if self._operator.workflow.mode == "daf" else "Native engine · explicitly selected"
+                )
+            if self._operator:
+                self._sqlite_session_id = self._operator.session_id
+            return
+        if cmd == "/queue":
+            from rich.text import Text
+            if arg == "clear":
+                self._followups.clear()
+            chat.write(Text("\n".join(f"{i+1}. {text}" for i, text in enumerate(self._followups)) or "No queued follow-ups"))
+            return
+        if cmd == "/connect":
+            self._show_provider_picker()
             return
 
         if cmd == "/help":
@@ -1949,25 +1957,40 @@ class DJcodeApp(App):
             self.notify("Cancel the response before switching providers.", severity="warning")
             return
 
-        def on_provider_selected(result: dict | None) -> None:
-            if not result:
-                return
-            provider_id = result.get("provider", "")
-            base_url = result.get("base_url", "")
-            api_key = result.get("api_key", "")
+        from djcode.connect import ConnectScreen
+        def connected(result):
+            if result:
+                self.run_worker(self._apply_connection(result), group="connection")
+        self.push_screen(ConnectScreen(), callback=connected)
 
-            # If custom URL provided, set env and switch
-            if base_url:
-                import os
-                os.environ["DJCODE_CUSTOM_URL"] = base_url
-                if api_key:
-                    os.environ["DJCODE_API_KEY"] = api_key
-
-            self.run_worker(
-                self._handle_provider_switch(provider_id), exclusive=True,
-            )
-
-        self.push_screen(ProviderPicker(), callback=on_provider_selected)
+    async def _apply_connection(self, config):
+        from djcode.provider import Provider, ProviderConfig
+        self._provider_name = config["provider"]
+        self._model_name = config["model"]
+        previous = self._provider
+        if not self._operator:
+            if previous:
+                await previous.close()
+            self._provider = None
+            await self._initialize()
+            return
+        self._provider = Provider(ProviderConfig.from_config(self._provider_name, self._model_name))
+        if self._operator:
+            self._operator.provider = self._provider
+            self._operator.context_manager.provider = self._provider
+            # Keep the conversation and its session-owned tools when switching models.
+            self._provider._session_runtimes = [self._operator.capabilities]
+            if previous:
+                previous._session_runtimes = []
+            if self._orchestrator:
+                self._orchestrator.provider = self._provider
+                self._orchestrator._shadow.provider = self._provider
+        else:
+            await self._initialize()
+        if previous:
+            await previous.close()
+        self._refresh_status_bar()
+        self.notify(f"Connected to {self._provider_name} / {self._model_name}")
 
     # ── Model / Provider switching ───────────────────────────────────────
 
@@ -1991,18 +2014,13 @@ class DJcodeApp(App):
                 f"v{__version__} | {new_model} | {self._provider.config.name}"
             )
 
-            from djcode.agents.operator import Operator
-
-            self._operator = Operator(
-                self._provider,
-                bypass_rlhf=self._bypass_rlhf,
-                raw=True,
-                model=new_model,
-                auto_accept=self._auto_accept,
-                show_thinking=False,
-                approval_callback=self._approve_tool,
-            )
-            self._operator.auto_accept = self._auto_accept
+            if self._provider._new_provider is not None:
+                await self._provider._new_provider.close()
+                self._provider._new_provider = None
+            from djcode.context.manager import ContextWindowManager
+            self._operator.context_manager = ContextWindowManager(model=new_model, provider=self._provider)
+            self._operator.context_manager.replace_messages(self._operator.messages)
+            self._context_mgr = self._operator.context_manager
             side.stats_panel.update_stats(model=new_model)
             side.agent_panel.add_tool_call("model_switch", "ok")
         else:
@@ -2515,7 +2533,7 @@ class DJcodeApp(App):
                 content = m.get("content", "")
                 tc = m.get("tool_calls")
                 self._operator.messages.append(
-                    _Msg(role=role, content=content, tool_calls=tc or [], tool_call_id=m.get("tool_call_id"), name=m.get("name"))
+                    _Msg(role=role, content=content, tool_calls=tc or [], tool_call_id=m.get("tool_call_id"), name=m.get("name"), images=m.get("images", []))
                 )
                 restored += 1
 
@@ -2544,6 +2562,20 @@ class DJcodeApp(App):
         finally:
             if self.screen is screen:
                 self.pop_screen()
+
+    def _workflow_event(self, event):
+        from rich.text import Text
+        kind = event.get("event")
+        if kind == "preparing":
+            label = "DAF + DDAL · preparing engine"
+        elif kind == "tool":
+            label = f"DAF + DDAL · {event['name']}"
+            self.query_one("#chat-log", RichLog).write(Text(f"  ● {event['name']}", style=GOLD))
+        elif kind == "complete":
+            label = "DAF + DDAL · completed" if event.get("ok") else "DAF + DDAL · failed"
+        else:
+            return
+        self.query_one("#workflow-state", Static).update(label)
 
     async def _send_message(self, text: str) -> None:
         """Send a message to the operator and stream the response."""
@@ -2639,7 +2671,7 @@ class DJcodeApp(App):
                     parts = line_buf.split("\n")
                     for part in parts[:-1]:
                         if part:
-                            chat.write(part, shrink=True, scroll_end=True)
+                            chat.write(Text(part), shrink=True, scroll_end=True)
                         else:
                             chat.write("", shrink=True, scroll_end=True)
                     line_buf = parts[-1]
@@ -2654,7 +2686,7 @@ class DJcodeApp(App):
 
             # Flush remaining buffer
             if line_buf:
-                chat.write(line_buf, shrink=True, scroll_end=True)
+                chat.write(Text(line_buf), shrink=True, scroll_end=True)
 
             elapsed = time.time() - start
             self._response_times.append(elapsed)
@@ -2748,6 +2780,9 @@ class DJcodeApp(App):
         finally:
             self._is_generating = False
             self._generation_task = None
+            if self._followups and not self._cancel_requested:
+                next_input = self._followups.pop(0)
+                self.call_later(lambda: self.run_worker(self._send_message(next_input), group="conversation"))
 
     # ── Key bindings / actions ───────────────────────────────────────────
 

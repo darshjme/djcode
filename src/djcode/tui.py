@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from djcode.agents.operator import Operator
     from djcode.status import StatusBar
 
-GOLD = "#FFD700"
+GOLD = "#C79B7A"
 
 console = Console()
 
@@ -175,10 +175,10 @@ def register_keybindings(
 COMMAND_GROUPS = command_groups("repl")
 
 Q_STYLE = questionary.Style([
-    ("selected", "fg:#FFD700 bold"),
-    ("pointer", "fg:#FFD700 bold"),
-    ("highlighted", "fg:#FFD700"),
-    ("question", "fg:#FFD700 bold"),
+    ("selected", "fg:#C79B7A bold"),
+    ("pointer", "fg:#C79B7A bold"),
+    ("highlighted", "fg:#C79B7A"),
+    ("question", "fg:#C79B7A bold"),
     ("answer", "fg:#FFFFFF bold"),
     ("separator", "fg:#666666"),
 ])

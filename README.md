@@ -695,3 +695,7 @@ project by Darshan Kumar Joshi
 ## Optional low-memory inference
 
 DJcode can connect to an existing Colibri server and plan its RAM/VRAM/context budget with `djcode-colibri`. Supported MoE experts can stream from disk through Colibri; this trades memory for storage capacity and latency. Setup is opt-in and downloads no model weights. See the [Colibri integration guide](docs/LOW-MEMORY-COLIBRI.md) for preflight checks and limitations.
+
+## Agent workspace
+
+The development branch adds default DAF/DDAL tool execution, provider → sign-in → model onboarding, browser and desktop tools, skills/MCP, background jobs and durable schedules. See [setup, controls and capability boundaries](docs/AGENT-WORKSPACE.md).

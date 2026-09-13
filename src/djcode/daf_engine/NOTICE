@@ -1,0 +1,3 @@
+DAF core, graph and DDAL source: Darshankumar Joshi, Apache-2.0.
+Vendored from daf-codex-v2 revision 874b654 (repaired DAF libraries).
+DJcode adapter implements a local tool dispatch bridge, not the stock distributed runtime.
