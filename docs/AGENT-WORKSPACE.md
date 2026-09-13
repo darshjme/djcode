@@ -74,3 +74,7 @@ cargo test --locked --workspace --manifest-path src/djcode/daf_engine/Cargo.toml
 ```
 
 Design references: [Pi's coding-agent workflow](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/README.md), [OpenCode provider setup](https://opencode.ai/docs/providers), [OpenClaw tools](https://docs.openclaw.ai/tools), [OpenRouter PKCE](https://openrouter.ai/docs/guides/overview/auth/oauth), [Playwright](https://playwright.dev/python/docs/api/class-page), and [PyAutoGUI](https://pyautogui.readthedocs.io/en/latest/quickstart.html). The terminal implementation and styling are DJcode's own.
+
+## Verification and publishing
+
+GitHub Actions is disabled for this repository. Run the checks above locally before pushing. The former Actions-based rolling-update publisher is disabled; pushing source does not publish a new installer manifest or package release.
