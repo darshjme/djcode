@@ -4,11 +4,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = '''#!/usr/bin/env bash
-# DJcode installer: verified canonical CI wheel by default. No model/Python downloads.
+# DJcode installer: verified canonical wheel by default. No model/Python downloads.
 set -euo pipefail
 if [[ "${1:-}" == "--help" ]]; then
   printf '%s\\n' \\
-    'Install: bash install.sh' 'Requires existing Python 3.12+ or an existing uv-managed Python.' 'Default: verified canonical main CI release; automatic updates use managed release pointers.' 'Overrides: DJCODE_INSTALL_DIR, DJCODE_BIN_DIR, DJCODE_PYTHON.' 'Explicit DJCODE_REPO_URL or DJCODE_REF selects manual/unmanaged source installation.' 'No models are downloaded; existing config and earlier releases are preserved.'
+    'Install: bash install.sh' 'Requires existing Python 3.12+ or an existing uv-managed Python.' 'Default: verified canonical main release; automatic updates use managed release pointers.' 'Overrides: DJCODE_INSTALL_DIR, DJCODE_BIN_DIR, DJCODE_PYTHON.' 'Explicit DJCODE_REPO_URL or DJCODE_REF selects manual/unmanaged source installation.' 'No models are downloaded; existing config and earlier releases are preserved.'
   exit 0
 fi
 if [[ -n "${1:-}" ]]; then printf 'Unknown option: %s\\n' "$1" >&2; exit 2; fi

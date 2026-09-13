@@ -82,7 +82,7 @@ class FilesystemTests(unittest.TestCase):
         return ""
 
     def install(self, **kwargs):
-        with patch.object(installer, "metadata", side_effect=[MANIFEST, RUN]), \
+        with patch.object(installer, "metadata", side_effect=[MANIFEST, {"object": {"type": "commit", "sha": COMMIT}}]), \
                 patch.object(installer, "download", return_value=WHEEL), \
                 patch.object(installer, "run", side_effect=self.fake_run), \
                 patch.object(installer.shutil, "which", return_value=None):
@@ -112,7 +112,7 @@ class FilesystemTests(unittest.TestCase):
         self.assertNotIn("run_id", receipt)
 
     def test_hash_failure_preserves_old(self):
-        with patch.object(installer, "metadata", side_effect=[MANIFEST, RUN]), \
+        with patch.object(installer, "metadata", side_effect=[MANIFEST, {"object": {"type": "commit", "sha": COMMIT}}]), \
                 patch.object(installer, "download", return_value=b"tampered"):
             with self.assertRaises(ValueError):
                 installer.install(self.prefix, self.bin_dir)

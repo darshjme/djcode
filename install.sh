@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# DJcode installer: verified canonical CI wheel by default. No model/Python downloads.
+# DJcode installer: verified canonical wheel by default. No model/Python downloads.
 set -euo pipefail
 if [[ "${1:-}" == "--help" ]]; then
   printf '%s\n' \
-    'Install: bash install.sh' 'Requires existing Python 3.12+ or an existing uv-managed Python.' 'Default: verified canonical main CI release; automatic updates use managed release pointers.' 'Overrides: DJCODE_INSTALL_DIR, DJCODE_BIN_DIR, DJCODE_PYTHON.' 'Explicit DJCODE_REPO_URL or DJCODE_REF selects manual/unmanaged source installation.' 'No models are downloaded; existing config and earlier releases are preserved.'
+    'Install: bash install.sh' 'Requires existing Python 3.12+ or an existing uv-managed Python.' 'Default: verified canonical main release; automatic updates use managed release pointers.' 'Overrides: DJCODE_INSTALL_DIR, DJCODE_BIN_DIR, DJCODE_PYTHON.' 'Explicit DJCODE_REPO_URL or DJCODE_REF selects manual/unmanaged source installation.' 'No models are downloaded; existing config and earlier releases are preserved.'
   exit 0
 fi
 if [[ -n "${1:-}" ]]; then printf 'Unknown option: %s\n' "$1" >&2; exit 2; fi
@@ -58,7 +58,7 @@ def metadata(url):
 def validate_manifest(data):
     if not isinstance(data, dict):
         raise ValueError("Invalid release manifest")
-    if (type(data.get("schema")) is not int or data["schema"] != 1
+    if (type(data.get("schema")) is not int or data["schema"] not in (1, 2)
             or data.get("repository") != REPOSITORY
             or data.get("branch") != "main"):
         raise ValueError("Unexpected release repository/schema/branch")
@@ -69,9 +69,9 @@ def validate_manifest(data):
             raise ValueError("Invalid release commit/version/checksum")
     expected = (f"https://github.com/{REPOSITORY}/releases/download/"
                 f"build-{commit[:12]}/djcode-{version}-py3-none-any.whl")
-    if data.get("wheel_url") != expected or type(data.get("run_id")) is not int:
+    if data.get("wheel_url") != expected:
         raise ValueError("Invalid immutable wheel or CI run identity")
-    if data["run_id"] <= 0:
+    if data["schema"] == 1 and (type(data.get("run_id")) is not int or data["run_id"] <= 0):
         raise ValueError("Invalid CI run identity")
     return data
 
@@ -146,8 +146,9 @@ def install(prefix, bin_dir, *, source=None, ref="main"):
         manifest = None
         if source is None:
             manifest = validate_manifest(metadata(MANIFEST_URL))
-            verify_run(manifest, metadata(
-                f"https://api.github.com/repos/{REPOSITORY}/actions/runs/{manifest['run_id']}"))
+            ref = metadata(f"https://api.github.com/repos/{REPOSITORY}/git/ref/tags/build-{manifest['commit'][:12]}")
+            if ref.get("object", {}).get("type") != "commit" or ref["object"]["sha"] != manifest["commit"]:
+                raise ValueError("Release tag does not match its source revision")
         release = Path(tempfile.mkdtemp(prefix="release.", dir=prefix))
         activated = False
         original_links = {link: os.readlink(link) if link.is_symlink() else None
@@ -184,7 +185,8 @@ def install(prefix, bin_dir, *, source=None, ref="main"):
                        "repository": REPOSITORY if manifest else "unmanaged",
                        "managed": manifest is not None}
             if manifest:
-                receipt.update({key: manifest[key] for key in ("commit", "version", "run_id")})
+                receipt.update({key: manifest[key] for key in ("commit", "version")})
+                receipt["run_id"] = manifest.get("run_id", 0)
             (release / ".djcode-install.json").write_text(json.dumps(receipt, indent=2))
             if old:
                 atomic_link(old, prefix / "previous")

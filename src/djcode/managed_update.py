@@ -46,7 +46,7 @@ def installation() -> tuple[Path, dict] | None:
 
 
 def validate_manifest(data: dict) -> dict:
-    if not isinstance(data, dict) or type(data.get("schema")) is not int or data.get("schema") != 1 or data.get("repository") != REPOSITORY or data.get("branch") != "main":
+    if not isinstance(data, dict) or type(data.get("schema")) is not int or data.get("schema") not in (1, 2) or data.get("repository") != REPOSITORY or data.get("branch") != "main":
         raise ValueError("Unexpected update manifest repository/schema/branch")
     commit, version = data.get("commit", ""), data.get("version", "")
     if (not isinstance(commit, str) or not isinstance(version, str)
@@ -56,7 +56,7 @@ def validate_manifest(data: dict) -> dict:
     if (data.get("wheel_url") != expected or not isinstance(data.get("sha256"), str)
             or not re.fullmatch(r"[0-9a-f]{64}", data["sha256"])):
         raise ValueError("Update artifact is not an immutable canonical wheel")
-    if type(data.get("run_id")) is not int or data["run_id"] <= 0:
+    if data["schema"] == 1 and (type(data.get("run_id")) is not int or data["run_id"] <= 0):
         raise ValueError("Missing CI run identity")
     return data
 
@@ -78,14 +78,9 @@ def fetch_json(client: httpx.Client, url: str) -> dict:
 
 def verified_manifest(client: httpx.Client) -> dict:
     data = validate_manifest(fetch_json(client, MANIFEST_URL))
-    run = fetch_json(client, f"https://api.github.com/repos/{REPOSITORY}/actions/runs/{data['run_id']}")
-    if (not isinstance(run.get("path"), str) or not isinstance(run.get("head_repository"), dict)
-            or run.get("head_sha") != data["commit"] or run.get("head_branch") != "main"
-            or run.get("event") != "push" or run.get("conclusion") != "success"
-            or run.get("status") != "completed"
-            or run.get("path", "").split("@")[0] != ".github/workflows/ci.yml"
-            or run.get("head_repository", {}).get("full_name") != REPOSITORY):
-        raise ValueError("Canonical main CI has not completed successfully for this artifact")
+    ref = fetch_json(client, f"https://api.github.com/repos/{REPOSITORY}/git/ref/tags/build-{data['commit'][:12]}")
+    if ref.get("object", {}).get("type") != "commit" or ref["object"]["sha"] != data["commit"]:
+        raise ValueError("Release tag does not match its immutable source revision")
     return data
 
 
@@ -144,7 +139,7 @@ def stage_build(prefix: Path, info: dict, manifest: dict, client: httpx.Client) 
         if version != f"djcode, version {manifest['version']}":
             raise ValueError("Staged package version differs from its manifest")
         bounded_run([str(venv / "bin/djcode"), "--check"], limit=60, env=env)
-        receipt = {**info, "commit": manifest["commit"], "version": manifest["version"], "run_id": manifest["run_id"]}
+        receipt = {**info, "commit": manifest["commit"], "version": manifest["version"], "run_id": manifest.get("run_id", 0)}
         (release / ".djcode-install.json").write_text(json.dumps(receipt, indent=2))
         return release
     except BaseException:

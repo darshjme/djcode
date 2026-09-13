@@ -101,13 +101,19 @@ def redact_config(value, name=""):
 @click.option("--setup", is_flag=True, help="Choose provider, supported authentication method and model.")
 @click.option("--check", "check_install", is_flag=True, help="Check installation syntax, registries and fatal lint.")
 @click.option("--lint", is_flag=True, help="Run the installation quality checks (alias for --check).")
-@click.option("--update", is_flag=True, help="Install the latest CI-validated canonical build into a managed install.")
+@click.option("--update", is_flag=True, help="Install the latest verified canonical build into a managed install.")
 @click.option("--rollback", is_flag=True, help="Restore the previous managed build and switch updates to manual.")
 @click.option("--update-mode", type=click.Choice(["auto", "manual", "disabled"]), help="Set automatic, manual or disabled updates.")
 @click.option("--no-update", is_flag=True, help="Skip update checks for this invocation.")
+@click.option("--vyasa", is_flag=True, help="Send the prompt to your Vyasa fleet; list employees when no prompt is given.")
+@click.option("--vyasa-employee", help="Vyasa employee ID or alias (requires --vyasa).")
+@click.option("--vyasa-session", default="default", help="Persistent Vyasa conversation name.")
 @click.version_option(version=__version__, prog_name="djcode")
 def main(
     prompt: str | None,
+    vyasa: bool,
+    vyasa_employee: str | None,
+    vyasa_session: str,
     provider: str | None,
     url: str | None,
     model: str | None,
@@ -135,6 +141,22 @@ def main(
 
     Run without arguments for the interactive TUI, or pass a prompt for one-shot mode.
     """
+    if vyasa_employee and not vyasa:
+        raise click.UsageError("--vyasa-employee requires --vyasa")
+    if vyasa:
+        from djcode.vyasa import request_fleet
+        import httpx
+        try:
+            result = request_fleet(prompt, employee=vyasa_employee, session=vyasa_session)
+        except (ValueError, httpx.HTTPError) as exc:
+            raise click.ClickException(str(exc)) from exc
+        if prompt is None:
+            for employee in result["employees"]:
+                state = "ready" if employee["enabled"] else "disabled"
+                console.print(f"{employee['id']}: {employee['name']} ({state})", markup=False)
+        else:
+            console.print(result["text"], markup=False, highlight=False)
+        return
     if scheduler:
         from djcode.scheduler import Scheduler
         try:

@@ -1,3 +1,9 @@
+# 4.3.0 — 2026-09-14
+
+- Add authenticated Vyasa fleet listing, specialist selection and persistent sessions.
+- Require HTTPS for remote fleet calls and refuse redirects with credentials.
+- Support locally verified release manifests without GitHub Actions.
+
 # Changelog
 
 ## Unreleased — terminal command flow and session recovery

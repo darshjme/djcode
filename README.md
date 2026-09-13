@@ -699,3 +699,22 @@ DJcode can connect to an existing Colibri server and plan its RAM/VRAM/context b
 ## Agent workspace
 
 The development branch adds default DAF/DDAL tool execution, provider → sign-in → model onboarding, browser and desktop tools, skills/MCP, background jobs and durable schedules. See [setup, controls and capability boundaries](docs/AGENT-WORKSPACE.md).
+
+## Vyasa fleet
+
+DJCode 4.3 connects to a self-hosted [Vyasa fleet](https://cli.darshj.ai/vyasa):
+
+```sh
+export VYASA_URL=http://127.0.0.1:19000
+# Set VYASA_TOKEN to a token created with `vyasa token` on the fleet host.
+djcode --vyasa
+djcode --vyasa --vyasa-employee prometheus --vyasa-session release 'Review this release plan'
+```
+
+Remote endpoints require HTTPS. Named conversations persist on the fleet host;
+model credentials stay there. This mode requests specialist responses and scoped
+memory operations. Use DJCode's normal local workflow for repository tool execution.
+
+Updates use verified repository release tags and wheel checksums. GitHub Actions
+is disabled. For installations older than4.3, re-run the installer once to migrate
+from the former workflow-based update protocol. Your configuration is retained.
