@@ -199,7 +199,7 @@ class SessionDB:
 
             # Add protocol fields to databases created by earlier releases.
             columns = {row[1] for row in conn.execute("PRAGMA table_info(conversations)")}
-            for column in ("tool_call_id", "name"):
+            for column in ("tool_call_id", "name", "images_json"):
                 if column not in columns:
                     conn.execute(f"ALTER TABLE conversations ADD COLUMN {column} TEXT")
 
@@ -220,7 +220,8 @@ class SessionDB:
         """Create a new session. Returns session_id."""
         import os
 
-        session_id = f"s_{int(time.time())}_{id(self) % 10000}"
+        import uuid
+        session_id = f"s_{uuid.uuid4().hex}"
         now = datetime.now().isoformat()
         cwd = cwd or os.getcwd()
 
@@ -439,11 +440,12 @@ class SessionDB:
                 else:
                     continue
 
+                images = getattr(msg, "images", []) if hasattr(msg, "role") else msg.get("images", [])
                 tc_json = json.dumps(tc) if tc else ""
                 conn.execute(
-                    """INSERT INTO conversations (session_id, role, content, timestamp, tool_calls_json, tool_call_id, name)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (session_id, role, content, now, tc_json, tool_call_id, name),
+                    """INSERT INTO conversations (session_id, role, content, timestamp, tool_calls_json, tool_call_id, name, images_json)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (session_id, role, content, now, tc_json, tool_call_id, name, json.dumps(images)),
                 )
 
             conn.commit()
@@ -460,7 +462,7 @@ class SessionDB:
         conn = self._connect()
         try:
             rows = conn.execute(
-                """SELECT role, content, tool_calls_json, timestamp, tool_call_id, name
+                """SELECT role, content, tool_calls_json, timestamp, tool_call_id, name, images_json
                    FROM conversations
                    WHERE session_id = ?
                    ORDER BY id ASC""",
@@ -475,6 +477,7 @@ class SessionDB:
                     "timestamp": r["timestamp"],
                     "tool_call_id": r["tool_call_id"],
                     "name": r["name"],
+                    "images": json.loads(r["images_json"] or "[]"),
                 }
                 if r["tool_calls_json"]:
                     try:

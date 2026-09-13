@@ -13,6 +13,7 @@ import os
 import sys
 import uuid
 from typing import Any
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ from rich.table import Table
 from rich.text import Text
 
 from djcode import __version__
+from djcode.commands import SlashCompleter, command_help
+from djcode.repl_runtime import run_interruptible
 from djcode.agents.operator import Operator
 from djcode.auth import (
     PROVIDERS,
@@ -42,7 +45,6 @@ from djcode.orchestrator import Orchestrator
 from djcode.agents.registry import AgentRole
 from djcode.agents.content_registry import ContentRole, list_content_agents, get_content_spec
 from djcode.context_file import save_context, inject_context_into_prompt
-from djcode.permissions import PermissionManager
 from djcode.prompt_enhancer import enhance_prompt, describe_enhancement
 from djcode.stats import record_session_start, record_session_update, record_session_end, render_stats
 from djcode.extensions import ExtensionManager
@@ -76,242 +78,66 @@ from djcode.tui import (
 
 console = Console()
 
-GOLD = "#FFD700"
-
-ASCII_BANNER = r"""
-  ██████╗      ██╗ ██████╗ ██████╗ ██████╗ ███████╗
-  ██╔══██╗     ██║██╔════╝██╔═══██╗██╔══██╗██╔════╝
-  ██║  ██║     ██║██║     ██║   ██║██║  ██║█████╗
-  ██║  ██║██   ██║██║     ██║   ██║██║  ██║██╔══╝
-  ██████╔╝╚█████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
-  ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
-"""
+GOLD = "#C79B7A"
 
 Q_STYLE = questionary.Style([
-    ("selected", "fg:#FFD700 bold"),
-    ("pointer", "fg:#FFD700 bold"),
-    ("highlighted", "fg:#FFD700"),
-    ("question", "fg:#FFD700 bold"),
+    ("selected", "fg:#C79B7A bold"),
+    ("pointer", "fg:#C79B7A bold"),
+    ("highlighted", "fg:#C79B7A"),
+    ("question", "fg:#C79B7A bold"),
     ("answer", "fg:#FFFFFF bold"),
 ])
 
 
-def print_banner(provider: Provider) -> None:
-    """Print the big DJcode ASCII splash screen."""
-    cfg = load_config()
-    cwd = os.getcwd()
-    home = os.path.expanduser("~")
-    if cwd.startswith(home):
-        cwd_display = "~" + cwd[len(home):]
-    else:
-        cwd_display = cwd
-
-    provider_label = provider.config.name.capitalize()
-    if provider.config.name == "ollama":
-        provider_detail = f"Local ({provider.config.base_url})"
-    elif provider.config.name == "mlx":
-        provider_detail = f"MLX ({provider.config.base_url})"
-    else:
-        prov_info = PROVIDERS.get(provider.config.name, {})
-        provider_detail = prov_info.get("name", provider.config.base_url or "Remote API")
-
-    auto_accept = cfg.get("auto_accept", False)
-    mode = "Interactive"
-    if auto_accept:
-        mode += " [auto-accept]"
-
-    max_tokens = cfg.get("max_tokens", 8192)
-    if max_tokens >= 1000:
-        ctx_str = f"{max_tokens // 1000}K tokens"
-    else:
-        ctx_str = f"{max_tokens} tokens"
-
-    model_display = provider.config.model
-    if is_uncensored_model(model_display):
-        model_display += " \U0001f513"
+def print_banner(provider: Provider, *, auto_accept: bool = False) -> None:
+    """Keep the model, workspace and approval mode visible without a splash screen."""
+    cwd = str(Path.cwd())
+    try:
+        cwd = "~/" + str(Path.cwd().relative_to(Path.home()))
+    except ValueError:
+        pass
+    body = Text()
+    body.append(f"DJcode {__version__}", style=f"bold {GOLD}")
+    body.append(f"  {provider.config.name} · {provider.config.model}\n")
+    body.append(cwd + "\n", style="dim")
+    body.append(f"Approvals: {'auto' if auto_accept else 'ask'}", style="yellow")
+    body.append(" · /help commands · Tab complete · Ctrl+P plan", style="dim")
+    console.print(Panel(body, border_style=GOLD, padding=(0, 1)))
 
 
-    inner = (
-        f"[bold {GOLD}]{ASCII_BANNER}[/]\n"
-        f"  [bold white]DarshJ.AI Code[/] [dim]v{__version__}[/]\n"
-        f"  [dim]The last coding CLI you'll ever need.[/]\n"
-    )
-
-    info_lines = (
-        f"\n  [bold {GOLD}]Model:[/]     [white]{model_display}[/] [dim]({provider_label})[/]\n"
-        f"  [bold {GOLD}]Provider:[/]  [white]{provider_detail}[/]\n"
-        f"  [bold {GOLD}]Folder:[/]    [white]{cwd_display}[/]\n"
-        f"  [bold {GOLD}]Context:[/]   [white]{ctx_str}[/]\n"
-        f"  [bold {GOLD}]Mode:[/]      [white]{mode}[/]\n"
-    )
-
-    console.print()
-    console.print(
-        Panel(
-            inner + info_lines,
-            border_style=GOLD,
-            padding=(1, 2),
-        )
-    )
-    console.print()
+HELP_TEXT = command_help("repl") + "\n\n[dim]Tab completes commands · Up/Down history · /shortcuts for keys[/]"
 
 
-HELP_TEXT = f"""\
-[bold {GOLD}]Slash Commands[/]
-
-  [cyan]/help[/]              Show this help
-  [cyan]/design ID[/]         Select original design guidance; /design lists
-  [cyan]/model[/]             Interactive model picker (arrow keys)
-  [cyan]/model[/] <name>      Switch model (fuzzy match supported)
-  [cyan]/models[/]            List available models
-  [cyan]/provider[/]          Interactive provider picker
-  [cyan]/auth[/]              Configure provider + API key
-  [cyan]/auto[/]              Toggle auto-accept tool calls
-  [cyan]/scout[/] <query>     Read-only codebase exploration
-  [cyan]/architect[/] <task>  Generate implementation plan
-  [cyan]/uncensored[/]        Show uncensored model info
-  [cyan]/memory[/]            Show memory stats
-  [cyan]/remember[/] k=v      Store a persistent fact
-  [cyan]/recall[/] <key>      Recall a persistent fact
-  [cyan]/forget[/] <key>      Remove a persistent fact
-  [cyan]/clear[/]             Clear conversation history
-  [cyan]/save[/]              Save conversation to disk
-  [cyan]/config[/]            Show current config
-  [cyan]/set[/] k=v           Set a config value
-  [cyan]/orchestra[/] <task>  Multi-agent orchestration (auto-dispatch)
-  [cyan]/review[/] <code>     Code review (Dharma agent)
-  [cyan]/debug[/] <issue>     Root cause analysis (Sherlock agent)
-  [cyan]/test[/] <target>     Write tests (Agni agent)
-  [cyan]/refactor[/] <code>   Restructure code (Shiva agent)
-  [cyan]/devops[/] <task>     Docker/CI/CD (Vayu agent)
-  [cyan]/docs[/] <target>     Generate docs (Saraswati agent)
-  [cyan]/launch[/] <product>  Build + Ship + Campaign (full pipeline)
-  [cyan]/campaign[/] <brief>  Content campaign (12 content agents)
-  [cyan]/image[/] <concept>   Generate image prompts (Maya)
-  [cyan]/video[/] <concept>   Cinematic video prompts (Kubera)
-  [cyan]/social[/] <topic>    Social media content (Chitragupta)
-  [cyan]/agents[/]            Show all 22 agents roster
-  [cyan]/stats[/]             Usage dashboard with activity heatmap
-  [cyan]/stats 7d[/]          Last 7 days stats
-  [cyan]/stats 30d[/]         Last 30 days stats
-  [cyan]/extension[/]         List MCP extensions
-  [cyan]/extension add[/]     Add an MCP extension (name cmd [args])
-  [cyan]/extension rm[/]      Remove an extension
-  [cyan]/recipe[/]            List available recipes
-  [cyan]/recipe run[/]        Run a recipe (name [params])
-  [cyan]/recipe show[/]       Show recipe details
-  [cyan]/history[/]           Browse past sessions
-  [cyan]/history search[/]    Search past conversations
-  [cyan]/resume[/]            Resume a past session by ID
-  [cyan]/raw[/]               Toggle raw mode (no formatting)
-  [cyan]/shortcuts[/]         Show keyboard shortcuts
-  [cyan]/exit[/]              Exit DJcode
-
-[bold {GOLD}]Keyboard Shortcuts[/]
-
-  [cyan]Ctrl+O[/]   Toggle thinking verbose
-  [cyan]Ctrl+L[/]   Clear screen
-  [cyan]Ctrl+T[/]   Toggle auto-accept
-  [cyan]Ctrl+P[/]   Toggle plan/act mode
-  [cyan]Ctrl+R[/]   Rerun last command
-  [cyan]Ctrl+K[/]   Kill generation
-  [cyan]  /   [/]   Interactive command picker
-"""
+def _discover_current_models(provider):
+    from djcode.startup import probe
+    config = load_config()
+    config.update(provider=provider.config.name, model=provider.config.model, base_url=provider.config.base_url)
+    config[f"{provider.config.name}_api_key"] = provider.config.api_key
+    config[f"{provider.config.name}_auth_method"] = provider.config.auth_method
+    return probe(config)
 
 
 def _handle_models_list(provider: Provider) -> None:
-    """List all available models from the current provider."""
-    if provider.config.name != "ollama":
-        console.print(f"[yellow]Model listing only available for Ollama provider.[/]")
-        console.print(f"[dim]Current model: {provider.config.model}[/]")
+    found = _discover_current_models(provider)
+    if not found["models"]:
+        console.print(found["message"], markup=False)
         return
-
-    models = fetch_ollama_models_sync(provider.config.base_url)
-    if not models:
-        console.print(
-            "[yellow]No models found.[/] "
-            "[dim]Is Ollama running? Start with: ollama serve[/]"
-        )
-        return
-
-    table = Table(
-        title=f"[bold {GOLD}]Available Models[/]",
-        border_style=GOLD,
-        show_header=True,
-        header_style=f"bold {GOLD}",
-    )
-    table.add_column("Model", style="white")
-    table.add_column("Size", style="dim")
-    table.add_column("", style="green")
-    table.add_column("", style="dim")
-
-    for m in models:
-        name = m.get("name", "unknown")
-        size = format_model_size(m.get("size", 0))
-        current = "\u2605 current" if name == provider.config.model else ""
-        uncensored = "\U0001f513 uncensored" if is_uncensored_model(name) else ""
-        table.add_row(name, size, current, uncensored)
-
+    table = Table(title="Available models", border_style=GOLD)
+    table.add_column("Model")
+    for name in found["models"]:
+        table.add_row(name + (" · current" if name == provider.config.model else ""))
     console.print(table)
-    console.print(f"\n[dim]Switch with: /model (interactive) or /model <name>[/]")
 
 
 async def _handle_model_switch_interactive(operator: Operator, status_bar: StatusBar) -> None:
-    """Interactive model picker using questionary arrow keys."""
-    provider = operator.provider
-
-    if provider.config.name != "ollama":
-        console.print(f"[yellow]Interactive picker only available for Ollama.[/]")
-        console.print(f"[dim]Current model: {provider.config.model}[/]")
-        return
-
-    models = fetch_ollama_models_sync(provider.config.base_url)
-    if not models:
-        console.print(
-            "[yellow]No models found.[/] "
-            "[dim]Is Ollama running? Start with: ollama serve[/]"
-        )
-        return
-
-    choices = []
-    for m in models:
-        name = m.get("name", "unknown")
-        size = format_model_size(m.get("size", 0))
-        label = f"{name}  ({size})"
-        if name == provider.config.model:
-            label += " \u2605 current"
-        if is_uncensored_model(name):
-            label += " \U0001f513 uncensored"
-        choices.append(questionary.Choice(label, value=name))
-
-    # Run questionary in a thread to avoid blocking the async event loop
-    import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor() as pool:
-        selected = await asyncio.get_event_loop().run_in_executor(
-            pool,
-            lambda: questionary.select(
-                "Select model:",
-                choices=choices,
-                style=Q_STYLE,
-            ).ask()
-        )
-
+    found = await asyncio.to_thread(_discover_current_models, operator.provider)
+    if found["models"]:
+        selected = await questionary.autocomplete("Select model:", choices=found["models"], match_middle=True, ignore_case=True).ask_async()
+    else:
+        console.print(found["message"], markup=False)
+        selected = await questionary.text("Exact model ID:").ask_async()
     if selected:
-        provider.config.model = selected
-        set_value("model", selected)
-        uncensored = is_uncensored_model(selected)
-        status_bar.update(model=selected, uncensored=uncensored)
-
-        # Rebuild system prompt if uncensored status changed
-        if uncensored or operator.bypass_rlhf:
-            from djcode.prompt import build_system_prompt
-            operator.messages[0].content = build_system_prompt(
-                bypass_rlhf=operator.bypass_rlhf, model=selected
-            )
-
-        console.print(f"[green]Model switched to:[/] {selected}")
-        if uncensored:
-            console.print(f"  [dim]\U0001f513 Uncensored mode active[/]")
+        _handle_model_switch(selected, operator, status_bar)
 
 
 def _handle_model_switch(arg: str, operator: Operator, status_bar: StatusBar) -> None:
@@ -390,11 +216,65 @@ async def handle_slash_command(
 ) -> bool:
     """Handle a slash command. Returns True if the REPL should continue."""
     parts = cmd.strip().split(maxsplit=1)
+    if not parts:
+        return True
     command = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
+    from djcode.commands import plan_blocks_command
+    if getattr(operator, "plan_mode", False) and plan_blocks_command(command, arg):
+        console.print("[yellow]Plan mode: switch to Act with /plan before running this command.[/]")
+        return True
+
+    if orchestrator is not None and hasattr(orchestrator, "_shadow"):
+        orchestrator.provider = operator.provider
+        orchestrator._shadow.provider = operator.provider
+        orchestrator.auto_accept = operator.auto_accept
+        orchestrator._shadow.auto_accept = operator.auto_accept
+
+    from djcode.session_commands import NAMES, handle
+    if command in NAMES:
+        console.print(await handle(operator, command, arg), markup=False)
+        return True
+    if command == "/connect":
+        from djcode.startup import setup
+        configured = await asyncio.to_thread(setup, load_config())
+        previous = operator.provider
+        operator.provider = Provider(ProviderConfig.from_config(configured["provider"], configured["model"]))
+        operator.provider._session_runtimes = [operator.capabilities]
+        previous._session_runtimes = []
+        operator.context_manager.provider = operator.provider
+        await previous.close()
+        status_bar.update(model=operator.provider.config.model, provider=operator.provider.config.name)
+        return True
 
     if command == "/help":
         console.print(Panel(HELP_TEXT, title=f"[bold {GOLD}]DJcode Help[/]", border_style=GOLD))
+
+    elif command in ("/check", "/lint"):
+        from djcode.maintenance import run_checks
+        result = await asyncio.to_thread(run_checks)
+        console.print(result["summary"], markup=False)
+        for item in result.get("checks", []):
+            console.print(f"{item['name']}: {item['status']} · {item['detail']}", markup=False)
+
+    elif command == "/update":
+        from djcode.updater import perform_update
+        result = await asyncio.to_thread(perform_update, force=True)
+        console.print(result["message"], markup=False)
+        if result.get("updated"):
+            console.print("Restart DJcode after your current work to use the update.")
+
+    elif command == "/plan":
+        operator.plan_mode = not operator.plan_mode
+        mode = get_mode_state()
+        mode.plan_mode = operator.plan_mode
+        status_bar.update(mode=mode.mode_label)
+        console.print(f"Mode: {mode.mode_label}", markup=False)
+
+    elif command == "/thinking":
+        operator.show_thinking = not operator.show_thinking
+        get_mode_state().verbose_thinking = operator.show_thinking
+        console.print(f"Thinking: {'ON' if operator.show_thinking else 'OFF'}", markup=False)
 
     elif command == "/design":
         from djcode.design_packs import list_packs
@@ -410,7 +290,7 @@ async def handle_slash_command(
                 console.print(str(error), markup=False)
 
     elif command == "/models":
-        _handle_models_list(operator.provider)
+        await asyncio.to_thread(_handle_models_list, operator.provider)
 
     elif command == "/model":
         if not arg:
@@ -418,10 +298,17 @@ async def handle_slash_command(
             await _handle_model_switch_interactive(operator, status_bar)
         else:
             _handle_model_switch(arg, operator, status_bar)
+        if getattr(operator.provider, "_new_provider", None) is not None:
+            await operator.provider._new_provider.close()
+            operator.provider._new_provider = None
+        if hasattr(operator, "context_manager"):
+            from djcode.context.manager import ContextWindowManager
+            operator.context_manager = ContextWindowManager(model=operator.provider.config.model, provider=operator.provider)
+            operator.context_manager.replace_messages(operator.messages)
 
     elif command == "/provider":
         if not arg:
-            _handle_provider_switch_interactive(operator, status_bar)
+            await asyncio.to_thread(_handle_provider_switch_interactive, operator, status_bar)
         else:
             # Direct provider switch by name
             if arg in PROVIDERS:
@@ -442,7 +329,7 @@ async def handle_slash_command(
                 console.print(f"[dim]Options: {names}[/]")
 
     elif command == "/auth":
-        interactive_auth()
+        await asyncio.to_thread(interactive_auth)
         # Reload provider after auth
         cfg = load_config()
         provider_id = cfg.get("provider", "ollama")
@@ -451,10 +338,13 @@ async def handle_slash_command(
         status_bar.update(provider=provider_id, model=new_config.model)
 
     elif command == "/auto":
-        cfg = load_config()
-        new_val = not cfg.get("auto_accept", False)
+        new_val = not operator.auto_accept
         set_value("auto_accept", new_val)
         operator.auto_accept = new_val
+        get_mode_state().auto_accept = new_val
+        if orchestrator is not None:
+            orchestrator.auto_accept = new_val
+            orchestrator._shadow.auto_accept = new_val
         status_bar.update(auto_accept=new_val)
         state = "ON" if new_val else "OFF"
         console.print(f"[green]Auto-accept:[/] {state}")
@@ -624,11 +514,17 @@ async def handle_slash_command(
         console.print()
 
     elif command == "/docs":
-        task = arg or "generate documentation for this project"
-        async for token in orchestrator.run_single_agent_streaming(AgentRole.DOCS, task):
-            sys.stdout.write(token)
-            sys.stdout.flush()
-        console.print()
+        from djcode.docs import DOCS_SECTIONS, render_docs, render_docs_index
+        topic = arg.strip().lower()
+        if not topic:
+            render_docs_index(console)
+        elif topic in DOCS_SECTIONS or topic == "all":
+            render_docs(console, topic)
+        else:
+            async for token in orchestrator.run_single_agent_streaming(AgentRole.DOCS, arg):
+                sys.stdout.write(token)
+                sys.stdout.flush()
+            console.print()
 
     elif command == "/launch":
         if not arg:
@@ -737,13 +633,6 @@ async def handle_slash_command(
 
     elif command == "/shortcuts":
         show_shortcuts()
-
-    elif command == "/docs":
-        from djcode.docs import render_docs, render_docs_index
-        if arg.strip():
-            render_docs(console, arg.strip().lower())
-        else:
-            render_docs_index(console)
 
     # ── MCP Extensions ────────────────────────────────────────────────
     elif command == "/extension":
@@ -963,7 +852,7 @@ async def handle_slash_command(
                             role=role,
                             content=content,
                             tool_calls=tc or [],
-                            tool_call_id=m.get("tool_call_id"), name=m.get("name"),
+                            tool_call_id=m.get("tool_call_id"), name=m.get("name"), images=m.get("images", []),
                         ))
                         restored += 1
 
@@ -984,6 +873,26 @@ def _estimate_tokens(messages: list) -> int:
     """Rough token estimate: ~4 chars per token."""
     total_chars = sum(len(getattr(m, "content", "") or "") for m in messages)
     return total_chars // 4
+
+
+async def _approve_repl_tool(name: str, arguments: dict) -> bool:
+    import json
+    body = Text(f"Tool: {name}\n{json.dumps(arguments, indent=2)[:2000]}")
+    console.print(Panel(body, title="Approve tool"))
+    return bool(await questionary.confirm("Execute this tool?", default=False).ask_async())
+
+
+async def _run_repl_command(command, operator, memory, status_bar, orchestrator) -> bool:
+    try:
+        result = await run_interruptible(handle_slash_command(
+            command, operator, memory, status_bar, orchestrator,
+        ))
+        if result is None:
+            console.print("[yellow]Command cancelled. Ready for another prompt.[/]")
+        return result is not False
+    except Exception as error:
+        console.print(format_error(classify_error(error)))
+        return True
 
 
 async def run_repl(
@@ -1028,13 +937,15 @@ async def run_repl(
         model=llm.config.model,
         auto_accept=effective_auto_accept,
         show_thinking=show_thinking,
+        approval_callback=_approve_repl_tool,
     )
 
     # Initialize memory
     memory = MemoryManager()
 
     # Initialize orchestrator
-    orchestrator = Orchestrator(llm, auto_accept=effective_auto_accept)
+    orchestrator = Orchestrator(llm, auto_accept=effective_auto_accept,
+                                approval_callback=_approve_repl_tool)
 
     # Initialize status bar
     status_bar = StatusBar()
@@ -1042,31 +953,31 @@ async def run_repl(
         model=llm.config.model,
         provider=llm.config.name,
         token_count=0,
-        auto_accept=cfg.get("auto_accept", False),
+        auto_accept=effective_auto_accept,
         uncensored=is_uncensored_model(llm.config.model) or bypass_rlhf,
     )
-
-    # Permission system
-    permissions = PermissionManager(auto_accept=effective_auto_accept)
 
     # Track session (dual: legacy JSON + new SQLite)
     session_id = record_session_start(llm.config.model, llm.config.name)
     session_db = SessionDB()
     session_db.migrate_from_json()  # One-time migration, no-op if already done
-    sqlite_session_id = session_db.create_session(llm.config.model, llm.config.name)
+    operator.session_id = session_db.create_session(llm.config.model, llm.config.name)
+    operator.session_db = session_db
+    operator.on_checkpoint = lambda messages: session_db.save_conversation(operator.session_id, messages)
     files_touched: list[str] = []
 
     # Initialize extension manager
     ext_manager = ExtensionManager()
 
-    # Print banner and permissions warning
-    print_banner(llm)
-    permissions.show_startup_warning()
+    # Compact startup summary, including the effective approval mode.
+    print_banner(llm, auto_accept=effective_auto_accept)
 
     # Set up prompt toolkit session with FIXED bottom toolbar
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(HISTORY_FILE)),
         auto_suggest=AutoSuggestFromHistory(),
+        completer=SlashCompleter(),
+        complete_while_typing=True,
         bottom_toolbar=status_bar.render,
     )
 
@@ -1074,202 +985,206 @@ async def run_repl(
     tui_mode = get_mode_state()
     tui_mode.auto_accept = effective_auto_accept
     tui_mode.verbose_thinking = show_thinking
-    register_keybindings(session, operator, status_bar)
+    tui_mode.plan_mode = False
+    operator.plan_mode = False
+    register_keybindings(session, operator, status_bar, orchestrator)
 
-    while True:
-        try:
+    try:
+        while True:
+            try:
 
-            # Prompt: ❯ (gold) in ACT mode, ⏸ (magenta) in PLAN mode
-            if tui_mode.plan_mode:
-                _prompt_html = HTML("<style fg='#FF00FF'><b>\u23f8 </b></style>")
-            else:
-                _prompt_html = HTML("<style fg='#FFD700'><b>\u276f </b></style>")
+                # Prompt: ❯ (gold) in ACT mode, ⏸ (magenta) in PLAN mode
+                if tui_mode.plan_mode:
+                    _prompt_html = HTML("<style fg='#FF00FF'><b>\u23f8 </b></style>")
+                else:
+                    _prompt_html = HTML("<style fg='#C79B7A'><b>\u276f </b></style>")
 
-            user_input = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: session.prompt(_prompt_html),
-            )
-        except (EOFError, KeyboardInterrupt):
-            console.print("\n[dim]Goodbye.[/]")
-            break
+                user_input = await session.prompt_async(_prompt_html)
+            except KeyboardInterrupt:
+                console.print("[dim]Input cancelled. /exit or Ctrl+D to quit.[/]")
+                continue
+            except EOFError:
+                console.print("\n[dim]Goodbye.[/]")
+                break
 
-        user_input = user_input.strip()
-        if not user_input:
-            continue
+            user_input = user_input.strip()
+            if not user_input:
+                continue
 
-        # Interactive command picker: bare "/" triggers fuzzy picker
-        if user_input == "/":
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                picked = await asyncio.get_event_loop().run_in_executor(
-                    pool, show_command_picker
-                )
-            if picked:
-                should_continue = await handle_slash_command(
-                    picked, operator, memory, status_bar, orchestrator
+            # Interactive command picker: bare "/" triggers fuzzy picker
+            if user_input == "/":
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    picked = await asyncio.get_event_loop().run_in_executor(
+                        pool, show_command_picker
+                    )
+                if picked:
+                    should_continue = await _run_repl_command(
+                        picked, operator, memory, status_bar, orchestrator
+                    )
+                    if not should_continue:
+                        break
+                continue
+
+            # Slash commands
+            if user_input.startswith("/"):
+                should_continue = await _run_repl_command(
+                    user_input, operator, memory, status_bar, orchestrator
                 )
                 if not should_continue:
                     break
-            continue
+                continue
 
-        # Slash commands
-        if user_input.startswith("/"):
-            should_continue = await handle_slash_command(
-                user_input, operator, memory, status_bar, orchestrator
-            )
-            if not should_continue:
-                break
-            continue
+            # Track last input for Ctrl+R rerun
+            tui_mode.last_user_input = user_input
+            tui_mode.reset_cancel()
 
-        # Track last input for Ctrl+R rerun
-        tui_mode.last_user_input = user_input
-        tui_mode.reset_cancel()
+            # Track in memory
+            memory.add_session_message("user", user_input)
 
-        # Track in memory
-        memory.add_session_message("user", user_input)
+            # Enhance the prompt with context before sending
+            enhanced = enhance_prompt(user_input)
+            send_text = enhanced.enhanced if enhanced.was_enhanced else user_input
 
-        # Enhance the prompt with context before sending
-        enhanced = enhance_prompt(user_input)
-        send_text = enhanced.enhanced if enhanced.was_enhanced else user_input
+            # Plan mode: prepend planning instruction so the model never executes
+            if tui_mode.plan_mode:
+                send_text = f"{tui_mode.plan_mode_prompt_injection}\n\n{send_text}"
 
-        # Plan mode: prepend planning instruction so the model never executes
-        if tui_mode.plan_mode:
-            send_text = f"{tui_mode.plan_mode_prompt_injection}\n\n{send_text}"
-
-        # Send to operator and stream response
-        full_response = ""
-        try:
-            if not raw:
-                console.print()  # Spacing
-
-            if enhanced.was_enhanced:
-                desc = describe_enhancement(enhanced)
-                console.print(f"  [dim {GOLD}]{desc}[/]")
-
-            # Live thinking indicator: ⏺ Thinking... (Xs · ↓ N tokens)
-            import time as _time
-            _start_time = _time.monotonic()
-            _token_count = 0
-            first_token = True
-
-            # Show initial thinking indicator
-            sys.stdout.write(f"\033[33m\u23fa\033[0m \033[2mThinking...\033[0m")
-            sys.stdout.flush()
-
-            async for token in operator.send(send_text):
-                # Check if user hit Ctrl+K to cancel
-                if tui_mode.is_cancelled:
-                    sys.stdout.write("\r\033[K")
-                    console.print("[yellow]Generation cancelled.[/]")
-                    break
-
-                _token_count += 1
-
-                if first_token:
-                    # Clear the thinking indicator line
-                    sys.stdout.write("\r\033[K")
-                    first_token = False
-                else:
-                    # Update thinking indicator while waiting (every 5 tokens)
-                    pass
-
-                if raw:
-                    sys.stdout.write(token)
-                    sys.stdout.flush()
-                else:
-                    sys.stdout.write(token)
-                    sys.stdout.flush()
-
-                full_response += token
-
-                # Periodically update thinking line if we haven't started output yet
-                if first_token and _token_count % 3 == 0:
-                    elapsed = _time.monotonic() - _start_time
-                    sys.stdout.write(f"\r\033[K\033[33m\u23fa\033[0m \033[2mThinking... ({elapsed:.1f}s \u00b7 \u2193 {_token_count} tokens)\033[0m")
-                    sys.stdout.flush()
-
-            if first_token:
-                # Never got a token -- clear thinking indicator
-                sys.stdout.write("\r\033[K")
-
-            # Show response stats after completion
-            if full_response and not raw:
-                _elapsed = _time.monotonic() - _start_time
-                _est_tokens = len(full_response) // 4
-                if _est_tokens >= 1000:
-                    _tok_str = f"{_est_tokens / 1000:.1f}k"
-                else:
-                    _tok_str = str(_est_tokens)
-                console.print(f"\n  [dim]\u2193 {_tok_str} tokens \u00b7 {_elapsed:.1f}s[/]")
-
-            if full_response:
-                memory.add_session_message("assistant", full_response)
-
-                # Track usage stats (legacy JSON + SQLite)
-                token_est = len(full_response) // 4
-                record_session_update(session_id, tokens=token_est, messages=1)
-                session_db.update_session(
-                    sqlite_session_id, tokens_out=token_est, messages=1,
-                )
-                # Persist conversation for /resume
-                session_db.save_message(sqlite_session_id, "user", user_input)
-                session_db.save_message(sqlite_session_id, "assistant", full_response)
-
-                # Tool extraction router — for models without native tool calling
-                # Censorship detection — warn if aligned model refuses
-                from djcode.prompt import CENSORED_WARNING, detect_refusal
-
-                if detect_refusal(full_response) and not is_uncensored_model(llm.config.model):
-                    console.print(Panel(
-                        CENSORED_WARNING.format(model=llm.config.model),
-                        title="[yellow]Model Censorship Detected[/]",
-                        border_style="yellow",
-                    ))
-
-            # Update status bar token count (toolbar auto-updates on next prompt)
-            token_est = _estimate_tokens(operator.messages)
-            current_cfg = load_config()
-            status_bar.update(
-                token_count=token_est,
-                auto_accept=current_cfg.get("auto_accept", False),
-            )
-
-            # Dim separator after each response
-            if full_response and not raw:
+            async def respond():
+                full_response = ""
                 try:
-                    _term_width = os.get_terminal_size().columns
-                except OSError:
-                    _term_width = 80
-                console.print(f"[dim]{'─' * _term_width}[/]")
+                    if not raw:
+                        console.print()  # Spacing
 
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Interrupted.[/]")
-        except KeyboardInterrupt:
-            raise  # Re-raise to be caught by outer handler
-        except Exception as e:
-            err = classify_error(e)
-            console.print(f"\n{format_error(err)}")
-            # Auto-fallback: suggest smaller model on OOM/timeout
-            if err.fallback == "retry_with_smaller_model":
-                fb = get_fallback_model(llm.config.model)
-                if fb:
-                    console.print(f"  [dim]Try: /model {fb}[/]")
+                    if enhanced.was_enhanced:
+                        desc = describe_enhancement(enhanced)
+                        console.print(f"  [dim {GOLD}]{desc}[/]")
 
-    # Save project context on exit
-    msg_count = len([m for m in operator.messages if m.role in ("user", "assistant")])
-    save_context(
-        model=llm.config.model,
-        provider=llm.config.name,
-        messages_count=msg_count,
-        files_touched=files_touched,
-    )
-    console.print(f"  [dim]Saved djcode.md[/]")
+                    # Live thinking indicator: ⏺ Thinking... (Xs · ↓ N tokens)
+                    import time as _time
+                    _start_time = _time.monotonic()
+                    _token_count = 0
+                    first_token = True
 
-    record_session_end(session_id)
-    session_db.end_session(sqlite_session_id)
-    session_db.save_conversation(sqlite_session_id, operator.messages)
-    await ext_manager.shutdown()
-    await llm.close()
+                    # Show initial thinking indicator
+                    sys.stdout.write(f"\033[33m\u23fa\033[0m \033[2mThinking...\033[0m")
+                    sys.stdout.flush()
+
+                    async for token in operator.send(send_text):
+                        _token_count += 1
+
+                        if first_token:
+                            # Clear the thinking indicator line
+                            sys.stdout.write("\r\033[K")
+                            first_token = False
+                        else:
+                            # Update thinking indicator while waiting (every 5 tokens)
+                            pass
+
+                        if raw:
+                            sys.stdout.write(token)
+                            sys.stdout.flush()
+                        else:
+                            sys.stdout.write(token)
+                            sys.stdout.flush()
+
+                        full_response += token
+
+                        # Periodically update thinking line if we haven't started output yet
+                        if first_token and _token_count % 3 == 0:
+                            elapsed = _time.monotonic() - _start_time
+                            sys.stdout.write(f"\r\033[K\033[33m\u23fa\033[0m \033[2mThinking... ({elapsed:.1f}s \u00b7 \u2193 {_token_count} tokens)\033[0m")
+                            sys.stdout.flush()
+
+                    if first_token:
+                        # Never got a token -- clear thinking indicator
+                        sys.stdout.write("\r\033[K")
+
+                    # Show response stats after completion
+                    if full_response and not raw:
+                        _elapsed = _time.monotonic() - _start_time
+                        _est_tokens = len(full_response) // 4
+                        if _est_tokens >= 1000:
+                            _tok_str = f"{_est_tokens / 1000:.1f}k"
+                        else:
+                            _tok_str = str(_est_tokens)
+                        console.print(f"\n  [dim]\u2193 {_tok_str} tokens \u00b7 {_elapsed:.1f}s[/]")
+
+                    if full_response:
+                        memory.add_session_message("assistant", full_response)
+
+                        # Track usage stats (legacy JSON + SQLite)
+                        token_est = len(full_response) // 4
+                        record_session_update(session_id, tokens=token_est, messages=1)
+                        session_db.update_session(
+                            operator.session_id, tokens_out=token_est, messages=1,
+                        )
+                        # Persist conversation for /resume
+                        session_db.save_conversation(operator.session_id, operator.messages)
+
+                        # Tool extraction router — for models without native tool calling
+                        # Censorship detection — warn if aligned model refuses
+                        from djcode.prompt import CENSORED_WARNING, detect_refusal
+
+                        if detect_refusal(full_response) and not is_uncensored_model(llm.config.model):
+                            console.print(Panel(
+                                CENSORED_WARNING.format(model=llm.config.model),
+                                title="[yellow]Model Censorship Detected[/]",
+                                border_style="yellow",
+                            ))
+
+                    # Update status bar token count (toolbar auto-updates on next prompt)
+                    token_est = _estimate_tokens(operator.messages)
+                    current_cfg = load_config()
+                    status_bar.update(
+                        token_count=token_est,
+                        auto_accept=current_cfg.get("auto_accept", False),
+                    )
+
+                    # Dim separator after each response
+                    if full_response and not raw:
+                        try:
+                            _term_width = os.get_terminal_size().columns
+                        except OSError:
+                            _term_width = 80
+                        console.print(f"[dim]{'─' * _term_width}[/]")
+
+                except KeyboardInterrupt:
+                    console.print("\n[yellow]Interrupted.[/]")
+                except Exception as e:
+                    err = classify_error(e)
+                    console.print(f"\n{format_error(err)}")
+                    # Auto-fallback: suggest smaller model on OOM/timeout
+                    if err.fallback == "retry_with_smaller_model":
+                        fb = get_fallback_model(llm.config.model)
+                        if fb:
+                            console.print(f"  [dim]Try: /model {fb}[/]")
+                return True
+            if await run_interruptible(respond()) is None:
+                sys.stdout.write("\r\033[K")
+                console.print("[yellow]Response cancelled. Ready for another prompt.[/]")
+            session_db.save_conversation(operator.session_id, operator.messages)
+
+    finally:
+        try:
+            # Save project context on exit
+            msg_count = len([m for m in operator.messages if m.role in ("user", "assistant")])
+            save_context(
+                model=operator.provider.config.model,
+                provider=operator.provider.config.name,
+                messages_count=msg_count,
+                files_touched=files_touched,
+            )
+            console.print(f"  [dim]Saved djcode.md[/]")
+
+            record_session_end(session_id)
+            session_db.end_session(operator.session_id)
+            session_db.save_conversation(operator.session_id, operator.messages)
+        finally:
+            await ext_manager.shutdown()
+            await llm.close()
+            if operator.provider is not llm:
+                await operator.provider.close()
 
 
 async def run_oneshot(

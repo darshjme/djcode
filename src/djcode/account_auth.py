@@ -40,6 +40,8 @@ def auth_methods(provider: str) -> list[dict]:
             "reason": "API usage is billed separately from consumer subscriptions.",
         }
     ]
+    if provider == "openrouter":
+        methods.insert(0, {"id": "browser", "label": "Sign in with OpenRouter", "available": True, "reason": "Browser PKCE; creates a user-controlled API key."})
     if provider == "xai":
         available = bool(os.environ.get("DJCODE_XAI_OAUTH_CLIENT_ID", "").strip())
         methods.append(

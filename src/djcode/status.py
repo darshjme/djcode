@@ -7,10 +7,11 @@ The fixed toolbar stays pinned at the terminal bottom at all times.
 from __future__ import annotations
 
 import os
+from html import escape
 
 from prompt_toolkit.formatted_text import HTML
 
-GOLD = "#FFD700"
+GOLD = "#C79B7A"
 
 
 def _shorten_cwd() -> str:
@@ -75,10 +76,10 @@ class StatusBar:
         Clean single line: ⏺ DJcode · ACT · gemma4 · ollama · ↓ 2.4k tokens · ~/project · Ctrl+? help
         """
         name = "DJcode"
-        cwd = _shorten_cwd()
+        cwd = escape(_shorten_cwd())
         tokens = _format_tokens(self.token_count)
 
-        model_display = self.model or "no model"
+        model_display = escape(self.model or "no model")
 
         # Mode indicator: PLAN highlighted magenta, ACT normal
         mode = self.mode
@@ -98,13 +99,15 @@ class StatusBar:
             f'{sep}'
             f'<style fg="#AAAAAA">{model_display}</style>'
             f'{sep}'
-            f'<style fg="#666666">{self.provider}</style>'
+            f'<style fg="#666666">{escape(self.provider)}</style>'
             f'{sep}'
             f'<style fg="#666666">\u2193 {tokens} tokens</style>'
             f'{sep}'
             f'<style fg="#555555">{cwd}</style>'
             f'{sep}'
-            f'<style fg="#444444">Ctrl+? help</style>'
+            f'<style fg="#AAAAAA">Approvals: {"auto" if self.auto_accept else "ask"}</style>'
+            f'{sep}'
+            f'<style fg="#888888">/help · Tab complete</style>'
             f' </style>'
         )
 

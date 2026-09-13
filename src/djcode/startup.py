@@ -153,7 +153,16 @@ def setup(existing: dict | None = None) -> dict:
         default_method = current_method if current_method in {item["id"] for item in available} else "api_key"
         method = answer(questionary.select("Authentication", choices=choices, default=default_method).ask())
         config[f"{selected}_auth_method"] = method
-        if method == "account":
+        if method == "browser" and selected == "openrouter":
+            import webbrowser
+            from djcode.openrouter_auth import begin, exchange
+            verifier, url = begin()
+            console.print(url, markup=False)
+            webbrowser.open(url)
+            code = answer(questionary.password("One-time code from OpenRouter").ask())
+            config[f"{selected}_api_key"] = asyncio.run(exchange(code, verifier))
+            config[f"{selected}_auth_method"] = "api_key"
+        elif method == "account":
             if not has_account(selected) and not authenticate_account(selected, method, on_status=lambda text: console.print(text, markup=False)):
                 raise click.ClickException("Sign-in did not complete; provider configuration retained.")
         else:

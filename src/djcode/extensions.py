@@ -65,187 +65,128 @@ class Extension:
 
 
 class MCPConnection:
-    """Manages a single MCP subprocess connection.
-
-    Speaks JSON-RPC 2.0 over stdin/stdout with the extension process.
-    Lifecycle: spawn -> initialize -> tools/list -> tools/call* -> kill
-    """
-
-    def __init__(self, extension: Extension) -> None:
+    """Bounded, asynchronous MCP stdio lifecycle with notification handling."""
+    def __init__(self, extension):
         self.extension = extension
-        self._process: subprocess.Popen | None = None
+        self._process = None
         self._request_id = 0
         self._lock = asyncio.Lock()
+        self._stderr_task = None
+        self.image_paths = []
 
-    def _next_id(self) -> int:
-        self._request_id += 1
-        return self._request_id
-
-    async def start(self) -> None:
-        """Spawn the extension subprocess."""
+    async def start(self):
+        import os
         try:
-            import os
-
-            env = {**os.environ, **self.extension.env}
-            self._process = subprocess.Popen(
-                [self.extension.cmd, *self.extension.args],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=env,
-                text=True,
-                bufsize=0,
+            self._process = await asyncio.create_subprocess_exec(
+                self.extension.cmd, *self.extension.args,
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={**os.environ, **self.extension.env}, limit=2**22,
+                start_new_session=os.name != "nt",
             )
-            # Give it a moment to start
-            await asyncio.sleep(0.1)
-
-            if self._process.poll() is not None:
-                stderr = self._process.stderr.read() if self._process.stderr else ""
-                raise RuntimeError(
-                    f"Extension '{self.extension.name}' exited immediately: {stderr[:200]}"
-                )
-
-            # Send MCP initialize
-            await self._send_request(MCP_INITIALIZE, {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "djcode", "version": "2.0.1"},
+            async def drain():
+                while await self._process.stderr.read(4096):
+                    pass
+            self._stderr_task = asyncio.create_task(drain())
+            await self._send_request("initialize", {
+                "protocolVersion": "2024-11-05", "capabilities": {},
+                "clientInfo": {"name": "djcode", "version": "4.2.1"},
             })
-
-        except FileNotFoundError:
-            self.extension.last_error = f"Command not found: {self.extension.cmd}"
-            raise RuntimeError(self.extension.last_error)
-        except Exception as e:
-            self.extension.last_error = str(e)
+            await self._write({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        except BaseException:
+            await self.stop()
             raise
 
-    async def stop(self) -> None:
-        """Terminate the extension subprocess."""
-        if self._process and self._process.poll() is None:
+    async def _write(self, value):
+        self._process.stdin.write((json.dumps(value) + "\n").encode())
+        await self._process.stdin.drain()
+
+    async def stop(self):
+        import os
+        import signal
+        process = self._process
+        if process and process.returncode is None:
             try:
-                self._process.terminate()
-                self._process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
-            except Exception:
+                if os.name != "nt":
+                    os.killpg(process.pid, signal.SIGTERM)
+                else:
+                    process.terminate()
+                await asyncio.wait_for(process.wait(), 2)
+            except ProcessLookupError:
                 pass
+            except TimeoutError:
+                if os.name != "nt":
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
+                await process.wait()
+        if self._stderr_task:
+            self._stderr_task.cancel()
+            await asyncio.gather(self._stderr_task, return_exceptions=True)
         self._process = None
 
     @property
-    def is_alive(self) -> bool:
-        return self._process is not None and self._process.poll() is None
+    def is_alive(self):
+        return self._process is not None and self._process.returncode is None
 
-    async def _send_request(self, method: str, params: dict | None = None) -> Any:
-        """Send a JSON-RPC request and read the response."""
-        if not self._process or not self._process.stdin or not self._process.stdout:
-            raise RuntimeError(f"Extension '{self.extension.name}' is not running")
-
+    async def _send_request(self, method, params=None):
+        if not self.is_alive:
+            raise RuntimeError(f"Extension {self.extension.name} is not running")
         async with self._lock:
-            request_id = self._next_id()
-            request = {
-                "jsonrpc": MCP_JSONRPC_VERSION,
-                "method": method,
-                "id": request_id,
-            }
-            if params is not None:
-                request["params"] = params
-
-            request_line = json.dumps(request) + "\n"
-
-            loop = asyncio.get_event_loop()
-
-            # Write request in executor to avoid blocking
-            def _write():
-                try:
-                    self._process.stdin.write(request_line)
-                    self._process.stdin.flush()
-                except BrokenPipeError:
-                    raise RuntimeError(
-                        f"Extension '{self.extension.name}' pipe broken — process likely crashed"
-                    )
-
-            await loop.run_in_executor(None, _write)
-
-            # Read response line in executor with timeout
-            def _read() -> str:
-                line = self._process.stdout.readline()
-                if not line:
-                    stderr_out = ""
-                    if self._process.stderr:
-                        try:
-                            stderr_out = self._process.stderr.read(500)
-                        except Exception:
-                            pass
-                    raise RuntimeError(
-                        f"Extension '{self.extension.name}' returned empty response. "
-                        f"stderr: {stderr_out[:200]}"
-                    )
-                return line.strip()
-
+            self._request_id += 1
+            ident = self._request_id
+            await self._write({"jsonrpc":"2.0", "id":ident, "method":method, "params":params or {}})
             try:
-                raw_response = await asyncio.wait_for(
-                    loop.run_in_executor(None, _read),
-                    timeout=30.0,
-                )
-            except asyncio.TimeoutError:
-                raise RuntimeError(
-                    f"Extension '{self.extension.name}' timed out (30s) on {method}"
-                )
+                async with asyncio.timeout(30):
+                    while True:
+                        line = await self._process.stdout.readline()
+                        if not line:
+                            raise RuntimeError("MCP server closed stdout")
+                        response = json.loads(line)
+                        if response.get("method"):
+                            if "id" in response:
+                                await self._write({"jsonrpc":"2.0", "id":response["id"], "error":{"code":-32601,"message":"Client method not supported"}})
+                            continue
+                        if response.get("id") != ident:
+                            continue
+                        if "error" in response:
+                            raise RuntimeError(f"MCP error: {response['error'].get('message', 'request failed')}")
+                        return response.get("result")
+            except BaseException:
+                await self.stop()
+                raise
 
-            try:
-                response = json.loads(raw_response)
-            except json.JSONDecodeError:
-                raise RuntimeError(
-                    f"Extension '{self.extension.name}' returned invalid JSON: "
-                    f"{raw_response[:200]}"
-                )
+    async def list_tools(self):
+        result = await self._send_request("tools/list")
+        return (result or {}).get("tools", [])
 
-            if "error" in response:
-                err = response["error"]
-                code = err.get("code", -1)
-                msg = err.get("message", "Unknown error")
-                raise RuntimeError(
-                    f"Extension '{self.extension.name}' RPC error ({code}): {msg}"
-                )
-
-            return response.get("result")
-
-    async def list_tools(self) -> list[dict[str, Any]]:
-        """Fetch available tools from the extension."""
-        result = await self._send_request(MCP_TOOLS_LIST)
-        if result and "tools" in result:
-            return result["tools"]
-        return []
-
-    async def call_tool(self, tool_name: str, arguments: dict) -> str:
-        """Call a tool on the extension and return the text result."""
-        result = await self._send_request(MCP_TOOLS_CALL, {
-            "name": tool_name,
-            "arguments": arguments,
-        })
-
-        if result is None:
-            return ""
-
-        # MCP tools return content as a list of content blocks
-        if isinstance(result, dict) and "content" in result:
+    async def call_tool(self, tool_name, arguments):
+        import base64
+        import uuid
+        self.image_paths = []
+        result = await self._send_request("tools/call", {"name":tool_name,"arguments":arguments})
+        if isinstance(result, dict):
             parts = []
-            for block in result["content"]:
-                if isinstance(block, dict):
-                    if block.get("type") == "text":
-                        parts.append(block.get("text", ""))
-                    elif block.get("type") == "image":
-                        parts.append(f"[image: {block.get('mimeType', 'unknown')}]")
-                    else:
-                        parts.append(json.dumps(block))
+            for block in result.get("content", []):
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "image" and block.get("mimeType") == "image/png":
+                    encoded = block.get("data", "")
+                    if len(encoded) > 12 * 1024 * 1024:
+                        raise ValueError("MCP image exceeds size limit")
+                    data = base64.b64decode(encoded, validate=True)
+                    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                        raise ValueError("MCP image is not a PNG")
+                    directory = CONFIG_DIR / "screenshots"
+                    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    path = directory / f"mcp-{uuid.uuid4().hex}.png"
+                    path.write_bytes(data)
+                    self.image_paths.append(str(path))
+                    parts.append(f"Screenshot: {path}")
                 else:
-                    parts.append(str(block))
-            return "\n".join(parts)
-
-        if isinstance(result, str):
-            return result
-
-        return json.dumps(result, indent=2)
+                    parts.append(block.get("text", "[non-text content]"))
+            return ("Error: " if result.get("isError") else "") + "\n".join(parts)
+        return str(result or "")
 
 
 class ExtensionManager:

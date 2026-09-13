@@ -9,7 +9,7 @@ Premium terminal experience with:
 - Command palette with fuzzy search
 - Real-time token counting and session stats
 
-Launch with: djcode (default) or djcode --classic for old REPL
+Launch with: djcode (default) or djcode --repl for the line-oriented REPL
 """
 
 from __future__ import annotations
@@ -41,6 +41,8 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from djcode import __version__
+from djcode.commands import command_help, commands_for, match_commands
+from djcode.conversation_log import ConversationLog
 from djcode.tui_panels import SidePanel, AgentPanel, StatsPanel, MCPPanel, TodoPanel, CostPanel
 from djcode.tui_hacker import HackerHeader, AgentStatusBar, ProgressHUD, ContextBar
 from djcode.tui_theme import (
@@ -56,73 +58,20 @@ from djcode.tui_theme import (
 
 # ── All available slash commands ────────────────────────────────────────
 
-COMMAND_REGISTRY: list[tuple[str, str]] = [
-    ("/help", "Show help overlay"),
-    ("/check", "Run runtime and source checks"),
-    ("/lint", "Run runtime and source checks"),
-    ("/update", "Update a managed installation"),
-    ("/design", "List/select an original design reference; off clears"),
-    ("/model", "Switch model (fuzzy match)"),
-    ("/models", "List available models"),
-    ("/provider", "Switch LLM provider"),
-    ("/auth", "Configure provider + API key"),
-    ("/clear", "Clear conversation history"),
-    ("/save", "Save conversation to disk"),
-    ("/config", "Show current configuration"),
-    ("/set", "Set a config value (key=value)"),
-    ("/auto", "Toggle auto-accept tool calls"),
-    ("/thinking", "Toggle thinking display"),
-    ("/plan", "Toggle plan/act mode"),
-    ("/agents", "Show engineering and content profiles"),
-    ("/scout", "Read-only codebase exploration"),
-    ("/architect", "Generate implementation plan"),
-    ("/orchestra", "Multi-agent orchestration"),
-    ("/review", "Code review (Dharma agent)"),
-    ("/debug", "Root cause analysis (Sherlock)"),
-    ("/test", "Write tests (Agni agent)"),
-    ("/refactor", "Restructure code (Shiva)"),
-    ("/devops", "Docker/CI/CD (Vayu agent)"),
-    ("/docs", "Generate documentation (Saraswati)"),
-    ("/launch", "Build + Ship + Campaign pipeline"),
-    ("/campaign", "Content campaign (12 agents)"),
-    ("/image", "Image prompts (Maya)"),
-    ("/video", "Cinematic video prompts (Kubera)"),
-    ("/social", "Social media content (Chitragupta)"),
-    ("/memory", "Show memory stats"),
-    ("/remember", "Store a persistent fact (key=value)"),
-    ("/recall", "Recall a persistent fact"),
-    ("/forget", "Remove a persistent fact"),
-    ("/stats", "Usage dashboard"),
-    ("/extension", "Manage MCP extensions"),
-    ("/recipe", "Run/list/create recipes"),
-    ("/history", "Browse past sessions"),
-    ("/resume", "Resume a past session by ID"),
-    ("/uncensored", "Show uncensored model info"),
-    ("/raw", "Toggle raw output mode"),
-    ("/shortcuts", "Show keyboard shortcuts"),
-    ("/todo", "Manage session todos (add/done/rm/list)"),
-    ("/cost", "Show token cost estimates"),
-    ("/search", "Web search (DuckDuckGo/Brave)"),
-    ("/tasks", "List/create/update session tasks"),
-    ("/spawn", "Spawn a specialist agent"),
-    ("/army", "Show full 18-agent army view"),
-    ("/context", "Show context window utilization"),
-    ("/waves", "Run multi-agent wave execution"),
-    ("/exit", "Quit DJcode"),
-]
+COMMAND_REGISTRY = [(command.name, command.description) for command in commands_for("tui")]
 
 
 # ── Help overlay screen ────────────────────────────────────────────────
 
 HELP_TEXT = """\
-[bold #FFD700]Keyboard Shortcuts[/]
+[bold #C79B7A]Keyboard Shortcuts[/]
 
   [cyan]j / k[/]      Scroll chat down / up
   [cyan]g[/]          Jump to top of chat
   [cyan]G[/]          Jump to bottom of chat
-  [cyan]/[/]          Search in chat (when not in input)
+  [cyan]/ + Enter[/]  Open command palette from the prompt
   [cyan]Escape[/]     Return focus to input
-  [cyan]Tab[/]        Cycle panel focus
+  [cyan]Tab[/]        Complete a slash command or cycle focus
   [cyan]Ctrl+O[/]     Toggle thinking display
   [cyan]Ctrl+P[/]     Toggle Plan / Act mode
   [cyan]Ctrl+L[/]     Clear chat history
@@ -131,37 +80,15 @@ HELP_TEXT = """\
   [cyan]Ctrl+K[/]     Cancel generation
   [cyan]Ctrl+Q[/]     Quit DJcode TUI
   [cyan]F1[/]         This help screen
-  [cyan]F2[/]         Agent roster
-  [cyan]F3[/]         Command palette
-
-[bold #FFD700]Slash Commands[/]
-
-  [cyan]/[/]               Command palette (fuzzy search)
-  [cyan]/model[/] <name>    Switch model
-  [cyan]/provider[/] <name> Switch provider
-  [cyan]/clear[/]           Clear conversation
-  [cyan]/agents[/]          Show agent roster
-  [cyan]/stats[/]           Usage dashboard
-  [cyan]/scout[/] <query>   Codebase exploration
-  [cyan]/orchestra[/] <task> Multi-agent dispatch
-  [cyan]/review[/]          Code review
-  [cyan]/debug[/]           Root cause analysis
-  [cyan]/test[/]            Generate tests
-  [cyan]/design ID[/]       Select original design guidance; /design lists
-  [cyan]/memory[/]          Memory stats
-  [cyan]/extension[/]       MCP extensions
-  [cyan]/recipe[/]          Run recipes
-  [cyan]/search[/] <query>  Web search
-  [cyan]/tasks[/]           Session task manager
-  [cyan]/spawn[/] <agent>   Spawn specialist agent
-  [cyan]/army[/]            18-agent army view
-  [cyan]/context[/]         Context window stats
-  [cyan]/waves[/] <task>    Wave execution
-  [cyan]/help[/]            Show this help
-  [cyan]/exit[/]            Quit
+  [cyan]F2[/]         Model picker
+  [cyan]F3[/]         Provider picker
+  [cyan]F4[/]         Command palette
+  [cyan]F5[/]         Agent roster
+  [cyan]Up / Down[/]  Prompt history (or command suggestions)
 
 [dim]F4 commands · Ctrl+B sidebar · Ctrl+K cancel · Escape closes[/]
 """
+HELP_TEXT += "\n\n" + command_help("tui")
 
 
 class ToolApprovalScreen(ModalScreen[bool]):
@@ -169,7 +96,7 @@ class ToolApprovalScreen(ModalScreen[bool]):
     BINDINGS = [Binding("escape", "deny", "Deny")]
     DEFAULT_CSS = """
     ToolApprovalScreen { align: center middle; background: rgba(0, 0, 0, 0.85); }
-    #approval-box { width: 76; height: auto; max-height: 85%; border: round #FFD700; background: #111111; padding: 1 2; }
+    #approval-box { width: 76; height: auto; max-height: 85%; border: round #C79B7A; background: #111111; padding: 1 2; }
     #approval-details { height: auto; max-height: 12; overflow-y: auto; }
     #approval-actions { height: 3; margin-top: 1; }
     #approval-actions Button { margin-right: 2; }
@@ -215,7 +142,7 @@ class HelpScreen(ModalScreen[None]):
         height: auto;
         max-height: 85%;
         background: #111111;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
         overflow-y: auto;
     }
@@ -229,7 +156,7 @@ class HelpScreen(ModalScreen[None]):
 # ── Agents overlay screen ──────────────────────────────────────────────
 
 AGENTS_TEXT = """\
-[bold #FFD700]DJcode Agent Roster[/]
+[bold #C79B7A]DJcode Agent Roster[/]
 
 [bold]Build Agents[/]
   [cyan]Operator[/]    Default — general coding
@@ -270,7 +197,7 @@ class AgentsScreen(ModalScreen[None]):
         height: auto;
         max-height: 80%;
         background: #111111;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
     }
     """
@@ -297,12 +224,12 @@ class ModelPicker(ModalScreen[str | None]):
         width: 76;
         height: 36;
         background: #141414;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
     }
     #model-title {
         height: 1;
-        color: #FFD700;
+        color: #C79B7A;
         text-style: bold;
         text-align: center;
         margin-bottom: 1;
@@ -310,12 +237,12 @@ class ModelPicker(ModalScreen[str | None]):
     #model-search {
         height: 3;
         background: #1a1a1a;
-        color: #FFD700;
+        color: #C79B7A;
         border: solid #2a2a2a;
         margin-bottom: 1;
     }
     #model-search:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     #model-info {
         height: 1;
@@ -327,11 +254,11 @@ class ModelPicker(ModalScreen[str | None]):
         height: 1fr;
         background: #101010;
         scrollbar-color: #2a2a2a;
-        scrollbar-color-hover: #FFD700;
+        scrollbar-color-hover: #C79B7A;
     }
     #model-list > .option-list--option-highlighted {
-        background: #FFD700 20%;
-        color: #FFD700;
+        background: #C79B7A 20%;
+        color: #C79B7A;
     }
     #model-list > .option-list--option {
         padding: 0 1;
@@ -371,51 +298,13 @@ class ModelPicker(ModalScreen[str | None]):
         cfg = load_config()
         self._recent = cfg.get("recent_models", [])
 
-        if self._provider_name == "ollama":
-            try:
-                from djcode.provider import fetch_ollama_models_sync
-                url = self._base_url or cfg.get("ollama_url", "http://localhost:11434")
-                models = fetch_ollama_models_sync(url)
-                self._models = models or []
-            except Exception:
-                self._models = []
-        else:
-            # For non-Ollama providers, show common models
-            provider_models = {
-                "openai": [
-                    "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4",
-                    "o1", "o1-mini", "o1-preview", "o3-mini",
-                ],
-                "anthropic": [
-                    "claude-sonnet-4-6", "claude-opus-4-6",
-                    "claude-haiku-4-5-20251001",
-                    "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022",
-                ],
-                "google": [
-                    "gemini-2.5-pro", "gemini-2.5-flash",
-                    "gemini-2.0-flash", "gemini-1.5-pro",
-                ],
-                "nvidia": [
-                    "deepseek-ai/deepseek-r1", "google/gemma-3-27b-it",
-                    "meta/llama-3.3-70b-instruct",
-                ],
-                "groq": [
-                    "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
-                    "mixtral-8x7b-32768", "gemma2-9b-it",
-                ],
-                "together": [
-                    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
-                    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-                    "mistralai/Mixtral-8x22B-Instruct-v0.1",
-                ],
-                "openrouter": [
-                    "anthropic/claude-sonnet-4-6",
-                    "openai/gpt-4o", "google/gemini-2.5-pro",
-                    "meta-llama/llama-3.3-70b-instruct",
-                ],
-            }
-            model_names = provider_models.get(self._provider_name, [])
-            self._models = [{"name": m} for m in model_names]
+        from djcode.startup import probe
+        if self._base_url:
+            cfg["base_url"] = self._base_url
+        found = await asyncio.to_thread(probe, cfg, self._provider_name)
+        self._models = [{"name": name} for name in found.get("models", [])]
+        if not self._models:
+            self.query_one("#model-info", Static).update(found["message"] + " Enter an exact model ID.")
 
         self._render_models("")
 
@@ -536,12 +425,12 @@ class ProviderPicker(ModalScreen[dict | None]):
         height: 30;
         max-height: 90%;
         background: #141414;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
     }
     #provider-title {
         height: 1;
-        color: #FFD700;
+        color: #C79B7A;
         text-style: bold;
         text-align: center;
         margin-bottom: 1;
@@ -549,22 +438,22 @@ class ProviderPicker(ModalScreen[dict | None]):
     #provider-search {
         height: 3;
         background: #1a1a1a;
-        color: #FFD700;
+        color: #C79B7A;
         border: solid #2a2a2a;
         margin-bottom: 1;
     }
     #provider-search:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     #provider-list {
         height: 1fr;
         background: #101010;
         scrollbar-color: #2a2a2a;
-        scrollbar-color-hover: #FFD700;
+        scrollbar-color-hover: #C79B7A;
     }
     #provider-list > .option-list--option-highlighted {
-        background: #FFD700 20%;
-        color: #FFD700;
+        background: #C79B7A 20%;
+        color: #C79B7A;
     }
     #provider-list > .option-list--option {
         padding: 0 1;
@@ -583,7 +472,7 @@ class ProviderPicker(ModalScreen[dict | None]):
         border: solid #2a2a2a;
     }
     #provider-url-input:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     #provider-key-input {
         height: 3;
@@ -593,7 +482,7 @@ class ProviderPicker(ModalScreen[dict | None]):
         margin-top: 1;
     }
     #provider-key-input:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     """
 
@@ -697,7 +586,7 @@ class ProviderPicker(ModalScreen[dict | None]):
             url_section = self.query_one("#provider-url-section")
             url_section.styles.display = "block"
             self.query_one("#provider-config-label", Static).update(
-                f"[bold #FFD700]Configure Custom Endpoint[/]"
+                f"[bold #C79B7A]Configure Custom Endpoint[/]"
             )
             self.query_one("#provider-url-input", Input).focus()
             return
@@ -846,12 +735,12 @@ class CommandPalette(ModalScreen[str | None]):
         width: 72;
         height: 32;
         background: #111111;
-        border: double #FFD700;
+        border: double #C79B7A;
         padding: 1 2;
     }
     #palette-title {
         height: 1;
-        color: #FFD700;
+        color: #C79B7A;
         text-style: bold;
         text-align: center;
         margin-bottom: 1;
@@ -859,22 +748,22 @@ class CommandPalette(ModalScreen[str | None]):
     #palette-input {
         height: 3;
         background: #1a1a1a;
-        color: #FFD700;
+        color: #C79B7A;
         border: solid #333333;
         margin-bottom: 1;
     }
     #palette-input:focus {
-        border: solid #FFD700;
+        border: solid #C79B7A;
     }
     #palette-list {
         height: 1fr;
         background: #0a0a0a;
         scrollbar-color: #333333;
-        scrollbar-color-hover: #FFD700;
+        scrollbar-color-hover: #C79B7A;
     }
     #palette-list > .option-list--option-highlighted {
-        background: #FFD700 20%;
-        color: #FFD700;
+        background: #C79B7A 20%;
+        color: #C79B7A;
     }
     #palette-list > .option-list--option {
         padding: 0 1;
@@ -919,9 +808,12 @@ class CommandPalette(ModalScreen[str | None]):
         option_list = self.query_one("#palette-list", OptionList)
         option_list.clear_options()
 
-        for cmd, desc in self._all_commands:
-            if not query or query in cmd.lower() or query in desc.lower():
-                option_list.add_option(Option(f"{cmd:<20} {desc}", id=cmd))
+        for command in match_commands(query):
+            option_list.add_option(Option(
+                f"{command.name:<20} {command.description}", id=command.name,
+            ))
+        if option_list.option_count:
+            option_list.highlighted = 0
 
     @on(OptionList.OptionSelected, "#palette-list")
     def select_command(self, event: OptionList.OptionSelected) -> None:
@@ -956,13 +848,13 @@ class SearchBar(ModalScreen[str | None]):
         width: 60;
         margin-top: 2;
         background: #111111;
-        border: solid #FFD700;
+        border: solid #C79B7A;
         padding: 0 1;
         height: 3;
     }
     #search-input {
         background: #111111;
-        color: #FFD700;
+        color: #C79B7A;
         height: 3;
     }
     """
@@ -997,15 +889,15 @@ class DJcodeApp(App):
 
     BINDINGS = [
         Binding("ctrl+o", "toggle_thinking", "Thinking", show=False),
-        Binding("ctrl+p", "toggle_plan", "Plan/Act", show=True),
+        Binding("ctrl+p", "toggle_plan", "Plan/Act", show=True, priority=True),
         Binding("ctrl+l", "clear_chat", "Clear", show=False),
         Binding("ctrl+t", "toggle_auto", "Auto", show=False),
         Binding("ctrl+r", "rerun", "Rerun", show=False),
-        Binding("ctrl+k", "cancel", "Cancel", show=True),
+        Binding("ctrl+k", "cancel", "Cancel", show=True, priority=True),
         Binding("ctrl+q", "quit", "Quit", show=True),
         Binding("f1", "show_help", "Help", show=True),
-        Binding("f2", "show_model_picker", "Model", show=True),
-        Binding("f3", "show_provider_picker", "Provider", show=True),
+        Binding("f2", "show_model_picker", "Model", show=False),
+        Binding("f3", "show_provider_picker", "Provider", show=False),
         Binding("f4", "show_palette", "Cmds", show=True),
         Binding("f5", "show_agents", "Agents", show=False),
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=False),
@@ -1046,6 +938,10 @@ class DJcodeApp(App):
         self._approval_lock = asyncio.Lock()
         self._sidebar_override: bool | None = None
         self._last_input = ""
+        self._prompt_history: list[str] = []
+        self._history_index = 0
+        self._draft = ""
+        self._followups = []
         self._provider: Any = None
         self._operator: Any = None
         self._memory: Any = None
@@ -1060,7 +956,7 @@ class DJcodeApp(App):
         yield HackerHeader(id="hacker-header")
         with Horizontal(id="main-layout"):
             with Vertical(id="chat-panel"):
-                yield RichLog(
+                yield ConversationLog(
                     id="chat-log",
                     markup=True,
                     wrap=True,
@@ -1068,14 +964,15 @@ class DJcodeApp(App):
                     auto_scroll=True,
                 )
                 yield OptionList(id="cmd-suggest")
+                yield Static("DAF + DDAL · default engine", id="workflow-state", markup=False)
                 yield AgentStatusBar(id="agent-status-bar")
                 yield Input(
                     id="prompt-input",
-                    placeholder="\u276f Type a message... (/help for commands, / for palette)",
+                    placeholder="❯ Ask anything, or / for commands",
                 )
             yield SidePanel(project_path=Path.cwd(), id="side-panel")
-        yield Static(self._build_status_text(), id="status-bar")
-        yield Footer()
+        yield Static(self._build_status_text(), id="status-bar", markup=False)
+        yield Footer(compact=True)
 
     def on_resize(self, event: events.Resize) -> None:
         self._update_layout()
@@ -1083,7 +980,7 @@ class DJcodeApp(App):
     def _update_layout(self) -> None:
         if not self.is_mounted:
             return
-        visible = self._sidebar_override if self._sidebar_override is not None else self.size.width >= 110
+        visible = self._sidebar_override if self._sidebar_override is not None else False
         self.query_one("#side-panel").display = visible
         self.query_one("#chat-panel").styles.width = "65%" if visible else "100%"
         self._refresh_status_bar()
@@ -1144,7 +1041,7 @@ class DJcodeApp(App):
         chat = self.query_one("#chat-log", RichLog)
         chat.write(
             f"[bold {GOLD}]\u23fa DJcode[/] [dim]v{__version__}[/]  "
-            f"[dim]project by Darshan Kumar Joshi[/]\n"
+            f"[dim]project by Darshankumar Joshi[/]\n"
         )
 
         # Focus the input by default
@@ -1163,11 +1060,22 @@ class DJcodeApp(App):
 
         try:
             from djcode.provider import Provider, ProviderConfig
+            from djcode.config import CONFIG_FILE
+            if not CONFIG_FILE.exists() and not self._provider_name:
+                self._show_provider_picker()
+                return
 
             config = ProviderConfig.from_config(
                 provider_override=self._provider_name,
                 model_override=self._model_name,
             )
+            from djcode.auth import PROVIDERS
+            from djcode.account_auth import has_account
+            if PROVIDERS.get(config.name, {}).get("needs_key") and not (
+                has_account(config.name) if config.auth_method == "account" else config.api_key
+            ):
+                self._show_provider_picker()
+                return
             self._provider = Provider(config)
 
             # Validate model
@@ -1176,6 +1084,7 @@ class DJcodeApp(App):
                 side.agent_panel.add_tool_call("validate_model", "warning")
             if not ok:
                 chat.write(f"[{ERROR}]Model error: {msg}[/]")
+                self._show_provider_picker()
                 return
 
             # Create operator
@@ -1191,6 +1100,7 @@ class DJcodeApp(App):
                 approval_callback=self._approve_tool,
             )
             self._operator.auto_accept = self._auto_accept
+            self._operator.workflow.event_callback = self._workflow_event
 
             # Initialize memory manager
             try:
@@ -1217,13 +1127,14 @@ class DJcodeApp(App):
             try:
                 from djcode.sessions import SessionDB
                 self._session_db = SessionDB()
-                session_data = self._session_db.create_session(
+                self._sqlite_session_id = self._session_db.create_session(
                     model=self._provider.config.model,
                     provider=self._provider.config.name,
+                    cwd=str(Path.cwd()),
                 )
-                self._sqlite_session_id = session_data.id if session_data else None
-            except Exception:
+            except Exception as error:
                 self._session_db = None
+                self.notify(f"Session history unavailable: {type(error).__name__}", severity="warning")
 
             # Initialize extension manager
             try:
@@ -1339,17 +1250,14 @@ class DJcodeApp(App):
         text = event.value
         suggest = self.query_one("#cmd-suggest", OptionList)
 
-        if text.startswith("/") and len(text) > 0:
-            query = text.lower()
-            matches = [
-                (cmd, desc)
-                for cmd, desc in COMMAND_REGISTRY
-                if query in cmd.lower() or query[1:] in desc.lower()
-            ]
+        if text.startswith("/") and not any(char.isspace() for char in text):
+            matches = match_commands(text)
             suggest.clear_options()
             if matches:
-                for cmd, desc in matches:
-                    suggest.add_option(Option(f"{cmd:<16} {desc}", id=cmd))
+                for command in matches:
+                    suggest.add_option(Option(
+                        f"{command.name:<16} {command.description}", id=command.name,
+                    ))
                 suggest.styles.display = "block"
                 # Highlight first option
                 if suggest.option_count > 0:
@@ -1374,8 +1282,16 @@ class DJcodeApp(App):
 
     def on_key(self, event) -> None:
         """Intercept keys when suggestion list is visible."""
+        if len(self.screen_stack) > 1 or not isinstance(self.focused, Input):
+            return
+        if self.focused.id != "prompt-input":
+            return
         suggest = self.query_one("#cmd-suggest", OptionList)
         if suggest.styles.display == "none":
+            if event.key in ("up", "down") and self._prompt_history:
+                event.prevent_default()
+                event.stop()
+                self._navigate_history(-1 if event.key == "up" else 1)
             return
 
         if event.key == "up":
@@ -1394,7 +1310,7 @@ class DJcodeApp(App):
             elif suggest.option_count > 0:
                 suggest.highlighted = 0
 
-        elif event.key in ("enter", "tab"):
+        elif event.key == "tab":
             event.prevent_default()
             event.stop()
             self._select_suggestion()
@@ -1404,6 +1320,24 @@ class DJcodeApp(App):
             event.stop()
             suggest.styles.display = "none"
 
+    def _navigate_history(self, direction: int) -> None:
+        prompt = self.query_one("#prompt-input", Input)
+        if self._history_index == len(self._prompt_history):
+            self._draft = prompt.value
+        self._history_index = max(0, min(
+            len(self._prompt_history), self._history_index + direction,
+        ))
+        prompt.value = (self._draft if self._history_index == len(self._prompt_history)
+                        else self._prompt_history[self._history_index])
+        prompt.cursor_position = len(prompt.value)
+
+    def _remember_prompt(self, text: str) -> None:
+        if not self._prompt_history or self._prompt_history[-1] != text:
+            self._prompt_history.append(text)
+            self._prompt_history = self._prompt_history[-200:]
+        self._history_index = len(self._prompt_history)
+        self._draft = ""
+
     # ── Input handling ───────────────────────────────────────────────────
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -1411,14 +1345,38 @@ class DJcodeApp(App):
         if event.input.id != "prompt-input":
             return
 
-        # Hide suggestion list on submit
-        self.query_one("#cmd-suggest", OptionList).styles.display = "none"
-
         text = event.value.strip()
         if not text:
             return
 
         inp = self.query_one("#prompt-input", Input)
+        suggest = self.query_one("#cmd-suggest", OptionList)
+        # Complete partial names; Enter on an exact command executes it.
+        if (text != "/" and not any(char.isspace() for char in text)
+                and suggest.display and suggest.option_count
+                and text.lower() not in {name for name, _ in COMMAND_REGISTRY}):
+            self._select_suggestion()
+            return
+
+        if self._is_generating and not text.startswith("/"):
+            self._followups.append(text)
+            inp.value = ""
+            self._remember_prompt(text)
+            self.notify(f"Queued follow-up {len(self._followups)} · /queue to inspect")
+            return
+
+        if self._is_generating and text.split()[0].lower() not in {
+            "/cancel", "/help", "/shortcuts", "/exit", "/quit", "/q", "/queue", "/jobs",
+        }:
+            self.notify("Response running. Draft kept; Ctrl+K cancels.", severity="warning")
+            return
+
+        if not text.startswith("/") and not self._operator:
+            self.notify("Still initializing. Your draft is kept.", severity="warning")
+            return
+
+        suggest.styles.display = "none"
+        self._remember_prompt(text)
         inp.value = ""
 
         # Bare "/" triggers command palette
@@ -1433,7 +1391,7 @@ class DJcodeApp(App):
 
         # Normal chat message
         self._last_input = text
-        self.run_worker(self._send_message(text), exclusive=True)
+        self.run_worker(self._send_message(text), group="conversation", exclusive=False)
 
     async def _run_slash_command(self, text: str) -> None:
         """Keep the event pump free while a specialist awaits a permission modal."""
@@ -1450,6 +1408,9 @@ class DJcodeApp(App):
         except asyncio.CancelledError:
             self.query_one("#chat-log", RichLog).write(f"[{WARNING}]Command cancelled.[/]")
             raise
+        except Exception as error:
+            from rich.text import Text
+            self.query_one("#chat-log", RichLog).write(Text(f"Command failed: {error}", style=ERROR))
         finally:
             if tracks_task:
                 self._is_generating = False
@@ -1463,8 +1424,40 @@ class DJcodeApp(App):
         cmd = parts[0].lower()
         arg = parts[1] if len(parts) > 1 else ""
 
+        from djcode.commands import plan_blocks_command
+        if self._plan_mode and plan_blocks_command(cmd, arg):
+            chat.write("[yellow]Plan mode: switch to Act with /plan before running this command.[/]")
+            return
+
+        from djcode.session_commands import NAMES, handle
+        if cmd in NAMES:
+            from rich.text import Text
+            if self._operator:
+                self._operator.session_db = self._session_db
+                self._operator.session_id = self._sqlite_session_id
+            chat.write(Text(await handle(self._operator, cmd, arg)))
+            if cmd == "/workflow" and self._operator:
+                self.query_one("#workflow-state", Static).update(
+                    "DAF + DDAL · default engine" if self._operator.workflow.mode == "daf" else "Native engine · explicitly selected"
+                )
+            if self._operator:
+                self._sqlite_session_id = self._operator.session_id
+            return
+        if cmd == "/queue":
+            from rich.text import Text
+            if arg == "clear":
+                self._followups.clear()
+            chat.write(Text("\n".join(f"{i+1}. {text}" for i, text in enumerate(self._followups)) or "No queued follow-ups"))
+            return
+        if cmd == "/connect":
+            self._show_provider_picker()
+            return
+
         if cmd == "/help":
             self.push_screen(HelpScreen())
+
+        elif cmd == "/cancel":
+            self.action_cancel()
 
         elif cmd == "/design":
             from djcode.design_packs import list_packs
@@ -1774,7 +1767,7 @@ class DJcodeApp(App):
                     if event.event_type == EventType.AGENT_TOKEN:
                         token = event.data.get("token", "")
                         if token:
-                            chat.write(token, shrink=False, scroll_end=True)
+                            chat.write(token, shrink=True, scroll_end=True)
                     elif event.event_type == EventType.WAVE_START:
                         wave = event.data.get("wave", "?")
                         chat.write(f"\n  [{GOLD}]Wave {wave} starting...[/]")
@@ -1806,7 +1799,7 @@ class DJcodeApp(App):
             else:
                 # Fallback: use the compat wrapper's token-yielding execute
                 async for token in self._orchestrator.execute(arg):
-                    chat.write(token, shrink=False, scroll_end=True)
+                    chat.write(token, shrink=True, scroll_end=True)
         except Exception as e:
             chat.write(f"[{ERROR}]Wave execution error: {e}[/]")
 
@@ -1841,7 +1834,7 @@ class DJcodeApp(App):
             chat.write(f"[dim]Dispatching to agent orchestra...[/]")
             try:
                 async for token in self._orchestrator.execute(arg):
-                    chat.write(token, shrink=False, scroll_end=True)
+                    chat.write(token, shrink=True, scroll_end=True)
                 side.agent_panel.add_tool_call("orchestra", "ok")
             except Exception as e:
                 chat.write(f"[{ERROR}]Orchestra error: {e}[/]")
@@ -1869,7 +1862,7 @@ class DJcodeApp(App):
             chat.write(f"[dim]{agent_name} working...[/]")
             try:
                 async for token in self._orchestrator.run_single_agent_streaming(role, task):
-                    chat.write(token, shrink=False, scroll_end=True)
+                    chat.write(token, shrink=True, scroll_end=True)
                 side.agent_panel.add_tool_call(agent_name.lower(), "ok")
             except Exception as e:
                 chat.write(f"[{ERROR}]{agent_name} error: {e}[/]")
@@ -1910,7 +1903,7 @@ class DJcodeApp(App):
                     # Phase 1: Build
                     chat.write(f"  [{GOLD}]Phase 1: Build[/]")
                     async for token in self._orchestrator.execute(f"build: {arg}"):
-                        chat.write(token, shrink=False, scroll_end=True)
+                        chat.write(token, shrink=True, scroll_end=True)
                     # Phase 2: Campaign
                     chat.write(f"  [{GOLD}]Phase 2: Campaign[/]")
                     spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
@@ -1921,7 +1914,7 @@ class DJcodeApp(App):
                     async for token in runner.run_streaming(
                         f"Create a full launch campaign for: {arg}"
                     ):
-                        chat.write(token, shrink=False, scroll_end=True)
+                        chat.write(token, shrink=True, scroll_end=True)
                     chat.write(f"\n  [{GOLD}]Launch complete.[/]\n")
                 elif cmd in role_map:
                     role = role_map[cmd]
@@ -1931,7 +1924,7 @@ class DJcodeApp(App):
                         self._provider, spec, bus, auto_accept=self._auto_accept, approval_callback=self._approve_tool,
                     )
                     async for token in runner.run_streaming(arg or f"create content"):
-                        chat.write(token, shrink=False, scroll_end=True)
+                        chat.write(token, shrink=True, scroll_end=True)
 
                 side.agent_panel.add_tool_call(cmd.lstrip("/"), "ok")
             except Exception as e:
@@ -1943,6 +1936,9 @@ class DJcodeApp(App):
 
     def _show_model_picker(self) -> None:
         """Open interactive model picker overlay."""
+        if self._is_generating:
+            self.notify("Cancel the response before switching models.", severity="warning")
+            return
         provider_name = self._provider.config.name if self._provider else "ollama"
         base_url = self._provider.config.base_url if self._provider else ""
 
@@ -1957,26 +1953,44 @@ class DJcodeApp(App):
 
     def _show_provider_picker(self) -> None:
         """Open interactive provider picker overlay."""
+        if self._is_generating:
+            self.notify("Cancel the response before switching providers.", severity="warning")
+            return
 
-        def on_provider_selected(result: dict | None) -> None:
-            if not result:
-                return
-            provider_id = result.get("provider", "")
-            base_url = result.get("base_url", "")
-            api_key = result.get("api_key", "")
+        from djcode.connect import ConnectScreen
+        def connected(result):
+            if result:
+                self.run_worker(self._apply_connection(result), group="connection")
+        self.push_screen(ConnectScreen(), callback=connected)
 
-            # If custom URL provided, set env and switch
-            if base_url:
-                import os
-                os.environ["DJCODE_CUSTOM_URL"] = base_url
-                if api_key:
-                    os.environ["DJCODE_API_KEY"] = api_key
-
-            self.run_worker(
-                self._handle_provider_switch(provider_id), exclusive=True,
-            )
-
-        self.push_screen(ProviderPicker(), callback=on_provider_selected)
+    async def _apply_connection(self, config):
+        from djcode.provider import Provider, ProviderConfig
+        self._provider_name = config["provider"]
+        self._model_name = config["model"]
+        previous = self._provider
+        if not self._operator:
+            if previous:
+                await previous.close()
+            self._provider = None
+            await self._initialize()
+            return
+        self._provider = Provider(ProviderConfig.from_config(self._provider_name, self._model_name))
+        if self._operator:
+            self._operator.provider = self._provider
+            self._operator.context_manager.provider = self._provider
+            # Keep the conversation and its session-owned tools when switching models.
+            self._provider._session_runtimes = [self._operator.capabilities]
+            if previous:
+                previous._session_runtimes = []
+            if self._orchestrator:
+                self._orchestrator.provider = self._provider
+                self._orchestrator._shadow.provider = self._provider
+        else:
+            await self._initialize()
+        if previous:
+            await previous.close()
+        self._refresh_status_bar()
+        self.notify(f"Connected to {self._provider_name} / {self._model_name}")
 
     # ── Model / Provider switching ───────────────────────────────────────
 
@@ -2000,18 +2014,13 @@ class DJcodeApp(App):
                 f"v{__version__} | {new_model} | {self._provider.config.name}"
             )
 
-            from djcode.agents.operator import Operator
-
-            self._operator = Operator(
-                self._provider,
-                bypass_rlhf=self._bypass_rlhf,
-                raw=True,
-                model=new_model,
-                auto_accept=self._auto_accept,
-                show_thinking=False,
-                approval_callback=self._approve_tool,
-            )
-            self._operator.auto_accept = self._auto_accept
+            if self._provider._new_provider is not None:
+                await self._provider._new_provider.close()
+                self._provider._new_provider = None
+            from djcode.context.manager import ContextWindowManager
+            self._operator.context_manager = ContextWindowManager(model=new_model, provider=self._provider)
+            self._operator.context_manager.replace_messages(self._operator.messages)
+            self._context_mgr = self._operator.context_manager
             side.stats_panel.update_stats(model=new_model)
             side.agent_panel.add_tool_call("model_switch", "ok")
         else:
@@ -2424,7 +2433,7 @@ class DJcodeApp(App):
                 params = recipe_mgr.collect_params_from_args(recipe, param_str)
                 chat.write(f"\n[bold {GOLD}]Running recipe: {recipe.name}[/]")
                 async for token in recipe_mgr.execute(recipe, params, self._operator):
-                    chat.write(token, shrink=False, scroll_end=True)
+                    chat.write(token, shrink=True, scroll_end=True)
                 chat.write("")
             except Exception as e:
                 chat.write(f"[{ERROR}]Recipe error: {e}[/]")
@@ -2524,7 +2533,7 @@ class DJcodeApp(App):
                 content = m.get("content", "")
                 tc = m.get("tool_calls")
                 self._operator.messages.append(
-                    _Msg(role=role, content=content, tool_calls=tc or [], tool_call_id=m.get("tool_call_id"), name=m.get("name"))
+                    _Msg(role=role, content=content, tool_calls=tc or [], tool_call_id=m.get("tool_call_id"), name=m.get("name"), images=m.get("images", []))
                 )
                 restored += 1
 
@@ -2536,6 +2545,8 @@ class DJcodeApp(App):
     # ── Message sending and streaming ────────────────────────────────────
 
     async def _approve_tool(self, name: str, arguments: dict) -> bool:
+        if self._plan_mode:
+            return False
         async with self._approval_lock:
             return await self._show_tool_approval(name, arguments)
 
@@ -2551,6 +2562,20 @@ class DJcodeApp(App):
         finally:
             if self.screen is screen:
                 self.pop_screen()
+
+    def _workflow_event(self, event):
+        from rich.text import Text
+        kind = event.get("event")
+        if kind == "preparing":
+            label = "DAF + DDAL · preparing engine"
+        elif kind == "tool":
+            label = f"DAF + DDAL · {event['name']}"
+            self.query_one("#chat-log", RichLog).write(Text(f"  ● {event['name']}", style=GOLD))
+        elif kind == "complete":
+            label = "DAF + DDAL · completed" if event.get("ok") else "DAF + DDAL · failed"
+        else:
+            return
+        self.query_one("#workflow-state", Static).update(label)
 
     async def _send_message(self, text: str) -> None:
         """Send a message to the operator and stream the response."""
@@ -2570,7 +2595,8 @@ class DJcodeApp(App):
         self._cancel_requested = False
 
         # Show user message
-        chat.write(f"\n[bold {GOLD}]\u276f[/] [{GOLD}]{text}[/]")
+        from rich.text import Text
+        chat.write(Text(f"\n❯ {text}", style=GOLD))
 
         # Track in memory
         if self._memory:
@@ -2645,9 +2671,9 @@ class DJcodeApp(App):
                     parts = line_buf.split("\n")
                     for part in parts[:-1]:
                         if part:
-                            chat.write(part, shrink=False, scroll_end=True)
+                            chat.write(Text(part), shrink=True, scroll_end=True)
                         else:
-                            chat.write("", shrink=False, scroll_end=True)
+                            chat.write("", shrink=True, scroll_end=True)
                     line_buf = parts[-1]
 
                 # Periodic stats update
@@ -2660,7 +2686,7 @@ class DJcodeApp(App):
 
             # Flush remaining buffer
             if line_buf:
-                chat.write(line_buf, shrink=False, scroll_end=True)
+                chat.write(Text(line_buf), shrink=True, scroll_end=True)
 
             elapsed = time.time() - start
             self._response_times.append(elapsed)
@@ -2754,6 +2780,9 @@ class DJcodeApp(App):
         finally:
             self._is_generating = False
             self._generation_task = None
+            if self._followups and not self._cancel_requested:
+                next_input = self._followups.pop(0)
+                self.call_later(lambda: self.run_worker(self._send_message(next_input), group="conversation"))
 
     # ── Key bindings / actions ───────────────────────────────────────────
 
@@ -2768,6 +2797,8 @@ class DJcodeApp(App):
     def action_toggle_plan(self) -> None:
         """Toggle plan/act mode."""
         self._plan_mode = not self._plan_mode
+        if self._operator:
+            self._operator.plan_mode = self._plan_mode
         mode = "PLAN" if self._plan_mode else "ACT"
         chat = self.query_one("#chat-log", RichLog)
         chat.write(f"[dim]Mode: {mode}[/]")
@@ -2780,9 +2811,13 @@ class DJcodeApp(App):
         except Exception:
             pass
         self.notify(f"Mode: {mode}", severity="information")
+        self._refresh_status_bar()
 
     def action_clear_chat(self) -> None:
         """Clear the chat log and reset conversation."""
+        if self._is_generating:
+            self.notify("Cancel the response before clearing the conversation.", severity="warning")
+            return
         chat = self.query_one("#chat-log", RichLog)
         chat.clear()
         chat.write(f"[dim]Chat cleared.[/]\n")
@@ -2820,6 +2855,7 @@ class DJcodeApp(App):
         chat = self.query_one("#chat-log", RichLog)
         chat.write(f"[dim]Auto-accept: {label}[/]")
         self.notify(f"Auto-accept: {label}", severity="information")
+        self._refresh_status_bar()
 
     def action_rerun(self) -> None:
         """Rerun the last message."""
@@ -2827,7 +2863,7 @@ class DJcodeApp(App):
             chat = self.query_one("#chat-log", RichLog)
             chat.write(f"[dim]Rerunning: {self._last_input}[/]")
             self.run_worker(
-                self._send_message(self._last_input), exclusive=True,
+                self._send_message(self._last_input), group="conversation", exclusive=False,
             )
         else:
             self.notify("Nothing to rerun", severity="warning")
@@ -2875,6 +2911,16 @@ class DJcodeApp(App):
         """Clean up on exit."""
         from djcode.tools.agent_spawn import cancel_background_agents
         await cancel_background_agents()
+        if self._session_db and self._sqlite_session_id:
+            try:
+                if self._operator:
+                    self._session_db.save_conversation(
+                        self._sqlite_session_id, self._operator.messages,
+                    )
+                self._session_db.end_session(self._sqlite_session_id)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("Could not save terminal session on exit")
         # Record session end
         try:
             from djcode.stats import record_session_end

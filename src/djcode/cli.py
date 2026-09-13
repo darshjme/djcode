@@ -97,6 +97,7 @@ def redact_config(value, name=""):
 @click.option("--design-pack", type=str, help="Print a design reference, or add it to the supplied prompt.")
 @click.option("--design-export", type=click.Path(path_type=Path), help="Export the selected design reference and original SVG to a new directory.")
 @click.option("--revision", is_flag=True, help="Show the installed version and managed build revision without network access.")
+@click.option("--scheduler", is_flag=True, help="Run the durable command scheduler until stopped (use on the workspace host).")
 @click.option("--setup", is_flag=True, help="Choose provider, supported authentication method and model.")
 @click.option("--check", "check_install", is_flag=True, help="Check installation syntax, registries and fatal lint.")
 @click.option("--lint", is_flag=True, help="Run the installation quality checks (alias for --check).")
@@ -118,6 +119,7 @@ def main(
     wave: str | None,
     use_repl: bool,
     setup: bool,
+    scheduler: bool,
     revision: bool,
     design_packs: bool,
     design_pack: str | None,
@@ -133,6 +135,13 @@ def main(
 
     Run without arguments for the interactive TUI, or pass a prompt for one-shot mode.
     """
+    if scheduler:
+        from djcode.scheduler import Scheduler
+        try:
+            asyncio.run(Scheduler().serve())
+        except KeyboardInterrupt:
+            pass
+        return
     if design_packs:
         from djcode.design_packs import list_packs
         for pack in list_packs():
@@ -226,7 +235,8 @@ def main(
             if changed.get("updated") and changed.get("entrypoint"):
                 env = {**os.environ, "DJCODE_UPDATE_REEXEC": changed["commit"]}
                 os.execve(changed["entrypoint"], [changed["entrypoint"], *sys.argv[1:]], env)
-        provider, model = prepare(provider, model, force_setup=setup)
+        if setup or wave or prompt or use_repl or not sys.stdin.isatty():
+            provider, model = prepare(provider, model, force_setup=setup)
         if setup:
             return
         if wave:

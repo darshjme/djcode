@@ -120,6 +120,13 @@ class Operator:
         self.auto_accept = auto_accept
         self.show_thinking = show_thinking
         self.approval_callback = approval_callback
+        from djcode.workflow import WorkflowEngine
+        self.workflow = WorkflowEngine()
+        from djcode.capabilities import Capabilities
+        self.capabilities = Capabilities(self)
+        if not hasattr(provider, "_session_runtimes"):
+            provider._session_runtimes = []
+        provider._session_runtimes.append(self.capabilities)
         self.plan_mode = False
         self.on_checkpoint = None
         from djcode.context.manager import ContextWindowManager
@@ -134,6 +141,30 @@ class Operator:
         self.last_had_tool_calls = False  # Track if last response used native tool calling
 
     async def send(self, user_input: str) -> AsyncIterator[str]:
+        from djcode.capabilities import capability_context
+        with capability_context(self.capabilities):
+            try:
+                async for token in self._send(user_input):
+                    yield token
+            except asyncio.CancelledError:
+                # Complete protocol bookkeeping without claiming rollback of effects.
+                for index in range(len(self.messages) - 1, -1, -1):
+                    message = self.messages[index]
+                    if message.role == "assistant" and message.tool_calls:
+                        answered = {m.tool_call_id for m in self.messages[index + 1:] if m.role == "tool"}
+                        for call in message.tool_calls:
+                            if call.get("id") not in answered:
+                                self.messages.append(Message(
+                                    role="tool", tool_call_id=call.get("id"),
+                                    name=call.get("function", {}).get("name"),
+                                    content="Error: Execution cancelled before a result was available. Inspect state before retrying; effects may have occurred.",
+                                ))
+                        break
+                if self.on_checkpoint:
+                    self.on_checkpoint(self.messages)
+                raise
+
+    async def _send(self, user_input: str) -> AsyncIterator[str]:
         """Send a user message and yield streamed response tokens.
 
         Handles the full tool-calling loop: if the LLM requests tools,
@@ -152,7 +183,9 @@ class Operator:
                 recalled.append(f"{key}: {entry}")
         if recalled:
             user_input += "\n\nSaved context (lexical matches; verify relevance):\n" + "\n".join(recalled)[:4000]
-        self.messages.append(Message(role="user", content=user_input))
+        pending_images = list(self.capabilities.computer.images)
+        self.capabilities.computer.images.clear()
+        self.messages.append(Message(role="user", content=user_input, images=pending_images))
         extracted_seen = set()
         native_tools_used = False
         self.last_had_tool_calls = False
@@ -224,7 +257,7 @@ class Operator:
                     # Execute tool
                     from djcode.tools.agent_spawn import agent_context
                     with agent_context(self.provider, self.auto_accept, self.approval_callback):
-                        result = await dispatch_tool(name, args)
+                        result = await self.workflow.one(name, args, dispatch_tool)
 
                     # Display result
                     if not self.raw:
@@ -241,6 +274,10 @@ class Operator:
                         )
                     )
 
+                images = self.capabilities.computer.images
+                if images:
+                    self.messages.append(Message(role="user", content="Screenshot from the preceding tool. Inspect it before acting.", images=list(images)))
+                    images.clear()
                 if self.on_checkpoint:
                     self.on_checkpoint(self.messages)
 
@@ -251,7 +288,7 @@ class Operator:
             # not fallback commands. Never execute them a second time.
             if full_response and not self.plan_mode and not native_tools_used:
                 from djcode.tool_router import ToolExtractionRouter
-                router = ToolExtractionRouter()
+                router = ToolExtractionRouter(dispatcher=lambda name, args: self.workflow.one(name, args, dispatch_tool))
                 intents = router.extract_intents(full_response)
                 pending = []
                 for intent in intents:

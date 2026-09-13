@@ -157,7 +157,7 @@ def test_tui_mount_permission_and_immediate_cancel(monkeypatch, tmp_path):
     monkeypatch.setattr(ProviderConfig, "from_config", staticmethod(lambda **kw: ProviderConfig(name="openai", model="test-model", base_url="https://example.invalid", api_key="test")))
     monkeypatch.setattr(Provider, "validate_model", lambda self: (True, ""))
     async def run():
-        app = DJcodeApp()
+        app = DJcodeApp(provider_name="openai")
         async with app.run_test(size=(120, 40)) as pilot:
             for _ in range(50):
                 if app._operator is not None:
@@ -293,7 +293,8 @@ def test_registry_has_dispatch_for_every_command():
     from djcode.app import COMMAND_REGISTRY, DJcodeApp
     tree = ast.parse(textwrap.dedent(inspect.getsource(DJcodeApp._handle_slash_command)))
     dispatched = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/")}
-    assert all(command in dispatched for command, _ in COMMAND_REGISTRY)
+    from djcode.session_commands import NAMES
+    assert all(command in dispatched or command in NAMES for command, _ in COMMAND_REGISTRY)
 
 
 @pytest.mark.parametrize("role", list(__import__("djcode.agents.content_registry", fromlist=["ContentRole"]).ContentRole))

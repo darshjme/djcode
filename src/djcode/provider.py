@@ -37,6 +37,7 @@ class Message:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     tool_call_id: str | None = None
     name: str | None = None
+    images: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -619,11 +620,17 @@ def format_model_size(size_bytes: int) -> str:
     return f"{mb:.0f} MB"
 
 
+from djcode.capabilities import CAPABILITY_TOOLS
+TOOL_DEFINITIONS.extend(CAPABILITY_TOOLS)
+
 def _messages_to_dicts(messages: list[Message]) -> list[dict[str, Any]]:
     """Convert Message dataclass instances to plain dicts for the new providers."""
     result = []
     for m in messages:
         d: dict[str, Any] = {"role": m.role, "content": m.content}
+        if m.images:
+            from djcode.vision import data_urls
+            d["images"] = data_urls(m.images)
         if m.tool_calls:
             d["tool_calls"] = m.tool_calls
         if m.tool_call_id:
@@ -1175,6 +1182,9 @@ class Provider:
     @staticmethod
     def _msg_to_ollama(msg: Message) -> dict[str, Any]:
         d: dict[str, Any] = {"role": msg.role, "content": msg.content}
+        if msg.images:
+            from djcode.vision import data_urls
+            d["images"] = [url.split(",", 1)[1] for url in data_urls(msg.images)]
         if msg.name:
             d["tool_name"] = msg.name
         if msg.tool_calls:
@@ -1190,7 +1200,8 @@ class Provider:
 
     @staticmethod
     def _msg_to_openai(msg: Message) -> dict[str, Any]:
-        d: dict[str, Any] = {"role": msg.role, "content": msg.content}
+        from djcode.vision import data_urls, openai_content
+        d: dict[str, Any] = {"role": msg.role, "content": openai_content(msg.content, data_urls(msg.images))}
         if msg.tool_calls:
             d["tool_calls"] = msg.tool_calls
         if msg.tool_call_id:
@@ -1200,6 +1211,9 @@ class Provider:
         return d
 
     async def close(self) -> None:
+        for runtime in getattr(self, "_session_runtimes", []):
+            await runtime.close()
+        self._session_runtimes = []
         await self._client.aclose()
         if self._new_provider is not None:
             await self._new_provider.close()

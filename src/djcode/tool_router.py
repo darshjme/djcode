@@ -293,7 +293,8 @@ class ToolExtractionRouter:
     # Confidence threshold — only execute intents above this
     CONFIDENCE_THRESHOLD = 0.6
 
-    def __init__(self) -> None:
+    def __init__(self, dispatcher=None) -> None:
+        self._dispatcher = dispatcher or dispatch_tool
         self._cwd = os.getcwd()
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -1142,7 +1143,7 @@ class ToolExtractionRouter:
                         success=False,
                         output="Missing path or content for file_write",
                     )
-                result = await dispatch_tool("file_write", {
+                result = await self._dispatcher("file_write", {
                     "path": intent.path,
                     "content": intent.content,
                 })
@@ -1160,7 +1161,7 @@ class ToolExtractionRouter:
                         output="Missing path for file_edit",
                     )
                 if intent.old_string and intent.new_string:
-                    result = await dispatch_tool("file_edit", {
+                    result = await self._dispatcher("file_edit", {
                         "path": intent.path,
                         "old_string": intent.old_string,
                         "new_string": intent.new_string,
@@ -1184,7 +1185,7 @@ class ToolExtractionRouter:
                         success=False,
                         output="No command to execute",
                     )
-                result = await dispatch_tool("bash", {"command": intent.content})
+                result = await self._dispatcher("bash", {"command": intent.content})
                 return ToolResult(
                     intent=intent,
                     success=not (result.startswith(("Error:", "[exit code", "Command timed out"))),
@@ -1198,8 +1199,8 @@ class ToolExtractionRouter:
                         success=False,
                         output="No directory path specified",
                     )
-                result = await dispatch_tool("bash", {
-                    "command": f"mkdir -p {intent.path}",
+                result = await self._dispatcher("bash", {
+                    "command": "mkdir -p " + __import__("shlex").quote(intent.path),
                 })
                 return ToolResult(
                     intent=intent,
