@@ -7,3 +7,6 @@ dist/
 
 work/
 .pytest_cache/
+
+# Local Rust build output; packaged DAF sources remain tracked.
+/target/
