@@ -11,6 +11,11 @@ jobs:
       - run: uv sync --python 3.12 --locked
       - name: Fatal lint
         run: uv run ruff check --select E9,F63,F7,F82 src tests scripts
+      - name: Build and test DAF engine
+        run: |
+          cargo build --locked --manifest-path src/djcode/daf_engine/Cargo.toml --target-dir target/daf
+          cargo test --locked --workspace --manifest-path src/djcode/daf_engine/Cargo.toml --target-dir target/daf
+          echo "DJCODE_DAF_ENGINE=$GITHUB_WORKSPACE/target/daf/debug/djcode-daf-engine" >> "$GITHUB_ENV"
       - name: Tests
         run: uv run --with pytest pytest -q
       - name: Standalone installer and publisher checks

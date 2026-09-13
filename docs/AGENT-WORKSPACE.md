@@ -65,4 +65,12 @@ Use a service manager on a server for persistent operation. DJcode does not sile
 
 The test suite covers actual DAF/DDAL execution, ordering, failures, cancellation, MCP stdio, PKCE exchange fixtures, session recovery, screenshot payload conversion, scheduled execution and UI onboarding. A real isolated Chromium fixture verifies browser actions and screenshot delivery. Production provider inference, real account authorization and OS desktop permissions require separate acceptance with the user's accounts and machine.
 
+To run the Python integration suite without rebuilding the engine for each isolated fixture:
+
+```sh
+cargo build --locked --manifest-path src/djcode/daf_engine/Cargo.toml --target-dir target/daf
+DJCODE_DAF_ENGINE="$PWD/target/daf/debug/djcode-daf-engine" uv run --with pytest pytest -q
+cargo test --locked --workspace --manifest-path src/djcode/daf_engine/Cargo.toml --target-dir target/daf
+```
+
 Design references: [Pi's coding-agent workflow](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/README.md), [OpenCode provider setup](https://opencode.ai/docs/providers), [OpenClaw tools](https://docs.openclaw.ai/tools), [OpenRouter PKCE](https://openrouter.ai/docs/guides/overview/auth/oauth), [Playwright](https://playwright.dev/python/docs/api/class-page), and [PyAutoGUI](https://pyautogui.readthedocs.io/en/latest/quickstart.html). The terminal implementation and styling are DJcode's own.
