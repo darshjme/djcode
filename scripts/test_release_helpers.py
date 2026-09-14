@@ -149,30 +149,35 @@ class FilesystemTests(unittest.TestCase):
 class PublisherTests(unittest.TestCase):
     def exercise(self, *, stale=False, existing=False, different=False):
         calls = []
+        reads = 0
         def fake_api(path):
-            if "/actions/runs/" in path:
-                return RUN
-            return {"object": {"sha": "b" * 40 if stale else COMMIT}}
+            nonlocal reads
+            reads += 1
+            return {"object": {"sha": "b" * 40 if stale and reads > 1 else COMMIT}}
         def fake_command(*args):
             calls.append(args)
-            if args[:3] == ("gh", "run", "download"):
-                dest = Path(args[args.index("--dir") + 1])
-                (dest / "djcode-4.2.0-py3-none-any.whl").write_bytes(WHEEL)
-                (dest / "djcode-4.2.0.tar.gz").write_bytes(b"sdist")
+            if args[0] == "git" and "rev-parse" in args: return COMMIT
+            if args[:3] == ("git", "clone", "--quiet"):
+                (Path(args[-1]) / "dist").mkdir(parents=True)
             if args[:3] == ("gh", "release", "download"):
                 if "--output" in args:
-                    return json.dumps(MANIFEST)
+                    return json.dumps({k: (2 if k == "schema" else v) for k,v in MANIFEST.items() if k != "run_id"})
                 dest = Path(args[args.index("--dir") + 1])
                 (dest / "djcode-4.2.0-py3-none-any.whl").write_bytes(
                     b"changed" if different else WHEEL)
                 (dest / "djcode-4.2.0.tar.gz").write_bytes(b"sdist")
             return ""
-        with patch.dict(publisher.os.environ, {"CI_RUN_ID": "42"}), \
-                patch.object(publisher, "api", side_effect=fake_api), \
+        def fake_run(args, **kwargs):
+            if args == ["uv", "build"]:
+                dest = Path(kwargs["cwd"]) / "dist"
+                (dest / "djcode-4.2.0-py3-none-any.whl").write_bytes(WHEEL)
+                (dest / "djcode-4.2.0.tar.gz").write_bytes(b"sdist")
+            from types import SimpleNamespace
+            return SimpleNamespace(returncode=0 if existing else 1)
+        with patch.object(publisher, "api", side_effect=fake_api), \
                 patch.object(publisher, "command", side_effect=fake_command), \
-                patch.object(publisher.subprocess, "run") as status:
-            status.return_value.returncode = 0 if existing else 1
-            publisher.main()
+                patch.object(publisher.subprocess, "run", side_effect=fake_run):
+            publisher.main(["--publish"])
         return calls
 
     def test_stale_main_never_updates_rolling(self):

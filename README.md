@@ -718,3 +718,7 @@ memory operations. Use DJCode's normal local workflow for repository tool execut
 Updates use verified repository release tags and wheel checksums. GitHub Actions
 is disabled. For installations older than4.3, re-run the installer once to migrate
 from the former workflow-based update protocol. Your configuration is retained.
+
+### Local release verification
+
+GitHub Actions is disabled. From a clean committed checkout, run `python3 scripts/publish_update.py` to test an isolated checkout, build its wheel/source distribution, and install the wheel in a fresh environment. Add `--publish` only to publish the current canonical `main` commit. Existing immutable release assets are compared and never overwritten; the rolling manifest uses schema 2 and does not depend on an Actions run.

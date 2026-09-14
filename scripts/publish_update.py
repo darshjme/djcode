@@ -1,6 +1,7 @@
-"""Publish only artifacts from a successful canonical main CI run."""
+"""Build and verify an isolated local checkout; optionally publish immutable updates."""
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -29,42 +30,65 @@ def validate_run(run):
         raise ValueError("Refusing artifacts from an untrusted or unsuccessful CI run")
 
 
-def manifest_for(wheel, commit, run_id):
+def manifest_for(wheel, commit, run_id=None):
     match = re.fullmatch(r"djcode-(\d+\.\d+\.\d+)-py3-none-any\.whl", wheel.name)
     if not match:
         raise ValueError("Unexpected wheel name")
-    return {"schema": 1, "repository": REPOSITORY, "branch": "main", "commit": commit,
-            "version": match[1], "run_id": run_id,
+    manifest = {"schema": 1 if run_id is not None else 2, "repository": REPOSITORY, "branch": "main", "commit": commit,
+            "version": match[1],
             "wheel_url": (f"https://github.com/{REPOSITORY}/releases/download/"
                           f"build-{commit[:12]}/{wheel.name}"),
             "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest()}
+    if run_id is not None:
+        manifest["run_id"] = run_id
+    return manifest
 
 
-def main():
-    run_id = int(os.environ["CI_RUN_ID"])
-    run = api(f"repos/{REPOSITORY}/actions/runs/{run_id}")
-    validate_run(run)
-    commit = run["head_sha"]
-    # workflow_run executes trusted default-branch publisher code, never artifact code.
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--publish", action="store_true", help="Publish only after local validation passes")
+    args = parser.parse_args(argv)
+    repository = Path(__file__).resolve().parents[1]
+    commit = command("git", "-C", str(repository), "rev-parse", "HEAD")
+    if command("git", "-C", str(repository), "status", "--porcelain"):
+        raise ValueError("Commit the reviewed changes before building a release")
+    if args.publish and api(f"repos/{REPOSITORY}/git/ref/heads/main")["object"]["sha"] != commit:
+        raise ValueError("Only the current canonical main commit can be published")
     with tempfile.TemporaryDirectory(prefix="djcode-publish-") as temporary:
-        dist = Path(temporary)
-        command("gh", "run", "download", str(run_id), "--repo", REPOSITORY,
-                "--name", "python-dist", "--dir", str(dist))
+        source = Path(temporary) / "source"
+        command("git", "clone", "--quiet", "--shared", str(repository), str(source))
+        command("git", "-C", str(source), "checkout", "--quiet", "--detach", commit)
+        env = {**os.environ, "DJCODE_CONFIG_DIR": str(Path(temporary) / "config"),
+               "DJCODE_NO_UPDATE_CHECK": "1", "DJCODE_SKIP_STARTUP_CHECK": "1"}
+        for check in (["uv", "run", "--frozen", "--with", "pytest", "--with", "pytest-asyncio", "python", "-m", "pytest", "-q"],
+                      ["uv", "run", "--frozen", "python", "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"],
+                      ["uv", "build"]):
+            subprocess.run(check, cwd=source, env=env, check=True)
+        dist = source / "dist"
         wheels, sdists = list(dist.glob("*.whl")), list(dist.glob("*.tar.gz"))
         if len(wheels) != 1 or len(sdists) != 1:
-            raise ValueError("CI must produce exactly one wheel and source distribution")
+            raise ValueError("Build must produce exactly one wheel and source distribution")
         wheel, sdist = wheels[0], sdists[0]
-        manifest = manifest_for(wheel, commit, run_id)
+        manifest = manifest_for(wheel, commit)
         if sdist.name != f"djcode-{manifest['version']}.tar.gz":
             raise ValueError("Source distribution and wheel versions differ")
+        # Install the built artifact in a separate environment before distribution.
+        acceptance = Path(temporary) / "acceptance"
+        command("uv", "venv", str(acceptance))
+        python = acceptance / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        command("uv", "pip", "install", "--python", str(python), str(wheel))
+        subprocess.run([str(python), "-m", "djcode", "--version"], cwd=temporary, env=env, check=True)
+        if not args.publish:
+            print(json.dumps({"status": "verified", "manifest": manifest}, indent=2))
+            return
         tag = f"build-{commit[:12]}"
         existing = subprocess.run(["gh", "release", "view", tag, "--repo", REPOSITORY],
                                   capture_output=True, check=False)
         if existing.returncode:
             command("gh", "release", "create", tag, str(wheel), str(sdist),
                     "--repo", REPOSITORY, "--target", commit, "--prerelease",
-                    "--title", f"CI build {commit[:12]}",
-                    "--notes", f"Validated main build. CI run: {run_id}. Commit: {commit}.")
+                    "--title", f"Verified build {commit[:12]}",
+                    "--notes", f"Locally tested main build. Commit: {commit}.")
         else:
             # Immutable build assets are never overwritten, including reruns of the same commit.
             immutable = dist / "published"
@@ -74,8 +98,7 @@ def main():
             for artifact in (wheel, sdist):
                 if (immutable / artifact.name).read_bytes() != artifact.read_bytes():
                     raise ValueError("Existing immutable release differs; refusing overwrite")
-        # All publisher runs share workflow concurrency; an obsolete completion cannot
-        # replace the rolling manifest after a newer push or successful publication.
+        # Recheck main immediately before promoting the rolling pointer.
         head = api(f"repos/{REPOSITORY}/git/ref/heads/main")["object"]["sha"]
         if head != commit:
             print("Immutable build retained; newer main revision exists, rolling update skipped.")
@@ -88,7 +111,7 @@ def main():
             command("gh", "release", "create", "updates-main", str(manifest_path),
                     "--repo", REPOSITORY, "--target", commit, "--prerelease",
                     "--title", "Verified main updates", "--notes",
-                    "Rolling verified CI build pointer; immutable assets use build tags.")
+                    "Rolling locally verified build pointer; immutable assets use build tags.")
         else:
             command("gh", "api", "--method", "PATCH",
                     f"repos/{REPOSITORY}/git/refs/tags/updates-main",
@@ -99,7 +122,7 @@ def main():
                                        REPOSITORY, "--pattern", "update.json", "--output", "-"))
         if published != manifest:
             raise ValueError("Published rolling manifest verification failed")
-        print(f"Published verified build {commit[:12]} from CI run {run_id}.")
+        print(f"Published locally verified build {commit[:12]}.")
 
 
 if __name__ == "__main__":
