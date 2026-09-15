@@ -60,13 +60,17 @@ def detect_project_info(cwd: str | None = None) -> dict[str, Any]:
 
     # Framework detection
     framework_files = [
-        ("next.config.js", "Next.js"), ("next.config.mjs", "Next.js"),
+        ("next.config.js", "Next.js"),
+        ("next.config.mjs", "Next.js"),
         ("next.config.ts", "Next.js"),
-        ("vite.config.ts", "Vite"), ("vite.config.js", "Vite"),
+        ("vite.config.ts", "Vite"),
+        ("vite.config.js", "Vite"),
         ("astro.config.mjs", "Astro"),
-        ("docker-compose.yml", "Docker"), ("Dockerfile", "Docker"),
+        ("docker-compose.yml", "Docker"),
+        ("Dockerfile", "Docker"),
         (".github/workflows", "GitHub Actions"),
-        ("tailwind.config.js", "Tailwind"), ("tailwind.config.ts", "Tailwind"),
+        ("tailwind.config.js", "Tailwind"),
+        ("tailwind.config.ts", "Tailwind"),
         ("prisma/schema.prisma", "Prisma"),
         (".env", "Environment Variables"),
         (".gitignore", "Git"),

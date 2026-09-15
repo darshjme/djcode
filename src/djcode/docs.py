@@ -35,7 +35,6 @@ djcode --model gemma4           # Specific model
 djcode --auto-accept            # Skip tool confirmations
 ```
 """,
-
     "commands": """
 # Slash Commands
 
@@ -87,7 +86,6 @@ djcode --auto-accept            # Skip tool confirmations
 | /save | Save conversation |
 | /exit | Exit DJcode |
 """,
-
     "keyboard": """
 # Keyboard Shortcuts
 
@@ -102,7 +100,6 @@ djcode --auto-accept            # Skip tool confirmations
 | / | Interactive command picker |
 | Escape | Cancel current input |
 """,
-
     "agents": """
 # Agent Registry — 22 Specialists
 
@@ -136,7 +133,6 @@ djcode --auto-accept            # Skip tool confirmations
 | Hanuman | Content Repurposer |
 | Garuda | Trend Scout |
 """,
-
     "providers": """
 # Providers
 
@@ -154,7 +150,6 @@ djcode --auto-accept            # Skip tool confirmations
 
 Switch: `djcode --provider openai --model gpt-4o "your prompt"`
 """,
-
     "models": """
 # Supported Models
 
@@ -172,7 +167,6 @@ Switch: `djcode --provider openai --model gpt-4o "your prompt"`
 **Tool Router:** Models without native tool-calling (dolphin3, llama3,
 mistral, phi3) still work as full agents via DJcode's text extraction router.
 """,
-
     "extensions": """
 # MCP Extensions
 
@@ -197,7 +191,6 @@ DJcode supports external tools via Model Context Protocol (MCP).
 Extensions communicate via JSON-RPC over stdio. Any MCP-compatible
 server works: GitHub, filesystem, databases, APIs, custom tools.
 """,
-
     "recipes": """
 # Recipes — Reusable Workflows
 
@@ -222,7 +215,6 @@ server works: GitHub, filesystem, databases, APIs, custom tools.
 
 Recipes are stored at `~/.djcode/recipes/` as JSON files.
 """,
-
     "privacy": """
 # Privacy & Security
 

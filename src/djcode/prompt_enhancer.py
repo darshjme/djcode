@@ -18,30 +18,70 @@ from pathlib import Path
 
 _INTENT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # Order matters — more specific intents first to avoid false matches
-    ("debug", re.compile(
-        r"\b(fix|debug|broken|crash|error|bug|issue|failing|wrong|not working"
-        r"|doesn't work|doesn.t work|traceback|exception|stack trace)\b", re.I)),
-    ("test", re.compile(
-        r"\b(test|tests|testing|write tests|add tests|unit test|pytest|spec"
-        r"|coverage|assert|expect|mock|fixture)\b", re.I)),
-    ("refactor", re.compile(
-        r"\b(refactor|rename|extract|simplify|clean up|reorganize|restructure"
-        r"|move|split|merge|consolidate|optimize|improve)\b", re.I)),
-    ("explain", re.compile(
-        r"\b(explain|what does|what is|how does|how do|why does|why is|describe"
-        r"|tell me about|walk me through|break down|understand)\b", re.I)),
-    ("review", re.compile(
-        r"\b(review|check|audit|look at|examine|inspect|analyze|evaluate"
-        r"|code review|security|vulnerability)\b", re.I)),
-    ("deploy", re.compile(
-        r"\b(deploy|ship|push|release|publish|docker|ci|cd|pipeline"
-        r"|production|staging|build and deploy)\b", re.I)),
-    ("git", re.compile(
-        r"\b(commit|branch|merge|rebase|cherry.pick|stash|diff|log|blame"
-        r"|pull request|pr|push)\b", re.I)),
-    ("build", re.compile(
-        r"\b(create|build|make|add|implement|write|generate|scaffold|setup|init"
-        r"|new file|new component|new endpoint|new function|new class)\b", re.I)),
+    (
+        "debug",
+        re.compile(
+            r"\b(fix|debug|broken|crash|error|bug|issue|failing|wrong|not working"
+            r"|doesn't work|doesn.t work|traceback|exception|stack trace)\b",
+            re.I,
+        ),
+    ),
+    (
+        "test",
+        re.compile(
+            r"\b(test|tests|testing|write tests|add tests|unit test|pytest|spec"
+            r"|coverage|assert|expect|mock|fixture)\b",
+            re.I,
+        ),
+    ),
+    (
+        "refactor",
+        re.compile(
+            r"\b(refactor|rename|extract|simplify|clean up|reorganize|restructure"
+            r"|move|split|merge|consolidate|optimize|improve)\b",
+            re.I,
+        ),
+    ),
+    (
+        "explain",
+        re.compile(
+            r"\b(explain|what does|what is|how does|how do|why does|why is|describe"
+            r"|tell me about|walk me through|break down|understand)\b",
+            re.I,
+        ),
+    ),
+    (
+        "review",
+        re.compile(
+            r"\b(review|check|audit|look at|examine|inspect|analyze|evaluate"
+            r"|code review|security|vulnerability)\b",
+            re.I,
+        ),
+    ),
+    (
+        "deploy",
+        re.compile(
+            r"\b(deploy|ship|push|release|publish|docker|ci|cd|pipeline"
+            r"|production|staging|build and deploy)\b",
+            re.I,
+        ),
+    ),
+    (
+        "git",
+        re.compile(
+            r"\b(commit|branch|merge|rebase|cherry.pick|stash|diff|log|blame"
+            r"|pull request|pr|push)\b",
+            re.I,
+        ),
+    ),
+    (
+        "build",
+        re.compile(
+            r"\b(create|build|make|add|implement|write|generate|scaffold|setup|init"
+            r"|new file|new component|new endpoint|new function|new class)\b",
+            re.I,
+        ),
+    ),
 ]
 
 # File path patterns in user input
@@ -55,9 +95,9 @@ class EnhancedPrompt:
 
     original: str
     enhanced: str
-    intent: str          # detected primary intent
+    intent: str  # detected primary intent
     context_added: list[str]  # what was injected for the interface to describe
-    was_enhanced: bool   # False if prompt was already specific enough
+    was_enhanced: bool  # False if prompt was already specific enough
 
 
 def detect_intent(prompt: str) -> str:
@@ -73,14 +113,18 @@ def _get_git_context() -> str | None:
     try:
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True,
+            text=True,
+            timeout=3,
         )
         if branch.returncode != 0:
             return None
 
         status = subprocess.run(
             ["git", "status", "--porcelain", "-u"],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True,
+            text=True,
+            timeout=3,
         )
         branch_name = branch.stdout.strip()
         changed = len([l for l in status.stdout.strip().split("\n") if l.strip()])
@@ -99,9 +143,17 @@ def _get_project_files() -> str | None:
 
     # Check for common project indicators
     indicators = [
-        "package.json", "pyproject.toml", "Cargo.toml", "go.mod",
-        "Makefile", "Dockerfile", "docker-compose.yml",
-        "README.md", ".gitignore", "tsconfig.json", "setup.py",
+        "package.json",
+        "pyproject.toml",
+        "Cargo.toml",
+        "go.mod",
+        "Makefile",
+        "Dockerfile",
+        "docker-compose.yml",
+        "README.md",
+        ".gitignore",
+        "tsconfig.json",
+        "setup.py",
     ]
     for f in indicators:
         if (cwd / f).exists():
@@ -123,12 +175,23 @@ def _get_referenced_file_context(prompt: str) -> list[tuple[str, str]]:
             size = os.path.getsize(expanded)
             ext = os.path.splitext(expanded)[1]
             lang_map = {
-                ".py": "Python", ".rs": "Rust", ".ts": "TypeScript",
-                ".tsx": "TypeScript/React", ".js": "JavaScript",
-                ".jsx": "JavaScript/React", ".go": "Go", ".java": "Java",
-                ".rb": "Ruby", ".css": "CSS", ".html": "HTML",
-                ".json": "JSON", ".yaml": "YAML", ".yml": "YAML",
-                ".toml": "TOML", ".md": "Markdown", ".sh": "Shell",
+                ".py": "Python",
+                ".rs": "Rust",
+                ".ts": "TypeScript",
+                ".tsx": "TypeScript/React",
+                ".js": "JavaScript",
+                ".jsx": "JavaScript/React",
+                ".go": "Go",
+                ".java": "Java",
+                ".rb": "Ruby",
+                ".css": "CSS",
+                ".html": "HTML",
+                ".json": "JSON",
+                ".yaml": "YAML",
+                ".yml": "YAML",
+                ".toml": "TOML",
+                ".md": "Markdown",
+                ".sh": "Shell",
             }
             lang = lang_map.get(ext, ext)
             files_found.append((fpath, f"{lang}, {size} bytes"))
@@ -222,7 +285,7 @@ def enhance_prompt(
     # 1. Working directory
     cwd = os.getcwd()
     home = os.path.expanduser("~")
-    cwd_display = "~" + cwd[len(home):] if cwd.startswith(home) else cwd
+    cwd_display = "~" + cwd[len(home) :] if cwd.startswith(home) else cwd
     context_parts.append(f"Working directory: {cwd_display}")
     context_added.append("cwd")
 

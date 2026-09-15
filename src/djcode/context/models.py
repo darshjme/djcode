@@ -393,6 +393,7 @@ for _model in _BUILTIN_MODELS:
 # Fuzzy matching engine
 # ---------------------------------------------------------------------------
 
+
 def _normalize(name: str) -> str:
     """Normalize a model name for matching: lowercase, strip whitespace."""
     return name.strip().lower()
@@ -447,6 +448,7 @@ def _fuzzy_match(query: str, candidates: dict[str, ModelInfo]) -> ModelInfo | No
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def get_model_info(model: str) -> ModelInfo | None:
     """Look up full model info by name, alias, or fuzzy match.

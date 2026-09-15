@@ -38,13 +38,24 @@ __all__ = [
 _RA_TOOLS: frozenset[str] = frozenset({"file_read", "grep", "glob", "git"})
 
 # Git subcommands the RA is allowed to run (read-only operations)
-_GIT_READONLY_COMMANDS: frozenset[str] = frozenset({
-    "log", "diff", "status", "show", "blame", "shortlog", "branch",
-    "tag", "remote", "stash list",
-})
+_GIT_READONLY_COMMANDS: frozenset[str] = frozenset(
+    {
+        "log",
+        "diff",
+        "status",
+        "show",
+        "blame",
+        "shortlog",
+        "branch",
+        "tag",
+        "remote",
+        "stash list",
+    }
+)
 
 
 # -- Data types ---------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class CodeSnippet:
@@ -67,9 +78,9 @@ class RABriefing:
     agent_role: AgentRole
     task_summary: str
     codebase_snippets: list[CodeSnippet]
-    bus_context: str           # summary from ContextBus
-    directory_structure: str   # relevant directory listing
-    git_context: str           # recent commits / diffs
+    bus_context: str  # summary from ContextBus
+    directory_structure: str  # relevant directory listing
+    git_context: str  # recent commits / diffs
     search_duration_ms: float
     timestamp: float
 
@@ -118,6 +129,7 @@ class RABriefing:
 
 
 # -- Research Assistant -------------------------------------------------------
+
 
 class ResearchAssistant:
     """Read-only research assistant that gathers context before a PhD agent executes.
@@ -243,26 +255,31 @@ class ResearchAssistant:
         """Grep for a keyword and return matching code snippets."""
         snippets: list[CodeSnippet] = []
         try:
-            result = await dispatch_tool("grep", {
-                "pattern": keyword,
-                "path": self.cwd,
-                "include": "*.py",
-            })
+            result = await dispatch_tool(
+                "grep",
+                {
+                    "pattern": keyword,
+                    "path": self.cwd,
+                    "include": "*.py",
+                },
+            )
             if not result or result.startswith("Error"):
                 return snippets
 
             # Parse grep output lines: "file:line:content"
             for line in result.split("\n")[:20]:  # limit parsing
-                match = re.match(r'^(.+?):(\d+):(.*)$', line)
+                match = re.match(r"^(.+?):(\d+):(.*)$", line)
                 if match:
                     fpath, lineno, content = match.groups()
-                    snippets.append(CodeSnippet(
-                        file_path=fpath,
-                        line_start=int(lineno),
-                        line_end=int(lineno),
-                        content=content.strip(),
-                        relevance=f"matches '{keyword}'",
-                    ))
+                    snippets.append(
+                        CodeSnippet(
+                            file_path=fpath,
+                            line_start=int(lineno),
+                            line_end=int(lineno),
+                            content=content.strip(),
+                            relevance=f"matches '{keyword}'",
+                        )
+                    )
         except Exception as e:
             logger.debug("Grep failed for keyword '%s': %s", keyword, e)
 
@@ -272,28 +289,36 @@ class ResearchAssistant:
         """Find files matching a glob pattern and read their first few lines."""
         snippets: list[CodeSnippet] = []
         try:
-            result = await dispatch_tool("glob", {
-                "pattern": pattern,
-                "path": self.cwd,
-            })
+            result = await dispatch_tool(
+                "glob",
+                {
+                    "pattern": pattern,
+                    "path": self.cwd,
+                },
+            )
             if not result or result.startswith("Error"):
                 return snippets
 
             files = [f.strip() for f in result.split("\n") if f.strip()][:5]
             for fpath in files:
                 try:
-                    content = await dispatch_tool("file_read", {
-                        "path": fpath,
-                        "limit": 30,
-                    })
+                    content = await dispatch_tool(
+                        "file_read",
+                        {
+                            "path": fpath,
+                            "limit": 30,
+                        },
+                    )
                     if content and not content.startswith("Error"):
-                        snippets.append(CodeSnippet(
-                            file_path=fpath,
-                            line_start=1,
-                            line_end=30,
-                            content=content[:1000],
-                            relevance=f"matches pattern '{pattern}'",
-                        ))
+                        snippets.append(
+                            CodeSnippet(
+                                file_path=fpath,
+                                line_start=1,
+                                line_end=30,
+                                content=content[:1000],
+                                relevance=f"matches pattern '{pattern}'",
+                            )
+                        )
                 except Exception:
                     continue
         except Exception as e:
@@ -306,10 +331,13 @@ class ResearchAssistant:
     async def _gather_directory_context(self, file_patterns: list[str]) -> str:
         """Get relevant directory structure for context."""
         try:
-            result = await dispatch_tool("glob", {
-                "pattern": "**/*.py",
-                "path": self.cwd,
-            })
+            result = await dispatch_tool(
+                "glob",
+                {
+                    "pattern": "**/*.py",
+                    "path": self.cwd,
+                },
+            )
             if not result or result.startswith("Error"):
                 return ""
 
@@ -382,10 +410,7 @@ class ResearchAssistant:
             # Skip own prior entries
             if entry.role == role.value:
                 continue
-            parts.append(
-                f"[{entry.agent} ({entry.role})] {entry.key}:\n"
-                f"{entry.content[:500]}"
-            )
+            parts.append(f"[{entry.agent} ({entry.role})] {entry.key}:\n{entry.content[:500]}")
 
         return "\n\n".join(parts[:5])  # cap at 5 entries
 
@@ -398,27 +423,138 @@ class ResearchAssistant:
         Filters out common English stop words and very short tokens.
         """
         stop_words = {
-            "the", "a", "an", "is", "are", "was", "were", "be", "been",
-            "being", "have", "has", "had", "do", "does", "did", "will",
-            "would", "could", "should", "may", "might", "shall", "can",
-            "to", "of", "in", "for", "on", "with", "at", "by", "from",
-            "as", "into", "through", "during", "before", "after", "above",
-            "below", "between", "under", "again", "further", "then", "once",
-            "here", "there", "when", "where", "why", "how", "all", "each",
-            "every", "both", "few", "more", "most", "other", "some", "such",
-            "no", "nor", "not", "only", "own", "same", "so", "than", "too",
-            "very", "just", "because", "but", "and", "or", "if", "while",
-            "it", "its", "this", "that", "these", "those", "i", "me", "my",
-            "we", "our", "you", "your", "he", "him", "his", "she", "her",
-            "they", "them", "their", "what", "which", "who", "whom",
-            "fix", "add", "create", "make", "build", "implement", "update",
-            "change", "modify", "write", "read", "get", "set", "use",
-            "file", "code", "function", "class", "method", "module",
-            "please", "need", "want",
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "may",
+            "might",
+            "shall",
+            "can",
+            "to",
+            "of",
+            "in",
+            "for",
+            "on",
+            "with",
+            "at",
+            "by",
+            "from",
+            "as",
+            "into",
+            "through",
+            "during",
+            "before",
+            "after",
+            "above",
+            "below",
+            "between",
+            "under",
+            "again",
+            "further",
+            "then",
+            "once",
+            "here",
+            "there",
+            "when",
+            "where",
+            "why",
+            "how",
+            "all",
+            "each",
+            "every",
+            "both",
+            "few",
+            "more",
+            "most",
+            "other",
+            "some",
+            "such",
+            "no",
+            "nor",
+            "not",
+            "only",
+            "own",
+            "same",
+            "so",
+            "than",
+            "too",
+            "very",
+            "just",
+            "because",
+            "but",
+            "and",
+            "or",
+            "if",
+            "while",
+            "it",
+            "its",
+            "this",
+            "that",
+            "these",
+            "those",
+            "i",
+            "me",
+            "my",
+            "we",
+            "our",
+            "you",
+            "your",
+            "he",
+            "him",
+            "his",
+            "she",
+            "her",
+            "they",
+            "them",
+            "their",
+            "what",
+            "which",
+            "who",
+            "whom",
+            "fix",
+            "add",
+            "create",
+            "make",
+            "build",
+            "implement",
+            "update",
+            "change",
+            "modify",
+            "write",
+            "read",
+            "get",
+            "set",
+            "use",
+            "file",
+            "code",
+            "function",
+            "class",
+            "method",
+            "module",
+            "please",
+            "need",
+            "want",
         }
 
         # Split on non-word characters and filter
-        words = re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', task.lower())
+        words = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*", task.lower())
         keywords = []
         seen: set[str] = set()
         for word in words:
@@ -438,7 +574,7 @@ class ResearchAssistant:
         patterns: list[str] = []
 
         # Explicit paths
-        path_matches = re.findall(r'[\w./]+\.(?:py|ts|js|rs|go|yaml|yml|json|toml)', task)
+        path_matches = re.findall(r"[\w./]+\.(?:py|ts|js|rs|go|yaml|yml|json|toml)", task)
         for p in path_matches:
             if "/" in p:
                 patterns.append(p)
@@ -446,9 +582,9 @@ class ResearchAssistant:
                 patterns.append(f"**/{p}")
 
         # Dotted module names (e.g., djcode.agents.registry -> src/djcode/agents/registry.py)
-        module_matches = re.findall(r'(?:[\w]+\.){2,}[\w]+', task)
+        module_matches = re.findall(r"(?:[\w]+\.){2,}[\w]+", task)
         for m in module_matches:
-            if not m.endswith(('.py', '.ts', '.js')):
+            if not m.endswith((".py", ".ts", ".js")):
                 path = m.replace(".", "/") + ".py"
                 patterns.append(f"**/{path}")
 

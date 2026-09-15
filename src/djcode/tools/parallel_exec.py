@@ -65,11 +65,13 @@ async def execute_parallel(
 
         call_id = tc.get("id", f"call_{i}")
 
-        validated.append({
-            "name": name,
-            "arguments": arguments,
-            "id": call_id,
-        })
+        validated.append(
+            {
+                "name": name,
+                "arguments": arguments,
+                "id": call_id,
+            }
+        )
 
     # Execute all tool calls concurrently
     start_time = time.monotonic()
@@ -138,7 +140,9 @@ def _format_parallel_results(
     sequential_time = sum(r["elapsed"] for r in results)
     saved = sequential_time - total_time
     if saved > 0.1:
-        lines.append(f"Time saved vs sequential: {saved:.2f}s ({sequential_time:.2f}s -> {total_time:.2f}s)")
+        lines.append(
+            f"Time saved vs sequential: {saved:.2f}s ({sequential_time:.2f}s -> {total_time:.2f}s)"
+        )
         lines.append("")
 
     for r in results:

@@ -38,10 +38,8 @@ class Computer:
                     from playwright.async_api import async_playwright
                 except ImportError:
                     raise RuntimeError(
-
-                            "Install DJcode's computer extra and run: python -m playwright "
-                            "install chromium"
-
+                        "Install DJcode's computer extra and run: python -m playwright "
+                        "install chromium"
                     ) from None
                 self.playwright = await async_playwright().start()
                 try:
@@ -96,10 +94,8 @@ class Computer:
             import pyautogui as gui
         except ImportError:
             raise RuntimeError(
-
-                    "Desktop control requires DJcode's computer extra and OS "
-                    "accessibility/screen-recording permission"
-
+                "Desktop control requires DJcode's computer extra and OS "
+                "accessibility/screen-recording permission"
             ) from None
         # Never disable PyAutoGUI's corner failsafe.
         gui.FAILSAFE = True
@@ -118,10 +114,8 @@ class Computer:
         elif action == "type":
             if not text.isascii():
                 raise ValueError(
-
-                        "Desktop type currently supports ASCII; use browser fill or a "
-                        "native MCP tool for Unicode"
-
+                    "Desktop type currently supports ASCII; use browser fill or a "
+                    "native MCP tool for Unicode"
                 )
             await asyncio.to_thread(gui.write, text, 0.01)
         elif action == "key":

@@ -1,4 +1,5 @@
 """Bounded provider discovery and an explicit, configuration-preserving setup flow."""
+
 from __future__ import annotations
 
 import asyncio
@@ -23,22 +24,46 @@ def connection(config: dict, provider: str | None = None, model: str | None = No
     info = PROVIDERS.get(selected, {})
     custom = config.get("custom_providers", {}).get(selected, {})
     url_provider = selected.startswith(("http://", "https://"))
-    base = (selected if url_provider else custom.get("base_url") or config.get(f"{selected}_url") or info.get("base_url", ""))
+    base = (
+        selected
+        if url_provider
+        else custom.get("base_url") or config.get(f"{selected}_url") or info.get("base_url", "")
+    )
     base = os.environ.get("DJCODE_BASE_URL") or config.get("base_url") or base
-    key = custom.get("api_key") or config.get(f"{selected}_api_key") or os.environ.get(info.get("env", ""), "")
+    key = (
+        custom.get("api_key")
+        or config.get(f"{selected}_api_key")
+        or os.environ.get(info.get("env", ""), "")
+    )
     if url_provider or selected in {"custom", "remote"}:
-        key = key or os.environ.get("DJCODE_API_KEY") or os.environ.get("OPENAI_API_KEY") or config.get("remote_api_key", "")
+        key = (
+            key
+            or os.environ.get("DJCODE_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or config.get("remote_api_key", "")
+        )
     method = config.get(f"{selected}_auth_method", "api_key")
     selected_model = model or custom.get("model") or config.get("model", "")
     if selected == "colibri":
-        selected_model = model or (config.get("model") if config.get("provider") == "colibri" else None) or "djcode-colibri"
+        selected_model = (
+            model
+            or (config.get("model") if config.get("provider") == "colibri" else None)
+            or "djcode-colibri"
+        )
     selected_model = selected_model.strip() if isinstance(selected_model, str) else ""
-    return {"provider": selected, "base": (base or "").rstrip("/"), "key": key or "",
-            "model": selected_model, "method": method, "needs_key": bool(info.get("needs_key"))}
+    return {
+        "provider": selected,
+        "base": (base or "").rstrip("/"),
+        "key": key or "",
+        "model": selected_model,
+        "method": method,
+        "needs_key": bool(info.get("needs_key")),
+    }
 
 
 def discover(endpoint: str, headers: dict) -> httpx.Response:
     """Bound the whole discovery request, including headers and slow response bodies."""
+
     async def request() -> httpx.Response:
         chunks = []
         size = 0
@@ -65,14 +90,19 @@ def discover(endpoint: str, headers: dict) -> httpx.Response:
 def probe(config: dict, provider: str | None = None, model: str | None = None) -> dict:
     details = connection(config, provider, model)
     name, base, key = details["provider"], details["base"], details["key"]
+
     def outcome(status, message, models=None):
         return {"status": status, "message": message, "models": models or [], "provider": name}
+
     if not base.startswith(("http://", "https://")):
         return outcome("missing", "Choose a provider endpoint.")
     if details["method"] == "account":
         from djcode.account_auth import AccountAuthError, get_account_token, has_account
+
         if name != "xai" or base != "https://api.x.ai/v1":
-            return outcome("missing", "Account authentication requires the supported provider endpoint.")
+            return outcome(
+                "missing", "Account authentication requires the supported provider endpoint."
+            )
         if not has_account(name):
             return outcome("missing", "Account sign-in is required.")
         try:
@@ -97,16 +127,31 @@ def probe(config: dict, provider: str | None = None, model: str | None = None) -
     try:
         response = discover(endpoint, headers)
         if response.status_code in {401, 403}:
-            return outcome("missing", "The provider rejected authentication; choose or reconnect an account.")
+            return outcome(
+                "missing", "The provider rejected authentication; choose or reconnect an account."
+            )
         if response.status_code in {404, 405, 501}:
             if not details["model"]:
                 return outcome("missing", "Select an explicit model ID.")
-            return outcome("unverified", "This endpoint does not expose model discovery; the explicit model will be checked during use.")
+            return outcome(
+                "unverified",
+                "This endpoint does not expose model discovery; the explicit model will be checked during use.",
+            )
         response.raise_for_status()
         payload = response.json()
         items = payload.get("models" if name in {"ollama", "google"} else "data", [])
-        models = [item.get("name" if name in {"ollama", "google"} else "id", "") for item in items if isinstance(item, dict)]
-        models = sorted({value.removeprefix("models/") if name == "google" else value for value in models if isinstance(value, str) and value})
+        models = [
+            item.get("name" if name in {"ollama", "google"} else "id", "")
+            for item in items
+            if isinstance(item, dict)
+        ]
+        models = sorted(
+            {
+                value.removeprefix("models/") if name == "google" else value
+                for value in models
+                if isinstance(value, str) and value
+            }
+        )
         selected = details["model"]
         matched = selected in models or (name == "ollama" and selected + ":latest" in models)
         if not selected or not matched:
@@ -127,10 +172,18 @@ def answer(value):
 def setup(existing: dict | None = None) -> dict:
     """Commit only after selection/validation; cancellation preserves old config."""
     from djcode.account_auth import auth_methods, authenticate_account, has_account
+
     config = deepcopy(existing or load_config())
     console.print("\n[bold]DJcode setup[/] · project by Darshan Kumar Joshi")
     console.print("[dim]Choose a provider, authentication method and model. No model downloads.[/]")
-    selected = answer(questionary.select("Provider", choices=[questionary.Choice(item["name"], value=name) for name, item in PROVIDERS.items()]).ask())
+    selected = answer(
+        questionary.select(
+            "Provider",
+            choices=[
+                questionary.Choice(item["name"], value=name) for name, item in PROVIDERS.items()
+            ],
+        ).ask()
+    )
     info = PROVIDERS[selected]
     if selected != config.get("provider"):
         config["base_url"] = ""
@@ -138,7 +191,9 @@ def setup(existing: dict | None = None) -> dict:
     config["provider"] = selected
     config[f"{selected}_url"] = config.get(f"{selected}_url") or info["base_url"]
     if selected in {"ollama", "mlx", "colibri", "custom"}:
-        endpoint = answer(questionary.text("API endpoint", default=config[f"{selected}_url"]).ask()).strip()
+        endpoint = answer(
+            questionary.text("API endpoint", default=config[f"{selected}_url"]).ask()
+        ).strip()
         if not endpoint.startswith(("http://", "https://")):
             raise click.ClickException("Enter an HTTP(S) endpoint; configuration was not saved.")
         config[f"{selected}_url"] = endpoint.rstrip("/")
@@ -150,13 +205,18 @@ def setup(existing: dict | None = None) -> dict:
                 console.print(f"[dim]{item['label']}: {item['reason']}[/]")
         choices = [questionary.Choice(item["label"], value=item["id"]) for item in available]
         current_method = config.get(f"{selected}_auth_method", "api_key")
-        default_method = current_method if current_method in {item["id"] for item in available} else "api_key"
-        method = answer(questionary.select("Authentication", choices=choices, default=default_method).ask())
+        default_method = (
+            current_method if current_method in {item["id"] for item in available} else "api_key"
+        )
+        method = answer(
+            questionary.select("Authentication", choices=choices, default=default_method).ask()
+        )
         config[f"{selected}_auth_method"] = method
         if method == "browser" and selected == "openrouter":
             import webbrowser
 
             from djcode.openrouter_auth import begin, exchange
+
             verifier, url = begin()
             console.print(url, markup=False)
             webbrowser.open(url)
@@ -164,11 +224,17 @@ def setup(existing: dict | None = None) -> dict:
             config[f"{selected}_api_key"] = asyncio.run(exchange(code, verifier))
             config[f"{selected}_auth_method"] = "api_key"
         elif method == "account":
-            if not has_account(selected) and not authenticate_account(selected, method, on_status=lambda text: console.print(text, markup=False)):
-                raise click.ClickException("Sign-in did not complete; provider configuration retained.")
+            if not has_account(selected) and not authenticate_account(
+                selected, method, on_status=lambda text: console.print(text, markup=False)
+            ):
+                raise click.ClickException(
+                    "Sign-in did not complete; provider configuration retained."
+                )
         else:
             current_key = connection(config)["key"]
-            key = answer(questionary.password("API key (leave blank to keep existing/environment key)").ask()).strip()
+            key = answer(
+                questionary.password("API key (leave blank to keep existing/environment key)").ask()
+            ).strip()
             if key:
                 config[f"{selected}_api_key"] = key
             elif not current_key:
@@ -181,8 +247,11 @@ def setup(existing: dict | None = None) -> dict:
     if models:
         if default not in models:
             default = models[0]
-        selected_model = answer(questionary.autocomplete("Model", choices=models, default=default,
-                                                         ignore_case=True, match_middle=True).ask()).strip()
+        selected_model = answer(
+            questionary.autocomplete(
+                "Model", choices=models, default=default, ignore_case=True, match_middle=True
+            ).ask()
+        ).strip()
     else:
         console.print(discovered["message"], markup=False)
         selected_model = answer(questionary.text("Exact model ID", default=default).ask()).strip()
@@ -193,7 +262,11 @@ def setup(existing: dict | None = None) -> dict:
     if checked["status"] == "missing":
         raise click.ClickException(checked["message"] + " Configuration was not saved.")
     if checked["status"] != "ready":
-        if not answer(questionary.confirm("Connection could not be fully verified. Save this setup for later?", default=False).ask()):
+        if not answer(
+            questionary.confirm(
+                "Connection could not be fully verified. Save this setup for later?", default=False
+            ).ask()
+        ):
             raise KeyboardInterrupt("Setup cancelled; existing configuration retained")
     config["setup_complete"] = True
     config.setdefault("update_mode", "auto")
@@ -208,10 +281,17 @@ def prepare(provider=None, model=None, *, force_setup=False) -> tuple[str | None
     config = load_config()
     interactive = sys.stdin.isatty()
     first_run = not CONFIG_FILE.exists() and not provider
-    checked = probe(config, provider, model) if not force_setup and not first_run else {"status": "missing", "message": "Configure a provider and model."}
+    checked = (
+        probe(config, provider, model)
+        if not force_setup and not first_run
+        else {"status": "missing", "message": "Configure a provider and model."}
+    )
     if force_setup or checked["status"] == "missing":
         if not interactive:
-            raise click.ClickException(checked["message"] + " Run djcode --setup in an interactive terminal, or supply valid provider/model credentials.")
+            raise click.ClickException(
+                checked["message"]
+                + " Run djcode --setup in an interactive terminal, or supply valid provider/model credentials."
+            )
         configured = setup(config)
         return configured["provider"], configured["model"]
     if checked["status"] != "ready":

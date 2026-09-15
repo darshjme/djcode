@@ -82,7 +82,8 @@ def get_update_command() -> str:
         values = [
             f"DJCODE_INSTALL_DIR={shlex.quote(str(prefix.parent.parent))}",
             f"DJCODE_BIN_DIR={shlex.quote(str(bin_dir))}",
-            "bash", shlex.quote(str(source_installer)),
+            "bash",
+            shlex.quote(str(source_installer)),
         ]
         return " ".join(values)
     python = sys.executable
@@ -137,10 +138,12 @@ def check_for_updates(force: bool = False) -> dict[str, Any] | None:
 
     except Exception:
         # Save that we checked (so we don't retry immediately)
-        _save_last_check({
-            "last_check": datetime.now().isoformat(),
-            "update_available": False,
-        })
+        _save_last_check(
+            {
+                "last_check": datetime.now().isoformat(),
+                "update_available": False,
+            }
+        )
         return None
 
 
@@ -158,6 +161,7 @@ def get_update_message() -> str | None:
     if name:
         msg += f" ({name})"
     from rich.markup import escape
+
     msg += f"\n[dim]Update explicitly: {escape(get_update_command())}[/]"
     msg += f"\n[dim]Changelog: {info.get('release_url', CHANGELOG_URL)}[/]"
     return msg
@@ -172,4 +176,5 @@ def format_changelog(body: str, max_lines: int = 20) -> str:
 def perform_update(force: bool = False) -> dict:
     """Install a verified canonical build only into a managed installation."""
     from djcode.managed_update import perform_update as managed_update
+
     return managed_update(force=force)

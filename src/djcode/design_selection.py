@@ -1,4 +1,5 @@
 """Select one bundled design reference while preserving the conversation protocol."""
+
 from djcode.design_packs import get_pack, list_packs
 
 _START = "\n\n[DJCODE_DESIGN_REFERENCE]\n"
@@ -18,9 +19,15 @@ def select_pack(operator, identifier: str) -> str:
         base = before + suffix
     else:
         base = system.content
-    system.content = base if content is None else (
-        base + _START + "Optional design reference. Apply it only where relevant to the user's task; "
-        "preserve the user's requirements and the operational rules above.\n\n" + content + _END
+    system.content = (
+        base
+        if content is None
+        else (
+            base
+            + _START
+            + "Optional design reference. Apply it only where relevant to the user's task; "
+            "preserve the user's requirements and the operational rules above.\n\n" + content + _END
+        )
     )
     if content is None:
         return "Design reference cleared."

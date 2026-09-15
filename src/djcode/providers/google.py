@@ -57,9 +57,9 @@ class GoogleProvider(BaseProvider):
         resolved = _resolve_gemini_model(model)
         super().__init__(resolved, api_key, base_url)
 
-    def _build_contents(self, messages: list[dict[str, Any]]) -> tuple[
-        list[dict[str, Any]], str | None
-    ]:
+    def _build_contents(
+        self, messages: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], str | None]:
         """Convert messages to Gemini contents format.
 
         Returns (contents, system_instruction) tuple.
@@ -85,15 +85,19 @@ class GoogleProvider(BaseProvider):
                 except (json.JSONDecodeError, TypeError):
                     response_data = {"result": content}
 
-                contents.append({
-                    "role": "user",
-                    "parts": [{
-                        "functionResponse": {
-                            "name": msg.get("name", tool_call_id),
-                            "response": response_data,
-                        }
-                    }],
-                })
+                contents.append(
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "functionResponse": {
+                                    "name": msg.get("name", tool_call_id),
+                                    "response": response_data,
+                                }
+                            }
+                        ],
+                    }
+                )
                 continue
 
             # Map roles
@@ -116,12 +120,14 @@ class GoogleProvider(BaseProvider):
                     args = json.loads(args_str) if isinstance(args_str, str) else args_str
                 except json.JSONDecodeError:
                     args = {}
-                parts.append({
-                    "functionCall": {
-                        "name": func.get("name", ""),
-                        "args": args,
+                parts.append(
+                    {
+                        "functionCall": {
+                            "name": func.get("name", ""),
+                            "args": args,
+                        }
                     }
-                })
+                )
 
             if parts:
                 contents.append({"role": gemini_role, "parts": parts})
@@ -140,11 +146,13 @@ class GoogleProvider(BaseProvider):
             params = func.get("parameters", func.get("input_schema", {}))
             # Gemini requires removing 'additionalProperties' if present
             cleaned_params = self._clean_schema(params)
-            declarations.append({
-                "name": func.get("name", ""),
-                "description": func.get("description", ""),
-                "parameters": cleaned_params,
-            })
+            declarations.append(
+                {
+                    "name": func.get("name", ""),
+                    "description": func.get("description", ""),
+                    "parameters": cleaned_params,
+                }
+            )
 
         return [{"functionDeclarations": declarations}]
 
@@ -186,9 +194,7 @@ class GoogleProvider(BaseProvider):
         }
 
         if system_instruction:
-            payload["systemInstruction"] = {
-                "parts": [{"text": system_instruction}]
-            }
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
 
         if gemini_tools:
             payload["tools"] = gemini_tools
@@ -221,7 +227,9 @@ class GoogleProvider(BaseProvider):
                     if attempt < max_retries - 1:
                         logger.warning(
                             "Gemini rate limit/server error %d, retry %d/%d",
-                            status, attempt + 1, max_retries,
+                            status,
+                            attempt + 1,
+                            max_retries,
                         )
                         await self._backoff_sleep(attempt)
                         continue
@@ -279,11 +287,13 @@ class GoogleProvider(BaseProvider):
                         if "functionCall" in part:
                             fc = part["functionCall"]
                             yield ProviderChunk(
-                                tool_calls=[ToolCall(
-                                    id=fc.get("name", "") + "_call",
-                                    name=fc.get("name", ""),
-                                    arguments=json.dumps(fc.get("args", {})),
-                                )]
+                                tool_calls=[
+                                    ToolCall(
+                                        id=fc.get("name", "") + "_call",
+                                        name=fc.get("name", ""),
+                                        arguments=json.dumps(fc.get("args", {})),
+                                    )
+                                ]
                             )
 
                     # Check finish reason
@@ -340,11 +350,13 @@ class GoogleProvider(BaseProvider):
                 text_parts.append(part["text"])
             elif "functionCall" in part:
                 fc = part["functionCall"]
-                tool_calls.append(ToolCall(
-                    id=fc.get("name", "") + "_call",
-                    name=fc.get("name", ""),
-                    arguments=json.dumps(fc.get("args", {})),
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=fc.get("name", "") + "_call",
+                        name=fc.get("name", ""),
+                        arguments=json.dumps(fc.get("args", {})),
+                    )
+                )
 
         # Usage
         meta = data.get("usageMetadata", {})

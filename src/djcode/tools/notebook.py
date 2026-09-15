@@ -289,6 +289,7 @@ def _format_cell(idx: int, cell: dict[str, Any], max_output_chars: int) -> str:
                 if traceback_lines:
                     # Strip ANSI codes from traceback
                     import re
+
                     tb = "\n".join(traceback_lines)
                     tb = re.sub(r"\x1b\[[0-9;]*m", "", tb)
                     error_text = _truncate(tb, max_output_chars - total_chars)
@@ -333,6 +334,7 @@ def _extract_output_text(data: dict[str, Any]) -> str:
 
     if "text/html" in data:
         import re
+
         html = data["text/html"]
         if isinstance(html, list):
             html = "".join(html)

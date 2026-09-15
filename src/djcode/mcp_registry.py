@@ -65,7 +65,6 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         install_cmd="npm install -g @modelcontextprotocol/server-filesystem",
         homepage="https://github.com/modelcontextprotocol/servers",
     ),
-
     # ---- Git ----
     "github": MCPServerInfo(
         name="github",
@@ -78,7 +77,6 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         install_cmd="npm install -g @modelcontextprotocol/server-github",
         homepage="https://github.com/modelcontextprotocol/servers",
     ),
-
     # ---- Databases ----
     "postgres": MCPServerInfo(
         name="postgres",
@@ -124,7 +122,6 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         install_cmd="npm install -g mcp-server-mongodb",
         homepage="https://github.com/kiliczsh/mcp-mongo-server",
     ),
-
     # ---- API / Web ----
     "brave-search": MCPServerInfo(
         name="brave-search",
@@ -159,7 +156,6 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         install_cmd=None,
         homepage="https://github.com/modelcontextprotocol/servers",
     ),
-
     # ---- Dev Tools ----
     "puppeteer": MCPServerInfo(
         name="puppeteer",
@@ -178,7 +174,14 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         cmd="npx",
         args=["-y", "mcp-server-docker"],
         env_keys=[],
-        tools_preview=["list_containers", "run_container", "stop_container", "list_images", "build_image", "container_logs"],
+        tools_preview=[
+            "list_containers",
+            "run_container",
+            "stop_container",
+            "list_images",
+            "build_image",
+            "container_logs",
+        ],
         category="dev",
         install_cmd="npm install -g mcp-server-docker",
         homepage="https://github.com/ckreiling/mcp-server-docker",
@@ -189,12 +192,18 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         cmd="npx",
         args=["-y", "mcp-server-kubernetes"],
         env_keys=["KUBECONFIG"],
-        tools_preview=["get_pods", "get_services", "get_deployments", "apply_manifest", "get_logs", "describe_resource"],
+        tools_preview=[
+            "get_pods",
+            "get_services",
+            "get_deployments",
+            "apply_manifest",
+            "get_logs",
+            "describe_resource",
+        ],
         category="dev",
         install_cmd="npm install -g mcp-server-kubernetes",
         homepage="https://github.com/Flux159/mcp-server-kubernetes",
     ),
-
     # ---- AI ----
     "memory": MCPServerInfo(
         name="memory",
@@ -218,7 +227,6 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         install_cmd=None,
         homepage="https://github.com/modelcontextprotocol/servers",
     ),
-
     # ---- Cloud Platforms ----
     "supabase": MCPServerInfo(
         name="supabase",
@@ -226,7 +234,14 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         cmd="npx",
         args=["-y", "mcp-server-supabase"],
         env_keys=["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
-        tools_preview=["query", "insert", "list_tables", "auth_create_user", "storage_upload", "invoke_function"],
+        tools_preview=[
+            "query",
+            "insert",
+            "list_tables",
+            "auth_create_user",
+            "storage_upload",
+            "invoke_function",
+        ],
         category="cloud",
         install_cmd="npm install -g mcp-server-supabase",
         homepage="https://github.com/supabase-community/supabase-mcp",
@@ -237,7 +252,13 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         cmd="npx",
         args=["-y", "mcp-server-vercel"],
         env_keys=["VERCEL_TOKEN"],
-        tools_preview=["list_projects", "list_deployments", "get_deployment", "list_domains", "create_deployment"],
+        tools_preview=[
+            "list_projects",
+            "list_deployments",
+            "get_deployment",
+            "list_domains",
+            "create_deployment",
+        ],
         category="cloud",
         install_cmd="npm install -g mcp-server-vercel",
         homepage="https://github.com/nicepkg/mcp-server-vercel",
@@ -248,7 +269,14 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         cmd="npx",
         args=["-y", "@cloudflare/mcp-server-cloudflare"],
         env_keys=["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
-        tools_preview=["list_workers", "deploy_worker", "kv_get", "kv_put", "r2_list", "dns_list_records"],
+        tools_preview=[
+            "list_workers",
+            "deploy_worker",
+            "kv_get",
+            "kv_put",
+            "r2_list",
+            "dns_list_records",
+        ],
         category="cloud",
         install_cmd="npm install -g @cloudflare/mcp-server-cloudflare",
         homepage="https://github.com/cloudflare/mcp-server-cloudflare",
@@ -264,7 +292,6 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         install_cmd="npm install -g mcp-server-aws",
         homepage="https://github.com/aws/mcp-server-aws",
     ),
-
     # ---- Productivity ----
     "notion": MCPServerInfo(
         name="notion",
@@ -272,7 +299,14 @@ MCP_REGISTRY: dict[str, MCPServerInfo] = {
         cmd="npx",
         args=["-y", "mcp-server-notion"],
         env_keys=["NOTION_API_KEY"],
-        tools_preview=["search", "get_page", "create_page", "update_page", "query_database", "append_block"],
+        tools_preview=[
+            "search",
+            "get_page",
+            "create_page",
+            "update_page",
+            "query_database",
+            "append_block",
+        ],
         category="productivity",
         install_cmd="npm install -g mcp-server-notion",
         homepage="https://github.com/makenotion/notion-mcp-server",
@@ -306,6 +340,7 @@ CATEGORIES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Search and discovery
 # ---------------------------------------------------------------------------
+
 
 def search_registry(query: str) -> list[MCPServerInfo]:
     """Search the MCP registry by name, description, or category.
@@ -382,7 +417,7 @@ def get_install_instructions(name: str) -> str:
 
     # DJcode quick-add
     if info.env_keys:
-        env_snippet = " ".join(f'--env {k}=...' for k in info.env_keys)
+        env_snippet = " ".join(f"--env {k}=..." for k in info.env_keys)
         lines.append("Quick add to DJcode:")
         lines.append(f"  /extension add {info.name} {env_snippet}")
     else:
@@ -403,6 +438,7 @@ def get_install_instructions(name: str) -> str:
 # ---------------------------------------------------------------------------
 # Rich rendering
 # ---------------------------------------------------------------------------
+
 
 def render_registry(console) -> None:
     """Render the full MCP registry as a Rich table.
@@ -493,6 +529,7 @@ def render_search_results(console, results: list[MCPServerInfo], query: str) -> 
 # ---------------------------------------------------------------------------
 # Integration with ExtensionManager
 # ---------------------------------------------------------------------------
+
 
 def install_from_registry(
     name: str,

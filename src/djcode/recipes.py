@@ -139,9 +139,20 @@ BUILTIN_RECIPES: list[Recipe] = [
         ),
         parameters=[
             RecipeParam(key="name", description="Project name"),
-            RecipeParam(key="language", description="Primary language (e.g., rust, python, typescript)"),
-            RecipeParam(key="type", description="Project type (e.g., cli, web-api, library, fullstack)", default="cli"),
-            RecipeParam(key="requirements", required=False, description="Additional requirements", default="production-ready defaults"),
+            RecipeParam(
+                key="language", description="Primary language (e.g., rust, python, typescript)"
+            ),
+            RecipeParam(
+                key="type",
+                description="Project type (e.g., cli, web-api, library, fullstack)",
+                default="cli",
+            ),
+            RecipeParam(
+                key="requirements",
+                required=False,
+                description="Additional requirements",
+                default="production-ready defaults",
+            ),
         ],
         agents=["coder"],
         tags=["scaffold", "init"],
@@ -164,7 +175,12 @@ BUILTIN_RECIPES: list[Recipe] = [
         ),
         parameters=[
             RecipeParam(key="path", description="File or directory to review"),
-            RecipeParam(key="focus", required=False, description="Specific areas to focus on", default="all — security, performance, correctness, style"),
+            RecipeParam(
+                key="focus",
+                required=False,
+                description="Specific areas to focus on",
+                default="all — security, performance, correctness, style",
+            ),
         ],
         agents=["reviewer"],
         tags=["review", "quality"],
@@ -187,7 +203,10 @@ BUILTIN_RECIPES: list[Recipe] = [
             "3. Verify: Run tests, confirm the fix, add a regression test if needed"
         ),
         parameters=[
-            RecipeParam(key="issue", description="The bug or issue to fix — include error messages, reproduction steps"),
+            RecipeParam(
+                key="issue",
+                description="The bug or issue to fix — include error messages, reproduction steps",
+            ),
         ],
         agents=["debugger", "coder", "tester"],
         tags=["debug", "fix", "pipeline"],
@@ -244,7 +263,10 @@ BUILTIN_RECIPES: list[Recipe] = [
         ),
         parameters=[
             RecipeParam(key="target", description="File or function to refactor"),
-            RecipeParam(key="goal", description="What the refactoring should achieve (e.g., 'extract into separate module', 'simplify control flow')"),
+            RecipeParam(
+                key="goal",
+                description="What the refactoring should achieve (e.g., 'extract into separate module', 'simplify control flow')",
+            ),
         ],
         agents=["refactorer", "coder", "tester"],
         tags=["refactor", "safety"],
@@ -334,9 +356,7 @@ class RecipeManager:
                 results.append(recipe)
         return results
 
-    def collect_params_from_args(
-        self, recipe: Recipe, arg_string: str
-    ) -> dict[str, str]:
+    def collect_params_from_args(self, recipe: Recipe, arg_string: str) -> dict[str, str]:
         """Parse parameter values from a command argument string.
 
         Supports two formats:
@@ -494,7 +514,9 @@ def render_recipe_list(console: Any) -> None:
     console.print()
     console.print(table)
     console.print()
-    console.print("[dim]Usage: /recipe run <name> [params]  |  /recipe show <name>  |  /recipe create[/]")
+    console.print(
+        "[dim]Usage: /recipe run <name> [params]  |  /recipe show <name>  |  /recipe create[/]"
+    )
     console.print()
 
 
@@ -537,9 +559,11 @@ def render_recipe_detail(console: Any, recipe: Recipe) -> None:
     content.append(recipe.prompt[:500], style="dim italic")
 
     console.print()
-    console.print(Panel(
-        content,
-        title=f"[bold {GOLD}]{recipe.name}[/]",
-        border_style=GOLD,
-    ))
+    console.print(
+        Panel(
+            content,
+            title=f"[bold {GOLD}]{recipe.name}[/]",
+            border_style=GOLD,
+        )
+    )
     console.print()

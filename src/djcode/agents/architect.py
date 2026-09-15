@@ -21,5 +21,7 @@ class Architect:
         from djcode.orchestrator.context_bus import ContextBus
         from djcode.orchestrator.engine import AgentRunner
 
-        runner = AgentRunner(self.provider, get_agent(AgentRole.ARCHITECT), ContextBus(), auto_accept=False)
+        runner = AgentRunner(
+            self.provider, get_agent(AgentRole.ARCHITECT), ContextBus(), auto_accept=False
+        )
         return await runner.run(task)

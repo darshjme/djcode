@@ -54,7 +54,8 @@ class VectorStore:
 
             CHROMA_DIR.mkdir(parents=True, exist_ok=True)
             self._chroma_client = chromadb.PersistentClient(
-                path=str(CHROMA_DIR), settings=Settings(anonymized_telemetry=False),
+                path=str(CHROMA_DIR),
+                settings=Settings(anonymized_telemetry=False),
             )
             self._collection = self._chroma_client.get_or_create_collection(
                 name=self._collection_name,
@@ -116,12 +117,14 @@ class VectorStore:
             metadatas = results.get("metadatas", [[]])[0]
 
             for i, doc_id in enumerate(ids):
-                docs.append({
-                    "id": doc_id,
-                    "content": documents[i] if i < len(documents) else "",
-                    "score": 1.0 - (distances[i] if i < len(distances) else 1.0),
-                    "metadata": metadatas[i] if i < len(metadatas) else {},
-                })
+                docs.append(
+                    {
+                        "id": doc_id,
+                        "content": documents[i] if i < len(documents) else "",
+                        "score": 1.0 - (distances[i] if i < len(distances) else 1.0),
+                        "metadata": metadatas[i] if i < len(metadatas) else {},
+                    }
+                )
             return docs
         except Exception as e:
             logger.debug("ChromaDB query failed: %s", e)

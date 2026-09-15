@@ -104,9 +104,7 @@ async def _search_brave(query: str, num_results: int, api_key: str) -> str:
 async def _search_duckduckgo(query: str, num_results: int) -> str:
     """Search via DuckDuckGo HTML scraping (no API key needed)."""
     try:
-        async with httpx.AsyncClient(
-            timeout=15.0, follow_redirects=True
-        ) as client:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             resp = await client.post(
                 DDG_HTML_URL,
                 data={"q": query, "b": ""},
@@ -137,9 +135,7 @@ async def _search_duckduckgo(query: str, num_results: int) -> str:
 async def _search_ddg_lite(query: str, num_results: int) -> list[dict[str, str]]:
     """Fallback: DuckDuckGo Lite endpoint."""
     try:
-        async with httpx.AsyncClient(
-            timeout=15.0, follow_redirects=True
-        ) as client:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             resp = await client.get(
                 "https://lite.duckduckgo.com/lite/",
                 params={"q": query},
@@ -188,11 +184,13 @@ def _parse_ddg_html(body: str, num_results: int) -> list[dict[str, str]]:
         clean_title = _clean_html(title)
 
         if clean_title and actual_url:
-            results.append({
-                "title": clean_title,
-                "url": actual_url,
-                "snippet": snippet,
-            })
+            results.append(
+                {
+                    "title": clean_title,
+                    "url": actual_url,
+                    "snippet": snippet,
+                }
+            )
 
     return results
 
@@ -228,11 +226,13 @@ def _parse_ddg_lite_html(body: str, num_results: int) -> list[dict[str, str]]:
         clean_title = _clean_html(title)
 
         if clean_title and actual_url:
-            results.append({
-                "title": clean_title,
-                "url": actual_url,
-                "snippet": snippet,
-            })
+            results.append(
+                {
+                    "title": clean_title,
+                    "url": actual_url,
+                    "snippet": snippet,
+                }
+            )
 
     return results
 
@@ -246,6 +246,7 @@ def _extract_ddg_url(raw_url: str) -> str:
         match = re.search(r"uddg=([^&]+)", raw_url)
         if match:
             from urllib.parse import unquote
+
             return unquote(match.group(1))
 
     # Direct URL (no redirect wrapper)

@@ -67,6 +67,7 @@ TIER_COLORS: dict[int, str] = {
 # 2. AgentStatusBar -- Compact bar showing all agents with state indicators
 # ---------------------------------------------------------------------------
 
+
 class AgentStatusBar(Widget):
     """Horizontal bar showing all 18 agents with color-coded state indicators.
 
@@ -98,7 +99,10 @@ class AgentStatusBar(Widget):
         active = [(name, state) for name, state in self._states.items() if state != "idle"]
         if not active:
             return f"[{TEXT_DIM}]{len(self._states)} specialists ready · F5 agents[/]"
-        return " · ".join(f"[{AGENT_STATES.get(state, ('', TEXT_BASE))[1]}]{name}: {state}[/]" for name, state in active)
+        return " · ".join(
+            f"[{AGENT_STATES.get(state, ('', TEXT_BASE))[1]}]{name}: {state}[/]"
+            for name, state in active
+        )
 
     def set_agent_state(self, agent_name: str, state: str) -> None:
         """Update a single agent's state and refresh display."""
@@ -126,6 +130,7 @@ class AgentStatusBar(Widget):
 # ---------------------------------------------------------------------------
 # 3. HackerHeader -- Military-style top bar with system telemetry
 # ---------------------------------------------------------------------------
+
 
 class HackerHeader(Widget):
     """Military HUD header showing system status at a glance.
@@ -177,10 +182,11 @@ class HackerHeader(Widget):
 
         width = self.size.width or 120
         from rich.markup import escape
+
         model = self.model_name
         limit = max(12, width - 65)
         if len(model) > limit:
-            model = model[:limit - 1] + "…"
+            model = model[: limit - 1] + "…"
         parts = [f"[bold {GOLD}]DJcode[/] [{TEXT_DIM}]v{self.version}[/]", mode_str]
         parts.append(f"[{TEXT_STRONG}]{escape(model)}[/]")
         if width >= 70:
@@ -201,9 +207,7 @@ class HackerHeader(Widget):
 
     def _refresh(self) -> None:
         try:
-            self.query_one("#hacker-header-display", Static).update(
-                self._build_header()
-            )
+            self.query_one("#hacker-header-display", Static).update(self._build_header())
         except Exception:
             pass
 
@@ -242,6 +246,7 @@ class HackerHeader(Widget):
 # ---------------------------------------------------------------------------
 # 4. ProgressHUD -- Heads-up display for current operation
 # ---------------------------------------------------------------------------
+
 
 class ProgressHUD(Widget):
     """Animated progress display showing operation telemetry.
@@ -292,9 +297,13 @@ class ProgressHUD(Widget):
             return f"  [{TEXT_DIM}][ IDLE ] Awaiting command...[/]"
 
         spinner = self._spinner_chars[self._spinner_idx]
-        op_color = SUCCESS if self.operation == "EXECUTING" else (
-            THINKING if self.operation in ("THINKING", "GENERATING") else (
-                GOLD if self.operation == "RESEARCHING" else TEXT_BASE
+        op_color = (
+            SUCCESS
+            if self.operation == "EXECUTING"
+            else (
+                THINKING
+                if self.operation in ("THINKING", "GENERATING")
+                else (GOLD if self.operation == "RESEARCHING" else TEXT_BASE)
             )
         )
 
@@ -315,9 +324,7 @@ class ProgressHUD(Widget):
 
     def _refresh(self) -> None:
         try:
-            self.query_one("#progress-hud-display", Static).update(
-                self._build_display()
-            )
+            self.query_one("#progress-hud-display", Static).update(self._build_display())
         except Exception:
             pass
 
@@ -354,6 +361,7 @@ class ProgressHUD(Widget):
 # ---------------------------------------------------------------------------
 # 6. ContextBar -- Context window utilization meter
 # ---------------------------------------------------------------------------
+
 
 class ContextBar(Widget):
     """Visual context window utilization bar with color thresholds.

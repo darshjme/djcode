@@ -69,41 +69,83 @@ GOLD = "#FFD700"
 
 # -- Complexity & Strategy Enums -----------------------------------------------
 
+
 class TaskComplexity(str, enum.Enum):
     """Task complexity classification."""
-    SIMPLE   = "simple"      # 1 agent
-    MODERATE = "moderate"    # 2-3 agents
-    COMPLEX  = "complex"     # pipeline (5+ agents)
-    CRITICAL = "critical"    # full army with blocking gates
+
+    SIMPLE = "simple"  # 1 agent
+    MODERATE = "moderate"  # 2-3 agents
+    COMPLEX = "complex"  # pipeline (5+ agents)
+    CRITICAL = "critical"  # full army with blocking gates
 
 
 class ExecutionStrategy(str, enum.Enum):
     """How to run the selected agents."""
-    SINGLE     = "single"
-    PARALLEL   = "parallel"
-    PIPELINE   = "pipeline"
-    WAVE       = "wave"
-    FULL_ARMY  = "full_army"
+
+    SINGLE = "single"
+    PARALLEL = "parallel"
+    PIPELINE = "pipeline"
+    WAVE = "wave"
+    FULL_ARMY = "full_army"
 
 
 # -- Complexity keywords -------------------------------------------------------
 
-_CRITICAL_KEYWORDS = frozenset({
-    "deploy", "production", "security", "audit", "compliance", "migration",
-    "financial", "payment", "trading", "pci", "gdpr", "sox", "hipaa",
-    "incident", "outage", "rollback",
-})
+_CRITICAL_KEYWORDS = frozenset(
+    {
+        "deploy",
+        "production",
+        "security",
+        "audit",
+        "compliance",
+        "migration",
+        "financial",
+        "payment",
+        "trading",
+        "pci",
+        "gdpr",
+        "sox",
+        "hipaa",
+        "incident",
+        "outage",
+        "rollback",
+    }
+)
 
-_COMPLEX_KEYWORDS = frozenset({
-    "build", "create", "implement", "design", "architect", "full",
-    "complete", "entire", "system", "feature", "api", "database",
-    "integrate", "pipeline", "microservice",
-})
+_COMPLEX_KEYWORDS = frozenset(
+    {
+        "build",
+        "create",
+        "implement",
+        "design",
+        "architect",
+        "full",
+        "complete",
+        "entire",
+        "system",
+        "feature",
+        "api",
+        "database",
+        "integrate",
+        "pipeline",
+        "microservice",
+    }
+)
 
-_MODERATE_KEYWORDS = frozenset({
-    "refactor", "review", "test", "optimize", "fix", "debug",
-    "update", "improve", "add", "extend",
-})
+_MODERATE_KEYWORDS = frozenset(
+    {
+        "refactor",
+        "review",
+        "test",
+        "optimize",
+        "fix",
+        "debug",
+        "update",
+        "improve",
+        "add",
+        "extend",
+    }
+)
 
 
 # -- Wave Definitions ----------------------------------------------------------
@@ -144,6 +186,7 @@ PIPELINE_ORDER: list[AgentRole] = [
 # ==============================================================================
 #  AgentRunner — Runs a single specialist agent with tool-calling loop
 # ==============================================================================
+
 
 class AgentRunner:
     """Runs a single specialist agent with its dedicated system prompt and tool policy.
@@ -198,8 +241,15 @@ class AgentRunner:
         """Use the same bounded, provider-neutral tool loop as parallel specialists."""
         from djcode.agents.executor import AgentExecutor
         from djcode.agents.state import AgentEventType
-        executor = AgentExecutor(self.spec, self.provider, self.bus, enable_ra=False,
-                                 auto_accept=self.auto_accept, approval_callback=self.approval_callback)
+
+        executor = AgentExecutor(
+            self.spec,
+            self.provider,
+            self.bus,
+            enable_ra=False,
+            auto_accept=self.auto_accept,
+            approval_callback=self.approval_callback,
+        )
         await self._emit(agent_start_event(self.spec.name, self.spec.role.value, task))
         response = ""
         async for event in executor.execute_streaming(task):
@@ -209,24 +259,37 @@ class AgentRunner:
                 yield token
                 await self._emit(agent_token_event(self.spec.name, self.spec.role.value, token))
             elif event.event_type == AgentEventType.TOOL_CALL:
-                await self._emit(agent_tool_event(
-                    agent_name=self.spec.name, agent_role=self.spec.role.value,
-                    tool_name=event.data["tool"], tool_args=event.data["args"],
-                    tool_result="", duration_ms=0.0))
+                await self._emit(
+                    agent_tool_event(
+                        agent_name=self.spec.name,
+                        agent_role=self.spec.role.value,
+                        tool_name=event.data["tool"],
+                        tool_args=event.data["args"],
+                        tool_result="",
+                        duration_ms=0.0,
+                    )
+                )
             elif event.event_type == AgentEventType.ERROR:
                 error = event.data["error"]
                 await self._emit(agent_error_event(self.spec.name, self.spec.role.value, error))
                 raise RuntimeError(f"Agent {self.spec.name} failed: {error}")
             elif event.event_type == AgentEventType.COMPLETE:
-                await self._emit(agent_complete_event(
-                    self.spec.name, self.spec.role.value, response[:300],
-                    event.data.get("confidence", 0.0), event.data.get("duration_s", 0.0),
-                    event.data.get("tokens", 0)))
+                await self._emit(
+                    agent_complete_event(
+                        self.spec.name,
+                        self.spec.role.value,
+                        response[:300],
+                        event.data.get("confidence", 0.0),
+                        event.data.get("duration_s", 0.0),
+                        event.data.get("tokens", 0),
+                    )
+                )
 
 
 # ==============================================================================
 #  ShadowOrchestrator — The v2 Multi-Agent Parallel Engine
 # ==============================================================================
+
 
 class ShadowOrchestrator:
     """Multi-agent parallel orchestrator with wave-based execution.
@@ -255,11 +318,13 @@ class ShadowOrchestrator:
 
         # Semantic router (embedding-based agent dispatch)
         from djcode.orchestrator.router import SemanticRouter
+
         self.router = SemanticRouter(provider)
         self._router_initialized = False
 
         # Vector context store (long-term memory retrieval)
         from djcode.orchestrator.vector_context import VectorContextStore
+
         self.vector_store = VectorContextStore(provider)
         self.vector_store.initialize()
 
@@ -280,9 +345,15 @@ class ShadowOrchestrator:
 
         # Check for complex keywords
         complex_hits = words & _COMPLEX_KEYWORDS
-        if len(complex_hits) >= 2 or any(kw in task_lower for kw in [
-            "from scratch", "full stack", "end to end", "complete system",
-        ]):
+        if len(complex_hits) >= 2 or any(
+            kw in task_lower
+            for kw in [
+                "from scratch",
+                "full stack",
+                "end to end",
+                "complete system",
+            ]
+        ):
             return TaskComplexity.COMPLEX
 
         # Check for moderate keywords
@@ -292,7 +363,9 @@ class ShadowOrchestrator:
         return TaskComplexity.SIMPLE
 
     def select_strategy(
-        self, complexity: TaskComplexity, roles: list[AgentRole],
+        self,
+        complexity: TaskComplexity,
+        roles: list[AgentRole],
     ) -> ExecutionStrategy:
         """Select execution strategy based on complexity and routed agents.
 
@@ -328,21 +401,28 @@ class ShadowOrchestrator:
     def _print_agent_header(self, spec: AgentSpec) -> None:
         """Print a compact header when an agent starts working."""
         icon = {
-            "orchestrator": "\U0001f3af", "coder": "\U0001f4bb",
-            "debugger": "\U0001f50e", "architect": "\U0001f4d0",
-            "reviewer": "\u2705", "tester": "\U0001f9ea",
-            "scout": "\U0001f50d", "devops": "\U0001f680",
-            "docs": "\U0001f4dd", "refactorer": "\U0001f504",
-            "product_strategist": "\U0001f4ca", "security_compliance": "\U0001f6e1\ufe0f",
-            "data_scientist": "\U0001f9ec", "sre": "\U0001f6a8",
-            "cost_optimizer": "\U0001f4b0", "integration": "\U0001f517",
-            "ux_workflow": "\U0001f3a8", "legal_intelligence": "\u2696\ufe0f",
+            "orchestrator": "\U0001f3af",
+            "coder": "\U0001f4bb",
+            "debugger": "\U0001f50e",
+            "architect": "\U0001f4d0",
+            "reviewer": "\u2705",
+            "tester": "\U0001f9ea",
+            "scout": "\U0001f50d",
+            "devops": "\U0001f680",
+            "docs": "\U0001f4dd",
+            "refactorer": "\U0001f504",
+            "product_strategist": "\U0001f4ca",
+            "security_compliance": "\U0001f6e1\ufe0f",
+            "data_scientist": "\U0001f9ec",
+            "sre": "\U0001f6a8",
+            "cost_optimizer": "\U0001f4b0",
+            "integration": "\U0001f517",
+            "ux_workflow": "\U0001f3a8",
+            "legal_intelligence": "\u2696\ufe0f",
             "risk_engine": "\u26a0\ufe0f",
         }.get(spec.role.value, "\u26a1")
 
-        console.print(
-            f"\n  [{GOLD}]{icon} {spec.name}[/] [dim]({spec.title})[/]"
-        )
+        console.print(f"\n  [{GOLD}]{icon} {spec.name}[/] [dim]({spec.title})[/]")
         console.print(f"  [dim]{'---' * 17}[/]")
 
     # -- Runner Factory --------------------------------------------------------
@@ -361,7 +441,9 @@ class ShadowOrchestrator:
     # -- Blocking Gate Check ---------------------------------------------------
 
     async def _run_blocking_gates(
-        self, task: str, roles: list[AgentRole],
+        self,
+        task: str,
+        roles: list[AgentRole],
     ) -> list[OrchestratorEvent]:
         """Run blocking agents and check for HALT conditions.
 
@@ -442,7 +524,9 @@ class ShadowOrchestrator:
     # -- Execution Strategies --------------------------------------------------
 
     async def execute_single(
-        self, role: AgentRole, task: str,
+        self,
+        role: AgentRole,
+        task: str,
     ) -> AsyncIterator[OrchestratorEvent]:
         """Execute a single agent with streaming. Yields events."""
         spec = get_agent(role)
@@ -454,13 +538,16 @@ class ShadowOrchestrator:
         yield agent_complete_event(spec.name, spec.role.value, "", 0.0, 0.0, 0)
 
     async def execute_parallel(
-        self, roles: list[AgentRole], task: str,
+        self,
+        roles: list[AgentRole],
+        task: str,
     ) -> AsyncIterator[OrchestratorEvent]:
         """Execute multiple independent agents in parallel via asyncio.gather.
 
         All agents run concurrently. Results are collected on the context bus.
         Only the final synthesis is streamed.
         """
+
         async def run_agent(role: AgentRole) -> str:
             spec = get_agent(role)
             self._print_agent_header(spec)
@@ -485,8 +572,12 @@ class ShadowOrchestrator:
                 agent_results[spec.name] = result
                 yield agent_token_event(spec.name, spec.role.value, f"\n## {spec.name}\n{result}\n")
                 yield agent_complete_event(
-                    spec.name, spec.role.value, result[:300],
-                    0.0, time.time() - start, 0,
+                    spec.name,
+                    spec.role.value,
+                    result[:300],
+                    0.0,
+                    time.time() - start,
+                    0,
                 )
 
         yield wave_complete_event(1, "Parallel Execution", agent_results, time.time() - start)
@@ -494,7 +585,9 @@ class ShadowOrchestrator:
             raise RuntimeError("Parallel execution incomplete: one or more specialists failed")
 
     async def execute_pipeline(
-        self, roles: list[AgentRole], task: str,
+        self,
+        roles: list[AgentRole],
+        task: str,
     ) -> AsyncIterator[OrchestratorEvent]:
         """Execute agents sequentially, each building on prior context.
 
@@ -528,12 +621,18 @@ class ShadowOrchestrator:
                 console.print(f"    [dim]{preview}[/]")
 
                 yield agent_complete_event(
-                    spec.name, spec.role.value, result[:300],
-                    0.0, elapsed, 0,
+                    spec.name,
+                    spec.role.value,
+                    result[:300],
+                    0.0,
+                    elapsed,
+                    0,
                 )
 
     async def execute_wave(
-        self, task: str, roles: list[AgentRole] | None = None,
+        self,
+        task: str,
+        roles: list[AgentRole] | None = None,
     ) -> AsyncIterator[OrchestratorEvent]:
         """Execute agents in waves: Recon -> Plan -> Execute -> Verify.
 
@@ -595,14 +694,24 @@ class ShadowOrchestrator:
                     wave_results[name] = result
                     yield agent_token_event(name, "", f"\n## {name}\n{result}\n")
                     yield agent_complete_event(
-                        name, "", result[:300], 0.0, time.time() - start, 0,
+                        name,
+                        "",
+                        result[:300],
+                        0.0,
+                        time.time() - start,
+                        0,
                     )
 
             for role in wave_roles:
                 if role in BLOCKING_AGENTS:
                     finding = wave_results.get(get_agent(role).name, "").upper()
-                    if "CRITICAL" in finding and any(word in finding for word in ("HALT", "BLOCK", "FAIL", "REJECT", "VULNERABILITY")):
-                        raise RuntimeError(f"Blocking agent {get_agent(role).name} flagged CRITICAL findings")
+                    if "CRITICAL" in finding and any(
+                        word in finding
+                        for word in ("HALT", "BLOCK", "FAIL", "REJECT", "VULNERABILITY")
+                    ):
+                        raise RuntimeError(
+                            f"Blocking agent {get_agent(role).name} flagged CRITICAL findings"
+                        )
             elapsed = time.time() - start
             yield wave_complete_event(wave_num, wave_name, wave_results, elapsed)
 
@@ -613,7 +722,9 @@ class ShadowOrchestrator:
 
     # -- Main Entry Point ------------------------------------------------------
 
-    async def execute(self, task: str, strategy_override: ExecutionStrategy | None = None) -> AsyncIterator[OrchestratorEvent]:
+    async def execute(
+        self, task: str, strategy_override: ExecutionStrategy | None = None
+    ) -> AsyncIterator[OrchestratorEvent]:
         """Full orchestration — classify, route, gate, execute, synthesize.
 
         This is the main entry point. It:
@@ -680,7 +791,9 @@ class ShadowOrchestrator:
 
         if halted:
             yield orchestrator_error_event(
-                task, "Halted by blocking gate agent (CRITICAL finding)", agent_names,
+                task,
+                "Halted by blocking gate agent (CRITICAL finding)",
+                agent_names,
             )
             console.print(
                 "\n  [bold red]HALTED[/] — Blocking agent issued CRITICAL halt. "
@@ -762,7 +875,9 @@ class ShadowOrchestrator:
         return await runner.run(task)
 
     async def run_single_agent_streaming(
-        self, role: AgentRole, task: str,
+        self,
+        role: AgentRole,
+        task: str,
     ) -> AsyncIterator[str]:
         """Run a single specialist agent with streaming output."""
         spec = get_agent(role)
@@ -787,22 +902,33 @@ class ShadowOrchestrator:
             AgentTier.EXECUTION: "TIER 1 -- EXECUTION",
         }
 
-        for tier in [AgentTier.CONTROL, AgentTier.ENTERPRISE,
-                     AgentTier.ARCHITECTURE, AgentTier.EXECUTION]:
+        for tier in [
+            AgentTier.CONTROL,
+            AgentTier.ENTERPRISE,
+            AgentTier.ARCHITECTURE,
+            AgentTier.EXECUTION,
+        ]:
             agents = get_agents_by_tier(tier)
             console.print(f"\n  [bold dim]{tier_labels[tier]}[/]")
 
             for spec in agents:
                 icon = {
-                    "orchestrator": "\U0001f3af", "coder": "\U0001f4bb",
-                    "debugger": "\U0001f50e", "architect": "\U0001f4d0",
-                    "reviewer": "\u2705", "tester": "\U0001f9ea",
-                    "scout": "\U0001f50d", "devops": "\U0001f680",
-                    "docs": "\U0001f4dd", "refactorer": "\U0001f504",
+                    "orchestrator": "\U0001f3af",
+                    "coder": "\U0001f4bb",
+                    "debugger": "\U0001f50e",
+                    "architect": "\U0001f4d0",
+                    "reviewer": "\u2705",
+                    "tester": "\U0001f9ea",
+                    "scout": "\U0001f50d",
+                    "devops": "\U0001f680",
+                    "docs": "\U0001f4dd",
+                    "refactorer": "\U0001f504",
                     "product_strategist": "\U0001f4ca",
                     "security_compliance": "\U0001f6e1\ufe0f",
-                    "data_scientist": "\U0001f9ec", "sre": "\U0001f6a8",
-                    "cost_optimizer": "\U0001f4b0", "integration": "\U0001f517",
+                    "data_scientist": "\U0001f9ec",
+                    "sre": "\U0001f6a8",
+                    "cost_optimizer": "\U0001f4b0",
+                    "integration": "\U0001f517",
                     "ux_workflow": "\U0001f3a8",
                     "legal_intelligence": "\u2696\ufe0f",
                     "risk_engine": "\u26a0\ufe0f",
@@ -819,12 +945,15 @@ class ShadowOrchestrator:
                 )
 
         console.print("\n  [dim]Use /orchestra <task> for multi-agent execution[/]")
-        console.print("  [dim]Use /review, /debug, /test, /refactor, /devops, /docs for single-agent[/]\n")
+        console.print(
+            "  [dim]Use /review, /debug, /test, /refactor, /devops, /docs for single-agent[/]\n"
+        )
 
 
 # ==============================================================================
 #  Orchestrator — Backwards-compatible wrapper
 # ==============================================================================
+
 
 class Orchestrator:
     """Backwards-compatible orchestrator wrapper around ShadowOrchestrator.
@@ -839,8 +968,12 @@ class Orchestrator:
             print(token, end="")
     """
 
-    def __init__(self, provider: Provider, auto_accept: bool = False, approval_callback=None) -> None:
-        self._shadow = ShadowOrchestrator(provider, auto_accept, approval_callback=approval_callback)
+    def __init__(
+        self, provider: Provider, auto_accept: bool = False, approval_callback=None
+    ) -> None:
+        self._shadow = ShadowOrchestrator(
+            provider, auto_accept, approval_callback=approval_callback
+        )
         self.provider = provider
         self.auto_accept = auto_accept
         self.approval_callback = approval_callback
@@ -859,7 +992,9 @@ class Orchestrator:
         return await self._shadow.run_single_agent(role, task)
 
     async def run_single_agent_streaming(
-        self, role: AgentRole, task: str,
+        self,
+        role: AgentRole,
+        task: str,
     ) -> AsyncIterator[str]:
         """Run a single specialist agent with streaming output."""
         async for token in self._shadow.run_single_agent_streaming(role, task):

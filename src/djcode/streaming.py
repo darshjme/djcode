@@ -1,4 +1,5 @@
 """One streaming protocol adapter shared by the interactive and specialist loops."""
+
 from __future__ import annotations
 
 import json
@@ -10,7 +11,9 @@ from typing import Any
 from djcode.provider import Message, Provider
 
 
-async def stream_turn(provider: Provider, messages: list[Message]) -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
+async def stream_turn(
+    provider: Provider, messages: list[Message]
+) -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
     """Yield text followed by complete, indexed tool calls; reject truncated streams."""
     calls: dict[int, dict[str, Any]] = {}
     ended = False
@@ -39,7 +42,9 @@ async def stream_turn(provider: Provider, messages: list[Message]) -> AsyncItera
                 yield delta["content"], []
             for part in delta.get("tool_calls", []):
                 idx = part.get("index", 0)
-                tc = calls.setdefault(idx, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                tc = calls.setdefault(
+                    idx, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                )
                 if part.get("id"):
                     tc["id"] = part["id"]
                 fn = part.get("function", {})
@@ -54,13 +59,24 @@ async def stream_turn(provider: Provider, messages: list[Message]) -> AsyncItera
                 ended = True
                 continue
     if not ended:
-        raise ConnectionError("Provider stream ended without a completion marker; retry the request.")
+        raise ConnectionError(
+            "Provider stream ended without a completion marker; retry the request."
+        )
     normalized = []
     for tc in calls.values():
         fn = tc.get("function", {})
         if not fn.get("name"):
             raise ValueError("Provider returned a tool call without a name.")
         args = fn.get("arguments", {})
-        normalized.append({"id": tc.get("id") or f"call_{uuid.uuid4().hex}", "type": "function", "function": {"name": fn["name"], "arguments": json.dumps(args) if isinstance(args, dict) else args}})
+        normalized.append(
+            {
+                "id": tc.get("id") or f"call_{uuid.uuid4().hex}",
+                "type": "function",
+                "function": {
+                    "name": fn["name"],
+                    "arguments": json.dumps(args) if isinstance(args, dict) else args,
+                },
+            }
+        )
     if normalized:
         yield "", normalized

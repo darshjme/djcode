@@ -81,11 +81,13 @@ class OpenAIProvider(BaseProvider):
                 else:
                     result.append({"role": "system", "content": content})
             elif role == "tool":
-                result.append({
-                    "role": "tool",
-                    "content": content,
-                    "tool_call_id": msg.get("tool_call_id", ""),
-                })
+                result.append(
+                    {
+                        "role": "tool",
+                        "content": content,
+                        "tool_call_id": msg.get("tool_call_id", ""),
+                    }
+                )
             elif role == "assistant":
                 entry: dict[str, Any] = {"role": "assistant", "content": content}
                 if msg.get("tool_calls"):
@@ -93,7 +95,10 @@ class OpenAIProvider(BaseProvider):
                 result.append(entry)
             else:
                 from djcode.vision import openai_content
-                result.append({"role": role, "content": openai_content(content, msg.get("images", []))})
+
+                result.append(
+                    {"role": role, "content": openai_content(content, msg.get("images", []))}
+                )
 
         return result
 
@@ -107,10 +112,12 @@ class OpenAIProvider(BaseProvider):
             if "function" in td:
                 formatted.append(td)
             else:
-                formatted.append({
-                    "type": "function",
-                    "function": td,
-                })
+                formatted.append(
+                    {
+                        "type": "function",
+                        "function": td,
+                    }
+                )
         return formatted
 
     async def chat(
@@ -168,7 +175,9 @@ class OpenAIProvider(BaseProvider):
                     if attempt < max_retries - 1:
                         logger.warning(
                             "OpenAI rate limit/server error %d, retry %d/%d",
-                            status, attempt + 1, max_retries,
+                            status,
+                            attempt + 1,
+                            max_retries,
                         )
                         await self._backoff_sleep(attempt)
                         continue
@@ -265,11 +274,13 @@ class OpenAIProvider(BaseProvider):
                     calls: list[ToolCall] = []
                     for idx in sorted(tool_buffers.keys()):
                         buf = tool_buffers[idx]
-                        calls.append(ToolCall(
-                            id=buf["id"],
-                            name=buf["name"],
-                            arguments=buf["arguments"],
-                        ))
+                        calls.append(
+                            ToolCall(
+                                id=buf["id"],
+                                name=buf["name"],
+                                arguments=buf["arguments"],
+                            )
+                        )
                     tool_buffers.clear()
 
                     fr = FinishReason.STOP
@@ -313,20 +324,20 @@ class OpenAIProvider(BaseProvider):
         tool_calls: list[ToolCall] = []
         for tc in msg.get("tool_calls", []):
             func = tc.get("function", {})
-            tool_calls.append(ToolCall(
-                id=tc.get("id", ""),
-                name=func.get("name", ""),
-                arguments=func.get("arguments", "{}"),
-            ))
+            tool_calls.append(
+                ToolCall(
+                    id=tc.get("id", ""),
+                    name=func.get("name", ""),
+                    arguments=func.get("arguments", "{}"),
+                )
+            )
 
         # Usage
         u = data.get("usage", {})
         usage = TokenUsage(
             input_tokens=u.get("prompt_tokens", 0),
             output_tokens=u.get("completion_tokens", 0),
-            thinking_tokens=u.get("completion_tokens_details", {}).get(
-                "reasoning_tokens", 0
-            ),
+            thinking_tokens=u.get("completion_tokens_details", {}).get("reasoning_tokens", 0),
         )
         usage.calculate_cost(self._model)
         self._track_usage(usage)
@@ -350,6 +361,7 @@ class OpenAIProvider(BaseProvider):
         """Estimate token count. Uses tiktoken if available, else heuristic."""
         try:
             import tiktoken
+
             enc = tiktoken.encoding_for_model(self._model)
             return len(enc.encode(text))
         except (ImportError, KeyError):

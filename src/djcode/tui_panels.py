@@ -112,6 +112,7 @@ HIDDEN_DIRS: set[str] = {
 # Messages (for inter-panel communication)
 # ---------------------------------------------------------------------------
 
+
 class FileSelected(Message):
     """Posted when the user selects a file in the directory tree."""
 
@@ -144,6 +145,7 @@ class AgentUpdated(Message):
 # ---------------------------------------------------------------------------
 # 1. ProjectPanel -- Directory tree file browser (hacker themed)
 # ---------------------------------------------------------------------------
+
 
 class FilteredDirectoryTree(DirectoryTree):
     """DirectoryTree that filters out noise directories and adds file icons."""
@@ -257,7 +259,9 @@ class ProjectPanel(Vertical):
             size = path.stat().st_size
             ext = path.suffix.lower()
             icon = FILE_ICONS.get(ext, ">>")
-            info_label.update(f" [{SUCCESS}]{icon}[/] [{TEXT}]{path.name}[/]  [{DIM}]|[/]  [{TEXT}]{self._format_size(size)}[/]")
+            info_label.update(
+                f" [{SUCCESS}]{icon}[/] [{TEXT}]{path.name}[/]  [{DIM}]|[/]  [{TEXT}]{self._format_size(size)}[/]"
+            )
         except OSError:
             info_label.update(f" [{TEXT}]{path.name}[/]")
 
@@ -291,12 +295,13 @@ class ProjectPanel(Vertical):
     def _truncate_path(path: str, max_len: int = 40) -> str:
         if len(path) <= max_len:
             return path
-        return "..." + path[-(max_len - 3):]
+        return "..." + path[-(max_len - 3) :]
 
 
 # ---------------------------------------------------------------------------
 # 2. AgentPanel -- Live agent status with RA integration (hacker themed)
 # ---------------------------------------------------------------------------
+
 
 class ToolHistoryItem(Static):
     """A single tool call entry in the history."""
@@ -410,7 +415,9 @@ class AgentPanel(Vertical):
 
         # Token counter
         yield Label("TOKENS", classes="agent-section-title")
-        yield Static("  [{SUCCESS}]>> 0[/]  [{ERROR}]<< 0[/]", id="agent-token-display", classes="agent-stat")
+        yield Static(
+            "  [{SUCCESS}]>> 0[/]  [{ERROR}]<< 0[/]", id="agent-token-display", classes="agent-stat"
+        )
         yield Rule()
 
         # Session timer
@@ -434,8 +441,10 @@ class AgentPanel(Vertical):
     def _build_agent_display(self) -> str:
         """Build agent display with tier badge."""
         tier_colors = {
-            4: TIER_4_CONTROL, 3: TIER_3_ENTERPRISE,
-            2: TIER_2_ARCHITECTURE, 1: TIER_1_EXECUTION,
+            4: TIER_4_CONTROL,
+            3: TIER_3_ENTERPRISE,
+            2: TIER_2_ARCHITECTURE,
+            1: TIER_1_EXECUTION,
         }
         tier_labels = {4: "T4:CTRL", 3: "T3:ENTR", 2: "T2:ARCH", 1: "T1:EXEC"}
         tier_color = tier_colors.get(self.active_tier, TEXT_DIM)
@@ -471,17 +480,13 @@ class AgentPanel(Vertical):
 
     def watch_active_agent(self, value: str) -> None:
         try:
-            self.query_one("#agent-active-display", Static).update(
-                self._build_agent_display()
-            )
+            self.query_one("#agent-active-display", Static).update(self._build_agent_display())
         except Exception:
             pass
 
     def watch_active_tier(self, value: int) -> None:
         try:
-            self.query_one("#agent-active-display", Static).update(
-                self._build_agent_display()
-            )
+            self.query_one("#agent-active-display", Static).update(self._build_agent_display())
         except Exception:
             pass
 
@@ -493,12 +498,18 @@ class AgentPanel(Vertical):
 
     def _refresh_ra_display(self) -> None:
         try:
-            ra_color = SUCCESS if self.ra_status == "augmented" else (
-                THINKING if self.ra_status == "retrieving" else TEXT_DIM
+            ra_color = (
+                SUCCESS
+                if self.ra_status == "augmented"
+                else (THINKING if self.ra_status == "retrieving" else TEXT_DIM)
             )
             conf_str = f"{self.confidence:.0%}" if self.confidence > 0 else "--"
-            conf_color = SUCCESS if self.confidence > 0.8 else (
-                WARNING if self.confidence > 0.5 else ERROR if self.confidence > 0 else TEXT_DIM
+            conf_color = (
+                SUCCESS
+                if self.confidence > 0.8
+                else (
+                    WARNING if self.confidence > 0.5 else ERROR if self.confidence > 0 else TEXT_DIM
+                )
             )
             self.query_one("#agent-ra-display", Static).update(
                 f"  [{DIM}]Mode:[/] [{ra_color}]{self.ra_status}[/]"
@@ -591,6 +602,7 @@ class AgentPanel(Vertical):
 # ---------------------------------------------------------------------------
 # 3. StatsPanel -- Session statistics with live updates (hacker themed)
 # ---------------------------------------------------------------------------
+
 
 class StatsPanel(Vertical):
     """Session stats with live updates -- cyberpunk HUD style."""
@@ -755,9 +767,7 @@ class StatsPanel(Vertical):
             self._modified_files.append(name)
             try:
                 container = self.query_one("#stats-files-scroll", ScrollableContainer)
-                container.mount(
-                    Static(f"  [{SUCCESS}]>>[/] [{TEXT}]{name}[/]")
-                )
+                container.mount(Static(f"  [{SUCCESS}]>>[/] [{TEXT}]{name}[/]"))
             except Exception:
                 pass
 
@@ -796,6 +806,7 @@ class StatsPanel(Vertical):
 # ---------------------------------------------------------------------------
 # 4. MCPPanel -- MCP extension status and management (hacker themed)
 # ---------------------------------------------------------------------------
+
 
 class ExtensionRow(Horizontal):
     """A single extension entry with status dot and toggle."""
@@ -937,8 +948,7 @@ class MCPPanel(Vertical):
             container.remove_children()
             container.mount(
                 Static(
-                    f"[{DIM}]No extensions registered.\n"
-                    f"Use /ext add <name> <cmd> to add one.[/]",
+                    f"[{DIM}]No extensions registered.\nUse /ext add <name> <cmd> to add one.[/]",
                     classes="mcp-empty",
                 )
             )
@@ -997,6 +1007,7 @@ class MCPPanel(Vertical):
 # ---------------------------------------------------------------------------
 # 5. TodoPanel -- Per-session todo list (hacker themed)
 # ---------------------------------------------------------------------------
+
 
 class TodoItem(Horizontal):
     """A single todo entry."""
@@ -1144,6 +1155,7 @@ class TodoPanel(Vertical):
 # 6. CostPanel -- Token usage and cost estimates (hacker themed)
 # ---------------------------------------------------------------------------
 
+
 class CostPanel(Vertical):
     """Token usage with cost estimates -- cyberpunk accounting."""
 
@@ -1262,15 +1274,9 @@ class CostPanel(Vertical):
             self.query_one("#cost-tokens-out", Static).update(
                 f"  Output: {self._fmt(self.tokens_out)}"
             )
-            self.query_one("#cost-tokens-total", Static).update(
-                f"  Total:  {self._fmt(total)}"
-            )
-            self.query_one("#cost-dollars-in", Static).update(
-                f"  Input:  ${cost_in:.4f}"
-            )
-            self.query_one("#cost-dollars-out", Static).update(
-                f"  Output: ${cost_out:.4f}"
-            )
+            self.query_one("#cost-tokens-total", Static).update(f"  Total:  {self._fmt(total)}")
+            self.query_one("#cost-dollars-in", Static).update(f"  Input:  ${cost_in:.4f}")
+            self.query_one("#cost-dollars-out", Static).update(f"  Output: ${cost_out:.4f}")
             self.query_one("#cost-dollars-total", Static).update(
                 f"  [{GOLD}]Total:  ${cost_total:.4f}[/]"
             )
@@ -1312,6 +1318,7 @@ class CostPanel(Vertical):
 # ---------------------------------------------------------------------------
 # 9. SidePanel -- Tabbed container for all panels
 # ---------------------------------------------------------------------------
+
 
 class SidePanel(Vertical):
     """Tabbed side panel: Files, Agent, Stats, MCP, Todo, Cost."""

@@ -48,16 +48,17 @@ __all__ = [
 
 # -- Coordinator-level events --------------------------------------------------
 
+
 class CoordinatorEventType(str, __import__("enum").Enum):
     """Events emitted by the coordinator itself."""
 
-    WAVE_START     = "wave_start"
-    WAVE_COMPLETE  = "wave_complete"
-    AGENT_START    = "agent_start"
+    WAVE_START = "wave_start"
+    WAVE_COMPLETE = "wave_complete"
+    AGENT_START = "agent_start"
     AGENT_COMPLETE = "agent_complete"
-    AGENT_ERROR    = "agent_error"
-    HALT           = "halt"
-    ALL_COMPLETE   = "all_complete"
+    AGENT_ERROR = "agent_error"
+    HALT = "halt"
+    ALL_COMPLETE = "all_complete"
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ CoordCallback = EventCallback  # reuse the same signature
 
 
 # -- Result aggregation --------------------------------------------------------
+
 
 @dataclass
 class CoordinatorResult:
@@ -114,7 +116,9 @@ class CoordinatorResult:
         parts: list[str] = []
         for result in self.results:
             if not result.succeeded:
-                parts.append(f"## {result.agent_name} ({result.agent_role.value})\nFailed: {result.error or result.response}")
+                parts.append(
+                    f"## {result.agent_name} ({result.agent_role.value})\nFailed: {result.error or result.response}"
+                )
             elif result.response.strip():
                 header = f"## {result.agent_name} ({result.agent_role.value})"
                 confidence = f"*Confidence: {result.confidence_score:.2f}*"
@@ -147,6 +151,7 @@ class CoordinatorResult:
 
 
 # -- Parallel Coordinator ------------------------------------------------------
+
 
 class ParallelCoordinator:
     """Coordinates parallel and sequential execution of multiple PhD agents.
@@ -255,7 +260,9 @@ class ParallelCoordinator:
         halt_reason = ""
         await self._emit(CoordinatorEventType.WAVE_START, agents=[s.name for s in specs])
         tasks = {
-            asyncio.create_task(self._run_single_with_timeout(self._make_executor(spec), task, spec)): spec
+            asyncio.create_task(
+                self._run_single_with_timeout(self._make_executor(spec), task, spec)
+            ): spec
             for spec in specs
         }
         pending = set(tasks)
@@ -266,10 +273,17 @@ class ParallelCoordinator:
                     for completed in done:
                         result = completed.result()
                         results.append(result)
-                        await self._emit(CoordinatorEventType.AGENT_COMPLETE if result.succeeded else CoordinatorEventType.AGENT_ERROR,
-                                         agent=result.agent_name, succeeded=result.succeeded)
-                        if self.halt_on_blocking_critical and (result.is_blocking_critical or
-                                (result.agent_role in BLOCKING_AGENTS and not result.succeeded)):
+                        await self._emit(
+                            CoordinatorEventType.AGENT_COMPLETE
+                            if result.succeeded
+                            else CoordinatorEventType.AGENT_ERROR,
+                            agent=result.agent_name,
+                            succeeded=result.succeeded,
+                        )
+                        if self.halt_on_blocking_critical and (
+                            result.is_blocking_critical
+                            or (result.agent_role in BLOCKING_AGENTS and not result.succeeded)
+                        ):
                             halted = True
                             halt_reason = f"Blocking agent {result.agent_name} failed or flagged CRITICAL findings"
                     if halted:
@@ -284,15 +298,32 @@ class ParallelCoordinator:
             await asyncio.gather(*tasks, return_exceptions=True)
         for child in pending:
             spec = tasks[child]
-            results.append(AgentResult(spec.role, spec.name, "", 0.0, 0, 0,
-                                       time.monotonic() - start, None, AgentState.ERROR,
-                                       halt_reason or "Execution cancelled"))
+            results.append(
+                AgentResult(
+                    spec.role,
+                    spec.name,
+                    "",
+                    0.0,
+                    0,
+                    0,
+                    time.monotonic() - start,
+                    None,
+                    AgentState.ERROR,
+                    halt_reason or "Execution cancelled",
+                )
+            )
         if halted:
             await self._emit(CoordinatorEventType.HALT, reason=halt_reason)
         elapsed = time.monotonic() - start
         await self._emit(CoordinatorEventType.ALL_COMPLETE, duration_s=elapsed)
-        return CoordinatorResult(results, halted, halt_reason, elapsed,
-                                 sum(r.tokens_used for r in results), sum(r.tools_called for r in results))
+        return CoordinatorResult(
+            results,
+            halted,
+            halt_reason,
+            elapsed,
+            sum(r.tokens_used for r in results),
+            sum(r.tools_called for r in results),
+        )
 
     # -- Sequential pipeline ---------------------------------------------------
 
@@ -325,14 +356,15 @@ class ParallelCoordinator:
             enriched_task = task
             if self.bus and len(self.bus) > 0:
                 enriched_task = (
-                    f"{task}\n\n"
-                    f"## Context from prior agents in pipeline\n"
-                    f"{self.bus.summary()}"
+                    f"{task}\n\n## Context from prior agents in pipeline\n{self.bus.summary()}"
                 )
 
             remaining = self.overall_timeout_s - (time.monotonic() - start)
             try:
-                result = await asyncio.wait_for(self._run_single_with_timeout(executor, enriched_task, spec), timeout=max(0, remaining))
+                result = await asyncio.wait_for(
+                    self._run_single_with_timeout(executor, enriched_task, spec),
+                    timeout=max(0, remaining),
+                )
             except TimeoutError:
                 halted = True
                 halt_reason = "Overall pipeline execution timed out"
@@ -347,7 +379,9 @@ class ParallelCoordinator:
             )
 
             # Check blocking critical gate
-            if not result.succeeded or (self.halt_on_blocking_critical and result.is_blocking_critical):
+            if not result.succeeded or (
+                self.halt_on_blocking_critical and result.is_blocking_critical
+            ):
                 halt_reason = (
                     f"Pipeline halted at stage {i + 1}/{len(specs)}: "
                     f"{result.agent_name} failed or flagged CRITICAL findings."
@@ -411,7 +445,9 @@ class ParallelCoordinator:
             # Run the wave (all agents in parallel)
             remaining = self.overall_timeout_s - (time.monotonic() - start)
             try:
-                wave_result = await asyncio.wait_for(self.run_parallel(wave_specs, task), timeout=max(0, remaining))
+                wave_result = await asyncio.wait_for(
+                    self.run_parallel(wave_specs, task), timeout=max(0, remaining)
+                )
             except TimeoutError:
                 halted = True
                 halt_reason = "Overall wave execution timed out"
@@ -473,16 +509,20 @@ class ParallelCoordinator:
         """
         event_queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         previous_callback = getattr(self, "_agent_callback", None)
+
         async def enqueue(event):
             await event_queue.put(event)
             if previous_callback:
                 await previous_callback(event)
+
         self._agent_callback = enqueue
+
         async def run():
             try:
                 await self.run_parallel(specs, task)
             finally:
                 await event_queue.put(None)
+
         worker = asyncio.create_task(run())
         try:
             while True:
@@ -563,7 +603,4 @@ class ParallelCoordinator:
 
     def status_snapshot(self) -> list[dict[str, Any]]:
         """Get a snapshot of all active executor state machines."""
-        return [
-            ex.state_machine.snapshot()
-            for ex in self._executors.values()
-        ]
+        return [ex.state_machine.snapshot() for ex in self._executors.values()]

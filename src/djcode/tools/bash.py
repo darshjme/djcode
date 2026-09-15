@@ -1,4 +1,5 @@
 """Shell execution with bounded output and process-group cancellation."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,11 +7,24 @@ import os
 import signal
 
 
-async def run_process(*args: str, timeout: float, shell: bool = False, output_limit: int = 50_000, cwd: str | None = None) -> str:
-    kwargs = dict(stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-                  start_new_session=(os.name == "posix"), cwd=cwd)
-    proc = await (asyncio.create_subprocess_shell(args[0], **kwargs) if shell
-                  else asyncio.create_subprocess_exec(*args, **kwargs))
+async def run_process(
+    *args: str,
+    timeout: float,
+    shell: bool = False,
+    output_limit: int = 50_000,
+    cwd: str | None = None,
+) -> str:
+    kwargs = dict(
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        start_new_session=(os.name == "posix"),
+        cwd=cwd,
+    )
+    proc = await (
+        asyncio.create_subprocess_shell(args[0], **kwargs)
+        if shell
+        else asyncio.create_subprocess_exec(*args, **kwargs)
+    )
     chunks = bytearray()
     truncated = False
 

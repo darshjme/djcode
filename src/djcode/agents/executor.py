@@ -47,6 +47,7 @@ __all__ = [
 
 # -- Result type ---------------------------------------------------------------
 
+
 @dataclass
 class AgentResult:
     """Complete result from an agent execution."""
@@ -92,6 +93,7 @@ class AgentResult:
 
 # -- Executor ------------------------------------------------------------------
 
+
 class AgentExecutor:
     """Production-grade executor for a single PhD agent.
 
@@ -129,6 +131,7 @@ class AgentExecutor:
         self.spec = spec
         self.provider = provider
         from djcode.workflow import WorkflowEngine
+
         self.workflow = WorkflowEngine()
         self.bus = bus
         self.enable_ra = enable_ra
@@ -287,11 +290,13 @@ class AgentExecutor:
                 return
 
             # Append assistant message with tool calls
-            messages.append(Message(
-                role="assistant",
-                content=chunk_response,
-                tool_calls=tool_calls,
-            ))
+            messages.append(
+                Message(
+                    role="assistant",
+                    content=chunk_response,
+                    tool_calls=tool_calls,
+                )
+            )
 
             # Execute each tool call
             for tc in tool_calls:
@@ -326,17 +331,22 @@ class AgentExecutor:
                 )
 
                 # Append tool result to conversation
-                messages.append(Message(
-                    role="tool",
-                    content=result,
-                    tool_call_id=tc.get("id", f"call_{tool_name}_{round_num}"),
-                    name=tool_name,
-                ))
+                messages.append(
+                    Message(
+                        role="tool",
+                        content=result,
+                        tool_call_id=tc.get("id", f"call_{tool_name}_{round_num}"),
+                        name=tool_name,
+                    )
+                )
 
-        raise RuntimeError(f"Tool round limit reached ({self.spec.max_tool_rounds}); task incomplete")
+        raise RuntimeError(
+            f"Tool round limit reached ({self.spec.max_tool_rounds}); task incomplete"
+        )
 
     async def _stream_response(self, messages: list[Message]):
         from djcode.streaming import stream_turn
+
         async for text, calls in stream_turn(self.provider, messages):
             yield text, calls
 
@@ -358,7 +368,16 @@ class AgentExecutor:
             )
 
         # Tools outside this explicit read set require user-approved write mode.
-        read_tools = {"file_read", "grep", "glob", "web_fetch", "web_search", "notebook_read", "task_list", "agent_status"}
+        read_tools = {
+            "file_read",
+            "grep",
+            "glob",
+            "web_fetch",
+            "web_search",
+            "notebook_read",
+            "task_list",
+            "agent_status",
+        }
         if tool_name not in read_tools:
             if self.spec.read_only:
                 return f"Error: Tool '{tool_name}' requires write approval; agent is read-only."
@@ -372,12 +391,17 @@ class AgentExecutor:
         start = time.monotonic()
         try:
             from djcode.tools.agent_spawn import agent_context
+
             with agent_context(self.provider, self.auto_accept, self.approval_callback):
-                result = await asyncio.wait_for(self.workflow.one(tool_name, args, dispatch_tool), timeout=120.0)
+                result = await asyncio.wait_for(
+                    self.workflow.one(tool_name, args, dispatch_tool), timeout=120.0
+                )
             elapsed_ms = (time.monotonic() - start) * 1000
             logger.debug(
                 "%s: tool %s completed in %.0fms",
-                self.spec.name, tool_name, elapsed_ms,
+                self.spec.name,
+                tool_name,
+                elapsed_ms,
             )
             return result
         except TimeoutError:
@@ -434,9 +458,9 @@ class AgentExecutor:
             return 0.0
 
         patterns = [
-            r'(?i)confidence[:\s]+(\d+\.?\d*)\s*%',        # "Confidence: 92%"
-            r'(?i)confidence[_\s]*(?:score)?[:\s]+(\d\.\d+)', # "CONFIDENCE: 0.92"
-            r'(?i)confidence[_\s]*(?:score)?[:\s]+(\d+)',     # "confidence: 9"
+            r"(?i)confidence[:\s]+(\d+\.?\d*)\s*%",  # "Confidence: 92%"
+            r"(?i)confidence[_\s]*(?:score)?[:\s]+(\d\.\d+)",  # "CONFIDENCE: 0.92"
+            r"(?i)confidence[_\s]*(?:score)?[:\s]+(\d+)",  # "confidence: 9"
         ]
 
         for pattern in patterns:

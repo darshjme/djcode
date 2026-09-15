@@ -62,6 +62,7 @@ class Extension:
 
 class MCPConnection:
     """Bounded, asynchronous MCP stdio lifecycle with notification handling."""
+
     def __init__(self, extension):
         self.extension = extension
         self._process = None
@@ -72,22 +73,32 @@ class MCPConnection:
 
     async def start(self):
         import os
+
         try:
             self._process = await asyncio.create_subprocess_exec(
-                self.extension.cmd, *self.extension.args,
-                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                self.extension.cmd,
+                *self.extension.args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env={**os.environ, **self.extension.env}, limit=2**22,
+                env={**os.environ, **self.extension.env},
+                limit=2**22,
                 start_new_session=os.name != "nt",
             )
+
             async def drain():
                 while await self._process.stderr.read(4096):
                     pass
+
             self._stderr_task = asyncio.create_task(drain())
-            await self._send_request("initialize", {
-                "protocolVersion": "2024-11-05", "capabilities": {},
-                "clientInfo": {"name": "djcode", "version": "4.2.1"},
-            })
+            await self._send_request(
+                "initialize",
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "djcode", "version": "4.2.1"},
+                },
+            )
             await self._write({"jsonrpc": "2.0", "method": "notifications/initialized"})
         except BaseException:
             await self.stop()
@@ -100,6 +111,7 @@ class MCPConnection:
     async def stop(self):
         import os
         import signal
+
         process = self._process
         if process and process.returncode is None:
             try:
@@ -131,7 +143,9 @@ class MCPConnection:
         async with self._lock:
             self._request_id += 1
             ident = self._request_id
-            await self._write({"jsonrpc":"2.0", "id":ident, "method":method, "params":params or {}})
+            await self._write(
+                {"jsonrpc": "2.0", "id": ident, "method": method, "params": params or {}}
+            )
             try:
                 async with asyncio.timeout(30):
                     while True:
@@ -141,12 +155,23 @@ class MCPConnection:
                         response = json.loads(line)
                         if response.get("method"):
                             if "id" in response:
-                                await self._write({"jsonrpc":"2.0", "id":response["id"], "error":{"code":-32601,"message":"Client method not supported"}})
+                                await self._write(
+                                    {
+                                        "jsonrpc": "2.0",
+                                        "id": response["id"],
+                                        "error": {
+                                            "code": -32601,
+                                            "message": "Client method not supported",
+                                        },
+                                    }
+                                )
                             continue
                         if response.get("id") != ident:
                             continue
                         if "error" in response:
-                            raise RuntimeError(f"MCP error: {response['error'].get('message', 'request failed')}")
+                            raise RuntimeError(
+                                f"MCP error: {response['error'].get('message', 'request failed')}"
+                            )
                         return response.get("result")
             except BaseException:
                 await self.stop()
@@ -159,8 +184,9 @@ class MCPConnection:
     async def call_tool(self, tool_name, arguments):
         import base64
         import uuid
+
         self.image_paths = []
-        result = await self._send_request("tools/call", {"name":tool_name,"arguments":arguments})
+        result = await self._send_request("tools/call", {"name": tool_name, "arguments": arguments})
         if isinstance(result, dict):
             parts = []
             for block in result.get("content", []):
@@ -344,7 +370,9 @@ class ExtensionManager:
                             "description": (
                                 f"[{name}] {tool.get('description', 'No description')}"
                             ),
-                            "parameters": tool.get("inputSchema", {"type": "object", "properties": {}}),
+                            "parameters": tool.get(
+                                "inputSchema", {"type": "object", "properties": {}}
+                            ),
                         },
                         "_extension": name,
                         "_original_name": tool.get("name", ""),
@@ -414,14 +442,16 @@ class ExtensionManager:
         statuses = []
         for name, ext in self.extensions.items():
             conn = self._connections.get(name)
-            statuses.append({
-                "name": name,
-                "cmd": ext.cmd,
-                "enabled": ext.enabled,
-                "connected": conn is not None and conn.is_alive if conn else False,
-                "tools_count": len(ext.tools),
-                "tools": ext.tools[:10],  # Cap for display
-                "description": ext.description,
-                "last_error": ext.last_error,
-            })
+            statuses.append(
+                {
+                    "name": name,
+                    "cmd": ext.cmd,
+                    "enabled": ext.enabled,
+                    "connected": conn is not None and conn.is_alive if conn else False,
+                    "tools_count": len(ext.tools),
+                    "tools": ext.tools[:10],  # Cap for display
+                    "description": ext.description,
+                    "last_error": ext.last_error,
+                }
+            )
         return statuses

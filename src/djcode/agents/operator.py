@@ -31,9 +31,9 @@ THINK_OPEN = "<think>"
 THINK_CLOSE = "</think>"
 
 # Dimmed styling for thinking output
-THINK_PREFIX = "\033[2m\033[3m"   # dim + italic
+THINK_PREFIX = "\033[2m\033[3m"  # dim + italic
 THINK_RESET = "\033[0m"
-THINK_LABEL = "\033[2m\033[33m"   # dim yellow
+THINK_LABEL = "\033[2m\033[33m"  # dim yellow
 
 
 class ThinkingStreamProcessor:
@@ -49,7 +49,7 @@ class ThinkingStreamProcessor:
         self._in_think = False
         self._buffer = ""
         self._think_started = False  # Track if we printed the thinking header
-        self._response_text = ""     # Accumulated non-thinking response
+        self._response_text = ""  # Accumulated non-thinking response
 
     def process_token(self, token: str) -> str | None:
         """Handle tags even when a complete thinking block arrives in one chunk."""
@@ -59,7 +59,7 @@ class ThinkingStreamProcessor:
             marker = THINK_CLOSE if self._in_think else THINK_OPEN
             index = self._buffer.find(marker)
             if index >= 0:
-                text, self._buffer = self._buffer[:index], self._buffer[index + len(marker):]
+                text, self._buffer = self._buffer[:index], self._buffer[index + len(marker) :]
                 if not self._in_think:
                     output.append(text)
                     self._think_started = True
@@ -67,7 +67,9 @@ class ThinkingStreamProcessor:
                     sys.stderr.write(f"{THINK_PREFIX}{text}{THINK_RESET}")
                 self._in_think = not self._in_think
                 continue
-            hold = max((n for n in range(1, len(marker)) if self._buffer.endswith(marker[:n])), default=0)
+            hold = max(
+                (n for n in range(1, len(marker)) if self._buffer.endswith(marker[:n])), default=0
+            )
             safe = self._buffer[:-hold] if hold else self._buffer
             self._buffer = self._buffer[-hold:] if hold else ""
             if not self._in_think:
@@ -121,8 +123,10 @@ class Operator:
         self.show_thinking = show_thinking
         self.approval_callback = approval_callback
         from djcode.workflow import WorkflowEngine
+
         self.workflow = WorkflowEngine()
         from djcode.capabilities import Capabilities
+
         self.capabilities = Capabilities(self)
         if not hasattr(provider, "_session_runtimes"):
             provider._session_runtimes = []
@@ -130,11 +134,19 @@ class Operator:
         self.plan_mode = False
         self.on_checkpoint = None
         from djcode.context.manager import ContextWindowManager
-        self.context_manager = ContextWindowManager(model=provider.config.model, provider=provider, max_context=getattr(provider.config, "context_window", None))
+
+        self.context_manager = ContextWindowManager(
+            model=provider.config.model,
+            provider=provider,
+            max_context=getattr(provider.config, "context_window", None),
+        )
         self.messages: list[Message] = [
-            Message(role="system", content=build_system_prompt(
-                bypass_rlhf=bypass_rlhf, model=model or provider.config.model
-            ))
+            Message(
+                role="system",
+                content=build_system_prompt(
+                    bypass_rlhf=bypass_rlhf, model=model or provider.config.model
+                ),
+            )
         ]
         self.max_tool_rounds = 20  # Safety limit on tool-calling loops
         self.last_had_thinking = False  # Track if last response had thinking
@@ -142,6 +154,7 @@ class Operator:
 
     async def send(self, user_input: str) -> AsyncIterator[str]:
         from djcode.capabilities import capability_context
+
         with capability_context(self.capabilities):
             try:
                 async for token in self._send(user_input):
@@ -151,14 +164,19 @@ class Operator:
                 for index in range(len(self.messages) - 1, -1, -1):
                     message = self.messages[index]
                     if message.role == "assistant" and message.tool_calls:
-                        answered = {m.tool_call_id for m in self.messages[index + 1:] if m.role == "tool"}
+                        answered = {
+                            m.tool_call_id for m in self.messages[index + 1 :] if m.role == "tool"
+                        }
                         for call in message.tool_calls:
                             if call.get("id") not in answered:
-                                self.messages.append(Message(
-                                    role="tool", tool_call_id=call.get("id"),
-                                    name=call.get("function", {}).get("name"),
-                                    content="Error: Execution cancelled before a result was available. Inspect state before retrying; effects may have occurred.",
-                                ))
+                                self.messages.append(
+                                    Message(
+                                        role="tool",
+                                        tool_call_id=call.get("id"),
+                                        name=call.get("function", {}).get("name"),
+                                        content="Error: Execution cancelled before a result was available. Inspect state before retrying; effects may have occurred.",
+                                    )
+                                )
                         break
                 if self.on_checkpoint:
                     self.on_checkpoint(self.messages)
@@ -175,6 +193,7 @@ class Operator:
         as dimmed verbose output to stderr, not included in the response.
         """
         from djcode.memory.manager import MemoryManager
+
         memory = MemoryManager()
         recalled = []
         for key, score in memory.search(user_input, top_k=3):
@@ -182,7 +201,10 @@ class Operator:
             if entry:
                 recalled.append(f"{key}: {entry}")
         if recalled:
-            user_input += "\n\nSaved context (lexical matches; verify relevance):\n" + "\n".join(recalled)[:4000]
+            user_input += (
+                "\n\nSaved context (lexical matches; verify relevance):\n"
+                + "\n".join(recalled)[:4000]
+            )
         pending_images = list(self.capabilities.computer.images)
         self.capabilities.computer.images.clear()
         self.messages.append(Message(role="user", content=user_input, images=pending_images))
@@ -197,11 +219,10 @@ class Operator:
                 self.messages = self.context_manager.get_messages()
             full_response = ""
             tool_calls: list[dict[str, Any]] = []
-            thinker = ThinkingStreamProcessor(
-                show_thinking=self.show_thinking, raw=self.raw
-            )
+            thinker = ThinkingStreamProcessor(show_thinking=self.show_thinking, raw=self.raw)
 
             from djcode.streaming import stream_turn
+
             async for text, calls in stream_turn(self.provider, self.messages):
                 if text:
                     response_part = thinker.process_token(text)
@@ -243,7 +264,14 @@ class Operator:
                         args = args_raw
 
                     if not isinstance(args, dict):
-                        self.messages.append(Message(role="tool", content="Error: tool arguments must be a JSON object", tool_call_id=tc["id"], name=name))
+                        self.messages.append(
+                            Message(
+                                role="tool",
+                                content="Error: tool arguments must be a JSON object",
+                                tool_call_id=tc["id"],
+                                name=name,
+                            )
+                        )
                         continue
 
                     # Display tool call
@@ -251,11 +279,19 @@ class Operator:
                         self._display_tool_call(name, args)
 
                     if not await self._approve_tool(name, args):
-                        self.messages.append(Message(role="tool", content="Error: User denied tool execution", tool_call_id=tc["id"], name=name))
+                        self.messages.append(
+                            Message(
+                                role="tool",
+                                content="Error: User denied tool execution",
+                                tool_call_id=tc["id"],
+                                name=name,
+                            )
+                        )
                         continue
 
                     # Execute tool
                     from djcode.tools.agent_spawn import agent_context
+
                     with agent_context(self.provider, self.auto_accept, self.approval_callback):
                         result = await self.workflow.one(name, args, dispatch_tool)
 
@@ -276,7 +312,13 @@ class Operator:
 
                 images = self.capabilities.computer.images
                 if images:
-                    self.messages.append(Message(role="user", content="Screenshot from the preceding tool. Inspect it before acting.", images=list(images)))
+                    self.messages.append(
+                        Message(
+                            role="user",
+                            content="Screenshot from the preceding tool. Inspect it before acting.",
+                            images=list(images),
+                        )
+                    )
                     images.clear()
                 if self.on_checkpoint:
                     self.on_checkpoint(self.messages)
@@ -288,11 +330,20 @@ class Operator:
             # not fallback commands. Never execute them a second time.
             if full_response and not self.plan_mode and not native_tools_used:
                 from djcode.tool_router import ToolExtractionRouter
-                router = ToolExtractionRouter(dispatcher=lambda name, args: self.workflow.one(name, args, dispatch_tool))
+
+                router = ToolExtractionRouter(
+                    dispatcher=lambda name, args: self.workflow.one(name, args, dispatch_tool)
+                )
                 intents = router.extract_intents(full_response)
                 pending = []
                 for intent in intents:
-                    signature = (intent.action, intent.path, intent.content, intent.old_string, intent.new_string)
+                    signature = (
+                        intent.action,
+                        intent.path,
+                        intent.content,
+                        intent.old_string,
+                        intent.new_string,
+                    )
                     if signature not in extracted_seen:
                         pending.append(intent)
                         extracted_seen.add(signature)
@@ -305,7 +356,9 @@ class Operator:
                             results.append(await router._execute_intent(intent))
                     if results:
                         self.last_had_tool_calls = True
-                        self.messages.append(Message(role="user", content=router.format_results_for_context(results)))
+                        self.messages.append(
+                            Message(role="user", content=router.format_results_for_context(results))
+                        )
                         if self.on_checkpoint:
                             self.on_checkpoint(self.messages)
                         continue
@@ -319,7 +372,9 @@ class Operator:
                 self.on_checkpoint(self.messages)
             break
         else:
-            raise RuntimeError(f"Tool round limit ({self.max_tool_rounds}) reached; task is incomplete.")
+            raise RuntimeError(
+                f"Tool round limit ({self.max_tool_rounds}) reached; task is incomplete."
+            )
 
     async def _approve_tool(self, name: str, args: dict[str, Any]) -> bool:
         if self.plan_mode:
@@ -329,9 +384,17 @@ class Operator:
         if self.approval_callback:
             return await self.approval_callback(name, args)
         if not sys.stdin.isatty():
-            raise PermissionError("Tool execution needs approval; use --auto-accept for an authorized unattended task.")
-        console.print(Panel(f"Tool: {name}\n{json.dumps(args, indent=2)[:1000]}", title="Approve tool"))
-        return bool(await asyncio.to_thread(lambda: questionary.confirm("Execute this tool?", default=False).ask()))
+            raise PermissionError(
+                "Tool execution needs approval; use --auto-accept for an authorized unattended task."
+            )
+        console.print(
+            Panel(f"Tool: {name}\n{json.dumps(args, indent=2)[:1000]}", title="Approve tool")
+        )
+        return bool(
+            await asyncio.to_thread(
+                lambda: questionary.confirm("Execute this tool?", default=False).ask()
+            )
+        )
 
     async def _stream_ollama(self) -> AsyncIterator[tuple[str, list[dict]]]:
         """Stream from Ollama, yielding (text_chunk, tool_calls)."""

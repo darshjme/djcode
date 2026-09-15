@@ -35,13 +35,33 @@ console = Console()
 # Files that should NEVER be overwritten in the current directory by the tool router.
 # These are the user's existing project files — the model should not clobber them.
 PROTECTED_FILES = {
-    "pyproject.toml", "package.json", "Cargo.toml", "go.mod", "pom.xml",
-    "build.gradle", "Gemfile", "mix.exs", "composer.json",
-    "README.md", "readme.md", "LICENSE", "license",
-    ".gitignore", ".env", "Makefile", "Dockerfile",
-    "tsconfig.json", "next.config.js", "next.config.ts", "next.config.mjs",
-    "vite.config.ts", "vite.config.js",
-    "uv.lock", "package-lock.json", "yarn.lock", "Cargo.lock",
+    "pyproject.toml",
+    "package.json",
+    "Cargo.toml",
+    "go.mod",
+    "pom.xml",
+    "build.gradle",
+    "Gemfile",
+    "mix.exs",
+    "composer.json",
+    "README.md",
+    "readme.md",
+    "LICENSE",
+    "license",
+    ".gitignore",
+    ".env",
+    "Makefile",
+    "Dockerfile",
+    "tsconfig.json",
+    "next.config.js",
+    "next.config.ts",
+    "next.config.mjs",
+    "vite.config.ts",
+    "vite.config.js",
+    "uv.lock",
+    "package-lock.json",
+    "yarn.lock",
+    "Cargo.lock",
 }
 
 
@@ -53,6 +73,7 @@ def _is_protected(path: str) -> bool:
     if resolved.parent == cwd and resolved.name in PROTECTED_FILES:
         return True
     return False
+
 
 GOLD = "#FFD700"
 
@@ -269,7 +290,10 @@ _MKDIR_PATTERNS = [
 _GIT_PATTERNS = [
     re.compile(r"(?:git\s+)?(commit)\s+(?:this|these|the\s+changes)", re.IGNORECASE),
     re.compile(r"(?:git\s+)?(push)\s+(?:to\s+)?(\w+)?", re.IGNORECASE),
-    re.compile(r"(?:create|make)\s+(?:a\s+)?(?:new\s+)?(?:git\s+)?(branch)\s+(?:called\s+|named\s+)?[`\"']?(\S+)[`\"']?", re.IGNORECASE),
+    re.compile(
+        r"(?:create|make)\s+(?:a\s+)?(?:new\s+)?(?:git\s+)?(branch)\s+(?:called\s+|named\s+)?[`\"']?(\S+)[`\"']?",
+        re.IGNORECASE,
+    ),
     re.compile(r"(git\s+\w+(?:\s+[\w\-./\"']+)*)", re.IGNORECASE),
 ]
 
@@ -392,12 +416,14 @@ class ToolExtractionRouter:
         results: list[ToolResult] = []
         for intent in intents:
             if intent not in approved:
-                results.append(ToolResult(
-                    intent=intent,
-                    success=False,
-                    output="Skipped by user",
-                    skipped=True,
-                ))
+                results.append(
+                    ToolResult(
+                        intent=intent,
+                        success=False,
+                        output="Skipped by user",
+                        skipped=True,
+                    )
+                )
                 continue
 
             result = await self._execute_intent(intent)
@@ -447,13 +473,15 @@ class ToolExtractionRouter:
             content = m.group(2)
             # Strip trailing whitespace but preserve internal structure
             content = content.rstrip()
-            blocks.append({
-                "lang": lang,
-                "content": content,
-                "start": m.start(),
-                "end": m.end(),
-                "index": idx,
-            })
+            blocks.append(
+                {
+                    "lang": lang,
+                    "content": content,
+                    "start": m.start(),
+                    "end": m.end(),
+                    "index": idx,
+                }
+            )
         return blocks
 
     # ── File creation extraction ──────────────────────────────────────────
@@ -479,10 +507,14 @@ class ToolExtractionRouter:
                 path = m.group(1)
                 pos = m.start()
                 # Higher confidence for explicit "create file" language
-                conf = 0.9 if any(
-                    kw in m.group(0).lower()
-                    for kw in ("create", "write to", "save to", "i'll create", "i will create")
-                ) else 0.7
+                conf = (
+                    0.9
+                    if any(
+                        kw in m.group(0).lower()
+                        for kw in ("create", "write to", "save to", "i'll create", "i will create")
+                    )
+                    else 0.7
+                )
                 file_mentions.append((path, pos, conf))
 
         # Sort by position in text
@@ -513,13 +545,15 @@ class ToolExtractionRouter:
                 content = best_block["content"]
                 line_count = content.count("\n") + 1
 
-                intents.append(ToolIntent(
-                    action="file_write",
-                    path=resolved,
-                    content=content,
-                    description=f"Create {resolved} ({line_count} lines)",
-                    confidence=conf,
-                ))
+                intents.append(
+                    ToolIntent(
+                        action="file_write",
+                        path=resolved,
+                        content=content,
+                        description=f"Create {resolved} ({line_count} lines)",
+                        confidence=conf,
+                    )
+                )
                 claimed.add(best_block["index"])
 
         return intents, claimed
@@ -545,33 +579,40 @@ class ToolExtractionRouter:
 
             if file_path:
                 resolved = self._resolve_path(file_path)
-                intents.append(ToolIntent(
-                    action="file_edit",
-                    path=resolved,
-                    content=None,
-                    description=f"Edit {resolved}: replace text",
-                    confidence=0.85,
-                    old_string=old,
-                    new_string=new,
-                ))
+                intents.append(
+                    ToolIntent(
+                        action="file_edit",
+                        path=resolved,
+                        content=None,
+                        description=f"Edit {resolved}: replace text",
+                        confidence=0.85,
+                        old_string=old,
+                        new_string=new,
+                    )
+                )
 
         # Edit/modify/update patterns with code blocks
         for pattern in _FILE_EDIT_PATTERNS:
             for m in pattern.finditer(text):
                 path = m.group(1)
                 resolved = self._resolve_path(path)
-                line_num = int(m.group(2)) if m.lastindex and m.lastindex >= 2 and m.group(2) else None
+                line_num = (
+                    int(m.group(2)) if m.lastindex and m.lastindex >= 2 and m.group(2) else None
+                )
 
                 # Check if the file exists — if it does, it's probably an edit, not create
                 if Path(resolved).exists():
-                    intents.append(ToolIntent(
-                        action="file_edit",
-                        path=resolved,
-                        content=None,
-                        description=f"Edit {resolved}" + (f" at line {line_num}" if line_num else ""),
-                        confidence=0.7,
-                        line_range=(line_num, line_num) if line_num else None,
-                    ))
+                    intents.append(
+                        ToolIntent(
+                            action="file_edit",
+                            path=resolved,
+                            content=None,
+                            description=f"Edit {resolved}"
+                            + (f" at line {line_num}" if line_num else ""),
+                            confidence=0.7,
+                            line_range=(line_num, line_num) if line_num else None,
+                        )
+                    )
 
         return intents
 
@@ -639,13 +680,15 @@ class ToolExtractionRouter:
                     conf = 0.85 if block["lang"] in ("bash", "shell", "sh", "zsh") else 0.65
                     cmd_short = cmd if len(cmd) < 60 else cmd[:57] + "..."
 
-                    intents.append(ToolIntent(
-                        action="bash",
-                        path=None,
-                        content=cmd,
-                        description=f"Run: {cmd_short}",
-                        confidence=conf,
-                    ))
+                    intents.append(
+                        ToolIntent(
+                            action="bash",
+                            path=None,
+                            content=cmd,
+                            description=f"Run: {cmd_short}",
+                            confidence=conf,
+                        )
+                    )
 
                 new_claimed.add(block["index"])
 
@@ -653,18 +696,17 @@ class ToolExtractionRouter:
         for m in _COMMAND_PATTERNS[2].finditer(text):
             cmd = m.group(1).strip()
             # Make sure this isn't inside a code block
-            in_block = any(
-                b["start"] <= m.start() <= b["end"]
-                for b in code_blocks
-            )
+            in_block = any(b["start"] <= m.start() <= b["end"] for b in code_blocks)
             if not in_block and cmd:
-                intents.append(ToolIntent(
-                    action="bash",
-                    path=None,
-                    content=cmd,
-                    description=f"Run: {cmd}",
-                    confidence=0.7,
-                ))
+                intents.append(
+                    ToolIntent(
+                        action="bash",
+                        path=None,
+                        content=cmd,
+                        description=f"Run: {cmd}",
+                        confidence=0.7,
+                    )
+                )
 
         # 3. "install X" patterns
         for m in _INSTALL_PATTERN.finditer(text):
@@ -672,10 +714,7 @@ class ToolExtractionRouter:
             manager = m.group(2) if m.lastindex and m.lastindex >= 2 and m.group(2) else None
 
             # Skip if inside a code block (already handled)
-            in_block = any(
-                b["start"] <= m.start() <= b["end"]
-                for b in code_blocks
-            )
+            in_block = any(b["start"] <= m.start() <= b["end"] for b in code_blocks)
             if in_block:
                 continue
 
@@ -686,13 +725,15 @@ class ToolExtractionRouter:
                 cmd = self._infer_install_command(pkg, text)
 
             if cmd:
-                intents.append(ToolIntent(
-                    action="bash",
-                    path=None,
-                    content=cmd,
-                    description=f"Run: {cmd}",
-                    confidence=0.65,
-                ))
+                intents.append(
+                    ToolIntent(
+                        action="bash",
+                        path=None,
+                        content=cmd,
+                        description=f"Run: {cmd}",
+                        confidence=0.65,
+                    )
+                )
 
         return intents, new_claimed
 
@@ -707,13 +748,15 @@ class ToolExtractionRouter:
                 path = m.group(1)
                 resolved = self._resolve_path(path)
 
-                intents.append(ToolIntent(
-                    action="mkdir",
-                    path=resolved,
-                    content=None,
-                    description=f"Create directory: {resolved}",
-                    confidence=0.9,
-                ))
+                intents.append(
+                    ToolIntent(
+                        action="mkdir",
+                        path=resolved,
+                        content=None,
+                        description=f"Create directory: {resolved}",
+                        confidence=0.9,
+                    )
+                )
 
         # Also detect project structure descriptions like:
         # src/
@@ -748,13 +791,15 @@ class ToolExtractionRouter:
 
             for p in paths:
                 resolved = self._resolve_path(p)
-                intents.append(ToolIntent(
-                    action="mkdir",
-                    path=resolved,
-                    content=None,
-                    description=f"Create directory: {resolved}",
-                    confidence=0.5,  # Lower confidence for inferred structures
-                ))
+                intents.append(
+                    ToolIntent(
+                        action="mkdir",
+                        path=resolved,
+                        content=None,
+                        description=f"Create directory: {resolved}",
+                        confidence=0.5,  # Lower confidence for inferred structures
+                    )
+                )
 
         return intents
 
@@ -770,32 +815,38 @@ class ToolExtractionRouter:
                 extra = m.group(2) if m.lastindex and m.lastindex >= 2 and m.group(2) else ""
 
                 if action == "commit":
-                    intents.append(ToolIntent(
-                        action="bash",
-                        path=None,
-                        content='git add -A && git commit -m "auto-commit from djcode"',
-                        description="Git: commit changes",
-                        confidence=0.75,
-                    ))
+                    intents.append(
+                        ToolIntent(
+                            action="bash",
+                            path=None,
+                            content='git add -A && git commit -m "auto-commit from djcode"',
+                            description="Git: commit changes",
+                            confidence=0.75,
+                        )
+                    )
                 elif action == "push":
                     remote = extra or "origin"
-                    intents.append(ToolIntent(
-                        action="bash",
-                        path=None,
-                        content=f"git push {remote}",
-                        description=f"Git: push to {remote}",
-                        confidence=0.75,
-                    ))
+                    intents.append(
+                        ToolIntent(
+                            action="bash",
+                            path=None,
+                            content=f"git push {remote}",
+                            description=f"Git: push to {remote}",
+                            confidence=0.75,
+                        )
+                    )
                 elif action == "branch":
                     branch_name = extra
                     if branch_name:
-                        intents.append(ToolIntent(
-                            action="bash",
-                            path=None,
-                            content=f"git checkout -b {branch_name}",
-                            description=f"Git: create branch {branch_name}",
-                            confidence=0.8,
-                        ))
+                        intents.append(
+                            ToolIntent(
+                                action="bash",
+                                path=None,
+                                content=f"git checkout -b {branch_name}",
+                                description=f"Git: create branch {branch_name}",
+                                confidence=0.8,
+                            )
+                        )
 
         return intents
 
@@ -839,21 +890,21 @@ class ToolExtractionRouter:
                 exists = Path(resolved).exists()
                 action = "file_write"
 
-                intents.append(ToolIntent(
-                    action=action,
-                    path=resolved,
-                    content=content,
-                    description=f"{'Overwrite' if exists else 'Create'} {resolved} ({line_count} lines)",
-                    confidence=0.65,
-                ))
+                intents.append(
+                    ToolIntent(
+                        action=action,
+                        path=resolved,
+                        content=content,
+                        description=f"{'Overwrite' if exists else 'Create'} {resolved} ({line_count} lines)",
+                        confidence=0.65,
+                    )
+                )
             elif lang and lang not in ("text", "output", "log", "console"):
                 # Has a language but no file path — lower confidence
                 ext = _LANG_TO_EXT.get(lang, f".{lang}")
                 if ext.startswith("."):
                     # Can't determine the file name, skip with very low confidence
-                    logger.debug(
-                        "Orphan %s block (no file path), skipping", lang
-                    )
+                    logger.debug("Orphan %s block (no file path), skipping", lang)
 
         return intents
 
@@ -885,9 +936,7 @@ class ToolExtractionRouter:
 
         return str(p.resolve())
 
-    def _find_nearest_file_path(
-        self, text: str, direction: str = "backward"
-    ) -> str | None:
+    def _find_nearest_file_path(self, text: str, direction: str = "backward") -> str | None:
         """Find the nearest file path mention in text.
 
         If direction is "backward", searches from the end of text.
@@ -962,13 +1011,47 @@ class ToolExtractionRouter:
                 first = lines[0].strip()
                 # Common command prefixes
                 cmd_prefixes = (
-                    "npm", "npx", "yarn", "pnpm", "pip", "python", "python3",
-                    "node", "deno", "bun", "cargo", "go ", "make", "cmake",
-                    "docker", "kubectl", "git ", "curl", "wget", "cat ",
-                    "ls", "cd ", "mkdir", "rm ", "cp ", "mv ", "chmod",
-                    "brew", "apt", "sudo", "ssh", "scp", "rsync",
-                    "echo ", "export ", "source ", ".", "&&", "||",
-                    "$", ">",
+                    "npm",
+                    "npx",
+                    "yarn",
+                    "pnpm",
+                    "pip",
+                    "python",
+                    "python3",
+                    "node",
+                    "deno",
+                    "bun",
+                    "cargo",
+                    "go ",
+                    "make",
+                    "cmake",
+                    "docker",
+                    "kubectl",
+                    "git ",
+                    "curl",
+                    "wget",
+                    "cat ",
+                    "ls",
+                    "cd ",
+                    "mkdir",
+                    "rm ",
+                    "cp ",
+                    "mv ",
+                    "chmod",
+                    "brew",
+                    "apt",
+                    "sudo",
+                    "ssh",
+                    "scp",
+                    "rsync",
+                    "echo ",
+                    "export ",
+                    "source ",
+                    ".",
+                    "&&",
+                    "||",
+                    "$",
+                    ">",
                 )
                 if any(first.lstrip("$ >").startswith(p) for p in cmd_prefixes):
                     return True
@@ -1030,9 +1113,7 @@ class ToolExtractionRouter:
 
     # ── User confirmation ─────────────────────────────────────────────────
 
-    def _display_intents_summary(
-        self, intents: list[ToolIntent], auto: bool = False
-    ) -> None:
+    def _display_intents_summary(self, intents: list[ToolIntent], auto: bool = False) -> None:
         """Display a Rich panel summarizing extracted intents."""
         lines: list[str] = []
         for intent in intents:
@@ -1058,12 +1139,14 @@ class ToolExtractionRouter:
         if auto:
             body += f"\n\n  [dim]Auto-executing {len(intents)} actions...[/]"
 
-        console.print(Panel(
-            body,
-            title=f"[bold {GOLD}]Tool Extraction[/]",
-            border_style=GOLD,
-            padding=(1, 1),
-        ))
+        console.print(
+            Panel(
+                body,
+                title=f"[bold {GOLD}]Tool Extraction[/]",
+                border_style=GOLD,
+                padding=(1, 1),
+            )
+        )
 
     async def _confirm_intents(self, intents: list[ToolIntent]) -> list[ToolIntent]:
         """Show intent summary and ask user for confirmation.
@@ -1122,10 +1205,10 @@ class ToolExtractionRouter:
         """Get an icon for an intent type."""
         icons = {
             "file_write": "\u270f\ufe0f",  # pencil
-            "file_edit": "\u2702\ufe0f",    # scissors
-            "bash": "\u2699\ufe0f",         # gear
-            "mkdir": "\U0001f4c1",          # folder
-            "git": "\U0001f500",            # shuffle
+            "file_edit": "\u2702\ufe0f",  # scissors
+            "bash": "\u2699\ufe0f",  # gear
+            "mkdir": "\U0001f4c1",  # folder
+            "git": "\U0001f500",  # shuffle
         }
         return icons.get(intent.action, "\u26a1")
 
@@ -1141,10 +1224,13 @@ class ToolExtractionRouter:
                         success=False,
                         output="Missing path or content for file_write",
                     )
-                result = await self._dispatcher("file_write", {
-                    "path": intent.path,
-                    "content": intent.content,
-                })
+                result = await self._dispatcher(
+                    "file_write",
+                    {
+                        "path": intent.path,
+                        "content": intent.content,
+                    },
+                )
                 return ToolResult(
                     intent=intent,
                     success="Error" not in result,
@@ -1159,11 +1245,14 @@ class ToolExtractionRouter:
                         output="Missing path for file_edit",
                     )
                 if intent.old_string and intent.new_string:
-                    result = await self._dispatcher("file_edit", {
-                        "path": intent.path,
-                        "old_string": intent.old_string,
-                        "new_string": intent.new_string,
-                    })
+                    result = await self._dispatcher(
+                        "file_edit",
+                        {
+                            "path": intent.path,
+                            "old_string": intent.old_string,
+                            "new_string": intent.new_string,
+                        },
+                    )
                 else:
                     return ToolResult(
                         intent=intent,
@@ -1197,9 +1286,12 @@ class ToolExtractionRouter:
                         success=False,
                         output="No directory path specified",
                     )
-                result = await self._dispatcher("bash", {
-                    "command": "mkdir -p " + __import__("shlex").quote(intent.path),
-                })
+                result = await self._dispatcher(
+                    "bash",
+                    {
+                        "command": "mkdir -p " + __import__("shlex").quote(intent.path),
+                    },
+                )
                 return ToolResult(
                     intent=intent,
                     success=True,

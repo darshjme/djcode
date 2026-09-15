@@ -20,6 +20,7 @@ from dataclasses import dataclass
 # Package metadata
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PackageInfo:
     """Installation metadata for a known package across managers."""
@@ -154,6 +155,7 @@ KNOWN_PACKAGES: dict[str, PackageInfo] = {
 # ---------------------------------------------------------------------------
 # Package manager detection
 # ---------------------------------------------------------------------------
+
 
 class SoftwareInstaller:
     """Detects and installs missing software dependencies."""
@@ -294,7 +296,10 @@ class SoftwareInstaller:
             parts = shlex.split(cmd)
 
             # Use sudo for apt/dnf/pacman if not root
-            needs_sudo = parts[0] in ("apt-get", "dnf", "pacman") and getattr(os, "geteuid", lambda: 1)() != 0
+            needs_sudo = (
+                parts[0] in ("apt-get", "dnf", "pacman")
+                and getattr(os, "geteuid", lambda: 1)() != 0
+            )
             if needs_sudo:
                 parts = ["sudo"] + parts
 

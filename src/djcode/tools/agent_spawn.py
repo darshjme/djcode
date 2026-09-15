@@ -27,6 +27,7 @@ _background_tasks: dict[str, dict[str, Any]] = {}
 _parent_context: ContextVar[tuple[Any, bool, Any] | None] = ContextVar("agent_parent", default=None)
 _spawn_depth: ContextVar[int] = ContextVar("agent_depth", default=0)
 
+
 @contextmanager
 def agent_context(provider: Any, auto_accept: bool = False, approval_callback=None):
     token = _parent_context.set((provider, auto_accept, approval_callback))
@@ -34,6 +35,7 @@ def agent_context(provider: Any, auto_accept: bool = False, approval_callback=No
         yield
     finally:
         _parent_context.reset(token)
+
 
 async def cancel_background_agents() -> None:
     tasks = [info.get("async_task") for info in _background_tasks.values()]
@@ -83,11 +85,12 @@ async def execute_spawn_agent(
         return await execute_agent_status(task)
     if _spawn_depth.get() >= 3:
         return "Error: Subagent nesting limit reached (3)"
-    if max_tool_rounds is not None and (type(max_tool_rounds) is not int or not 1 <= max_tool_rounds <= 100):
+    if max_tool_rounds is not None and (
+        type(max_tool_rounds) is not int or not 1 <= max_tool_rounds <= 100
+    ):
         return "Error: max_tool_rounds must be an integer between 1 and 100"
     if background and sum(i["status"] == "running" for i in _background_tasks.values()) >= 8:
         return "Error: Background agent limit reached (8)"
-
 
     # Validate role exists in registry
     try:
@@ -96,9 +99,8 @@ async def execute_spawn_agent(
         role_enum = _resolve_role(role)
         if role_enum is None:
             available = [r.value for r in AgentRole]
-            return (
-                f"Error: Unknown role '{role}'. Available roles:\n"
-                + "\n".join(f"  - {r}" for r in sorted(available))
+            return f"Error: Unknown role '{role}'. Available roles:\n" + "\n".join(
+                f"  - {r}" for r in sorted(available)
             )
 
         spec = AGENT_SPECS.get(role_enum)
@@ -123,6 +125,7 @@ async def _spawn_foreground(spec: Any, task: str, max_rounds: int | None) -> str
         from djcode.orchestrator.context_bus import ContextBus
         from djcode.orchestrator.engine import AgentRunner
         from djcode.provider import Provider, ProviderConfig
+
         parent = _parent_context.get()
         if parent is None:
             provider = Provider(ProviderConfig.from_config())
@@ -135,12 +138,16 @@ async def _spawn_foreground(spec: Any, task: str, max_rounds: int | None) -> str
             spec = replace(spec, max_tool_rounds=max_rounds)
         bus = ContextBus()
         bus.set_task(task, spec.role.value)
-        runner = AgentRunner(provider, spec, bus, auto_accept=auto_accept, approval_callback=approval_callback)
+        runner = AgentRunner(
+            provider, spec, bus, auto_accept=auto_accept, approval_callback=approval_callback
+        )
         start = time.monotonic()
         result = await runner.run(task)
         if result.lstrip().startswith("Error:") or "\nError: Agent " in result:
             return result.strip()
-        return f"Agent: {spec.name} ({spec.title}) | Time: {time.monotonic() - start:.1f}s\n" + result
+        return (
+            f"Agent: {spec.name} ({spec.title}) | Time: {time.monotonic() - start:.1f}s\n" + result
+        )
     except Exception as e:
         logger.error("Agent spawn failed: %s", e, exc_info=True)
         return f"Error spawning agent '{spec.name}': {e}"
@@ -169,7 +176,9 @@ async def _spawn_background(spec: Any, task: str, max_rounds: int | None) -> str
         """Run the agent and store results."""
         try:
             result = await _spawn_foreground(spec, task, max_rounds)
-            _background_tasks[agent_id]["status"] = "failed" if result.startswith("Error") else "completed"
+            _background_tasks[agent_id]["status"] = (
+                "failed" if result.startswith("Error") else "completed"
+            )
             if result.startswith("Error"):
                 _background_tasks[agent_id]["error"] = result
             _background_tasks[agent_id]["result"] = result

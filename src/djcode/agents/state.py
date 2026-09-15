@@ -31,43 +31,47 @@ __all__ = [
 
 # -- Valid state transitions --------------------------------------------------
 
+
 class AgentState(str, enum.Enum):
     """Lifecycle states for an agent execution."""
 
-    IDLE        = "idle"
-    ASSIGNED    = "assigned"
+    IDLE = "idle"
+    ASSIGNED = "assigned"
     RESEARCHING = "researching"
-    EXECUTING   = "executing"
-    REVIEWING   = "reviewing"
-    DONE        = "done"
-    ERROR       = "error"
+    EXECUTING = "executing"
+    REVIEWING = "reviewing"
+    DONE = "done"
+    ERROR = "error"
 
 
 # Allowed transitions: from_state -> set(to_states)
 _TRANSITIONS: dict[AgentState, frozenset[AgentState]] = {
-    AgentState.IDLE:        frozenset({AgentState.ASSIGNED, AgentState.ERROR}),
-    AgentState.ASSIGNED:    frozenset({AgentState.RESEARCHING, AgentState.EXECUTING, AgentState.ERROR}),
+    AgentState.IDLE: frozenset({AgentState.ASSIGNED, AgentState.ERROR}),
+    AgentState.ASSIGNED: frozenset(
+        {AgentState.RESEARCHING, AgentState.EXECUTING, AgentState.ERROR}
+    ),
     AgentState.RESEARCHING: frozenset({AgentState.EXECUTING, AgentState.ERROR}),
-    AgentState.EXECUTING:   frozenset({AgentState.REVIEWING, AgentState.DONE, AgentState.ERROR}),
-    AgentState.REVIEWING:   frozenset({AgentState.DONE, AgentState.ERROR}),
-    AgentState.DONE:        frozenset(),
-    AgentState.ERROR:       frozenset(),
+    AgentState.EXECUTING: frozenset({AgentState.REVIEWING, AgentState.DONE, AgentState.ERROR}),
+    AgentState.REVIEWING: frozenset({AgentState.DONE, AgentState.ERROR}),
+    AgentState.DONE: frozenset(),
+    AgentState.ERROR: frozenset(),
 }
 
 
 # -- Events -------------------------------------------------------------------
 
+
 class AgentEventType(str, enum.Enum):
     """Types of events emitted by the state machine."""
 
-    STATE_CHANGE  = "state_change"
-    TOKEN         = "token"
-    TOOL_CALL     = "tool_call"
-    TOOL_RESULT   = "tool_result"
-    RA_BRIEFING   = "ra_briefing"
+    STATE_CHANGE = "state_change"
+    TOKEN = "token"
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+    RA_BRIEFING = "ra_briefing"
     QUALITY_SCORE = "quality_score"
-    ERROR         = "error"
-    COMPLETE      = "complete"
+    ERROR = "error"
+    COMPLETE = "complete"
 
 
 @dataclass(frozen=True)
@@ -87,6 +91,7 @@ class AgentEvent:
 
 # -- Errors -------------------------------------------------------------------
 
+
 class AgentStateError(Exception):
     """Raised on invalid state transitions."""
 
@@ -105,13 +110,14 @@ EventCallback = Callable[[AgentEvent], Coroutine[Any, Any, None]]
 
 # -- State Machine ------------------------------------------------------------
 
+
 @dataclass
 class ToolCallRecord:
     """Record of a single tool invocation."""
 
     tool_name: str
     arguments: dict[str, Any]
-    result_preview: str       # first 200 chars of result
+    result_preview: str  # first 200 chars of result
     duration_ms: float
     timestamp: float
 
@@ -177,9 +183,7 @@ class AgentStateMachine:
 
             old_state = self.state
             self.state = to_state
-            logger.debug(
-                "%s: %s -> %s", self.spec.name, old_state.value, to_state.value
-            )
+            logger.debug("%s: %s -> %s", self.spec.name, old_state.value, to_state.value)
 
             return await self._emit(
                 AgentEventType.STATE_CHANGE,

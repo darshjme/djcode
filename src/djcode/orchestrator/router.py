@@ -203,6 +203,7 @@ class SemanticRouter:
         if not self._initialized or not self._provider:
             # Fallback to regex router
             from djcode.prompt_enhancer import detect_intent
+
             intent = detect_intent(task)
             return get_agent_for_intent(intent)
 
@@ -210,18 +211,17 @@ class SemanticRouter:
             task_embedding = await self._provider.embed(task)
             if not task_embedding:
                 from djcode.prompt_enhancer import detect_intent
+
                 return get_agent_for_intent(detect_intent(task))
         except Exception:
             from djcode.prompt_enhancer import detect_intent
+
             return get_agent_for_intent(detect_intent(task))
 
         # Score each agent by max similarity to their exemplars
         scores: list[tuple[AgentRole, float]] = []
         for role, exemplar_embs in self._exemplar_embeddings.items():
-            max_sim = max(
-                _cosine_similarity(task_embedding, emb)
-                for emb in exemplar_embs
-            )
+            max_sim = max(_cosine_similarity(task_embedding, emb) for emb in exemplar_embs)
             scores.append((role, max_sim))
 
         # Sort by score descending

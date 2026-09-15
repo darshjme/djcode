@@ -76,16 +76,26 @@ class ProviderConfig:
         context_window = None
         max_tokens = cfg.get("max_tokens", 8192)
         if provider == "colibri":
-            model = model_override or (cfg.get("model") if cfg.get("provider") == "colibri" else None) or "djcode-colibri"
+            model = (
+                model_override
+                or (cfg.get("model") if cfg.get("provider") == "colibri" else None)
+                or "djcode-colibri"
+            )
             try:
                 context_window = int(os.environ.get("DJCODE_COLIBRI_CONTEXT", "8192"))
                 max_tokens = int(os.environ.get("DJCODE_COLIBRI_MAX_TOKENS", "256"))
             except ValueError as exc:
-                raise ValueError("DJCODE_COLIBRI_CONTEXT and DJCODE_COLIBRI_MAX_TOKENS must be positive integers") from exc
+                raise ValueError(
+                    "DJCODE_COLIBRI_CONTEXT and DJCODE_COLIBRI_MAX_TOKENS must be positive integers"
+                ) from exc
             if not 1 <= context_window <= 1_048_576:
-                raise ValueError("DJCODE_COLIBRI_CONTEXT must be between 1 and 1048576 and match the served --ctx")
+                raise ValueError(
+                    "DJCODE_COLIBRI_CONTEXT must be between 1 and 1048576 and match the served --ctx"
+                )
             if not 1 <= max_tokens < context_window:
-                raise ValueError("DJCODE_COLIBRI_MAX_TOKENS must be positive and smaller than DJCODE_COLIBRI_CONTEXT")
+                raise ValueError(
+                    "DJCODE_COLIBRI_MAX_TOKENS must be positive and smaller than DJCODE_COLIBRI_CONTEXT"
+                )
 
         # 1. URL-as-provider: treat http(s) URLs as custom OpenAI-compatible endpoints
         if provider.startswith("http://") or provider.startswith("https://"):
@@ -614,16 +624,17 @@ def format_model_size(size_bytes: int) -> str:
     """Format bytes to human readable."""
     if size_bytes <= 0:
         return ""
-    gb = size_bytes / (1024 ** 3)
+    gb = size_bytes / (1024**3)
     if gb >= 1.0:
         return f"{gb:.1f} GB"
-    mb = size_bytes / (1024 ** 2)
+    mb = size_bytes / (1024**2)
     return f"{mb:.0f} MB"
 
 
 from djcode.capabilities import CAPABILITY_TOOLS
 
 TOOL_DEFINITIONS.extend(CAPABILITY_TOOLS)
+
 
 def _messages_to_dicts(messages: list[Message]) -> list[dict[str, Any]]:
     """Convert Message dataclass instances to plain dicts for the new providers."""
@@ -632,6 +643,7 @@ def _messages_to_dicts(messages: list[Message]) -> list[dict[str, Any]]:
         d: dict[str, Any] = {"role": m.role, "content": m.content}
         if m.images:
             from djcode.vision import data_urls
+
             d["images"] = data_urls(m.images)
         if m.tool_calls:
             d["tool_calls"] = m.tool_calls
@@ -666,6 +678,7 @@ class Provider:
 
         if name == "anthropic":
             from djcode.providers.anthropic import AnthropicProvider
+
             cfg = load_config()
             self._new_provider = AnthropicProvider(
                 model=self.config.model,
@@ -677,6 +690,7 @@ class Provider:
             )
         elif name == "openai":
             from djcode.providers.openai import OpenAIProvider
+
             self._new_provider = OpenAIProvider(
                 model=self.config.model,
                 api_key=self.config.api_key,
@@ -684,6 +698,7 @@ class Provider:
             )
         elif name == "google":
             from djcode.providers.google import GoogleProvider
+
             self._new_provider = GoogleProvider(
                 model=self.config.model,
                 api_key=self.config.api_key,
@@ -710,21 +725,36 @@ class Provider:
         if self.config.name == "colibri":
             base = self.config.base_url.rstrip("/")
             endpoint = base + ("/models" if base.endswith("/v1") else "/v1/models")
-            headers = {"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}
+            headers = (
+                {"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}
+            )
             try:
                 response = httpx.get(endpoint, headers=headers, timeout=5.0)
                 response.raise_for_status()
                 data = response.json().get("data")
                 if not isinstance(data, list):
                     return False, "Colibri /v1/models returned an invalid model list"
-                models = [item["id"] for item in data if isinstance(item, dict) and isinstance(item.get("id"), str)]
+                models = [
+                    item["id"]
+                    for item in data
+                    if isinstance(item, dict) and isinstance(item.get("id"), str)
+                ]
                 if self.config.model not in models:
-                    return False, f"Colibri model '{self.config.model}' is not served. Available: {', '.join(models[:10]) or '(none)'}. Set --model to the server's --model-id."
+                    return (
+                        False,
+                        f"Colibri model '{self.config.model}' is not served. Available: {', '.join(models[:10]) or '(none)'}. Set --model to the server's --model-id.",
+                    )
                 return True, ""
             except httpx.HTTPStatusError as exc:
-                return False, f"Colibri model discovery failed (HTTP {exc.response.status_code}); check the server and COLI_API_KEY."
+                return (
+                    False,
+                    f"Colibri model discovery failed (HTTP {exc.response.status_code}); check the server and COLI_API_KEY.",
+                )
             except (httpx.HTTPError, ValueError, AttributeError):
-                return False, "Cannot discover Colibri models within the connection timeout. Start your existing Colibri server and check its URL."
+                return (
+                    False,
+                    "Cannot discover Colibri models within the connection timeout. Start your existing Colibri server and check its URL.",
+                )
         if self.config.name != "ollama":
             return True, ""
 
@@ -784,9 +814,7 @@ class Provider:
                 yield resp.json()
 
         except httpx.ConnectError:
-            raise ConnectionError(
-                "Cannot connect to Ollama. Start it with: ollama serve"
-            )
+            raise ConnectionError("Cannot connect to Ollama. Start it with: ollama serve")
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 available = get_ollama_model_names(self.config.base_url)
@@ -804,9 +832,7 @@ class Provider:
             else:
                 raise
         except httpx.ReadTimeout:
-            raise ConnectionError(
-                "Request timed out. Try a smaller model or increase timeout."
-            )
+            raise ConnectionError("Request timed out. Try a smaller model or increase timeout.")
 
     # -- OpenAI-compatible API (MLX, remote, groq, together, nvidia, etc.) --
 
@@ -820,6 +846,7 @@ class Provider:
         headers = {}
         if self.config.auth_method == "account":
             from djcode.account_auth import account_token
+
             token = await account_token(self.config.name, self.config.base_url)
             headers["Authorization"] = f"Bearer {token}"
         elif self.config.api_key:
@@ -845,9 +872,7 @@ class Provider:
 
         try:
             if stream:
-                async with self._client.stream(
-                    "POST", url, json=payload, headers=headers
-                ) as resp:
+                async with self._client.stream("POST", url, json=payload, headers=headers) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
                         line = line.strip()
@@ -886,16 +911,17 @@ class Provider:
                     f"API error {e.response.status_code}: {e.response.text[:200]}"
                 )
         except httpx.ReadTimeout:
-            raise ConnectionError(
-                "Request timed out. Try a smaller model or increase timeout."
-            )
+            raise ConnectionError("Request timed out. Try a smaller model or increase timeout.")
 
     def _check_colibri_context(self, messages: list[Message]) -> None:
         """Approximate preflight only; the server tokenizer remains authoritative."""
         from djcode.context.compressor import _count_tokens, _total_tokens
+
         context = self.config.context_window or 8192
         if not 1 <= self.config.max_tokens < context <= 1_048_576:
-            raise ValueError("Invalid Colibri context/output budget; set DJCODE_COLIBRI_CONTEXT to served --ctx and a smaller positive DJCODE_COLIBRI_MAX_TOKENS")
+            raise ValueError(
+                "Invalid Colibri context/output budget; set DJCODE_COLIBRI_CONTEXT to served --ctx and a smaller positive DJCODE_COLIBRI_MAX_TOKENS"
+            )
         prompt_estimate = _total_tokens(messages) + _count_tokens(json.dumps(TOOL_DEFINITIONS))
         # Reserve 10% plus framing headroom because local tokenizers differ.
         estimated_budget = (prompt_estimate * 11 + 9) // 10 + 128 + self.config.max_tokens
@@ -934,6 +960,7 @@ class Provider:
             return
 
         from djcode.providers.base import FinishReason
+
         msg_dicts = _messages_to_dicts(messages)
 
         next_tool_index = 0
@@ -954,11 +981,24 @@ class Provider:
                 for tc in chunk.tool_calls:
                     index = next_tool_index
                     next_tool_index += 1
-                    yield {"choices": [{"delta": {"tool_calls": [{
-                        "index": index,
-                        "id": tc.id,
-                        "function": {"name": tc.name, "arguments": tc.arguments},
-                    }]}}]}
+                    yield {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": index,
+                                            "id": tc.id,
+                                            "function": {
+                                                "name": tc.name,
+                                                "arguments": tc.arguments,
+                                            },
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
 
             if chunk.finish_reason is not None:
                 if chunk.finish_reason == FinishReason.TOOL_USE:
@@ -969,13 +1009,15 @@ class Provider:
                     yield {"choices": [{"finish_reason": "stop"}]}
 
                 if chunk.usage:
-                    yield {"usage": {
-                        "prompt_tokens": chunk.usage.input_tokens,
-                        "completion_tokens": chunk.usage.output_tokens,
-                        "cache_creation_tokens": chunk.usage.cache_creation_tokens,
-                        "cache_read_tokens": chunk.usage.cache_read_tokens,
-                        "total_cost": chunk.usage.total_cost,
-                    }}
+                    yield {
+                        "usage": {
+                            "prompt_tokens": chunk.usage.input_tokens,
+                            "completion_tokens": chunk.usage.output_tokens,
+                            "cache_creation_tokens": chunk.usage.cache_creation_tokens,
+                            "cache_read_tokens": chunk.usage.cache_read_tokens,
+                            "total_cost": chunk.usage.total_cost,
+                        }
+                    }
 
     # -- OpenAI native: delegate to new provider for reasoning models --
 
@@ -1002,6 +1044,7 @@ class Provider:
             return
 
         from djcode.providers.base import FinishReason
+
         msg_dicts = _messages_to_dicts(messages)
 
         next_tool_index = 0
@@ -1022,11 +1065,24 @@ class Provider:
                 for tc in chunk.tool_calls:
                     index = next_tool_index
                     next_tool_index += 1
-                    yield {"choices": [{"delta": {"tool_calls": [{
-                        "index": index,
-                        "id": tc.id,
-                        "function": {"name": tc.name, "arguments": tc.arguments},
-                    }]}}]}
+                    yield {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": index,
+                                            "id": tc.id,
+                                            "function": {
+                                                "name": tc.name,
+                                                "arguments": tc.arguments,
+                                            },
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
 
             if chunk.finish_reason is not None:
                 if chunk.finish_reason == FinishReason.TOOL_USE:
@@ -1037,11 +1093,13 @@ class Provider:
                     yield {"choices": [{"finish_reason": "stop"}]}
 
                 if chunk.usage:
-                    yield {"usage": {
-                        "prompt_tokens": chunk.usage.input_tokens,
-                        "completion_tokens": chunk.usage.output_tokens,
-                        "total_cost": chunk.usage.total_cost,
-                    }}
+                    yield {
+                        "usage": {
+                            "prompt_tokens": chunk.usage.input_tokens,
+                            "completion_tokens": chunk.usage.output_tokens,
+                            "total_cost": chunk.usage.total_cost,
+                        }
+                    }
 
     # -- Google Gemini: delegate to new provider --
 
@@ -1068,6 +1126,7 @@ class Provider:
             return
 
         from djcode.providers.base import FinishReason
+
         msg_dicts = _messages_to_dicts(messages)
 
         next_tool_index = 0
@@ -1088,11 +1147,24 @@ class Provider:
                 for tc in chunk.tool_calls:
                     index = next_tool_index
                     next_tool_index += 1
-                    yield {"choices": [{"delta": {"tool_calls": [{
-                        "index": index,
-                        "id": tc.id,
-                        "function": {"name": tc.name, "arguments": tc.arguments},
-                    }]}}]}
+                    yield {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": index,
+                                            "id": tc.id,
+                                            "function": {
+                                                "name": tc.name,
+                                                "arguments": tc.arguments,
+                                            },
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
 
             if chunk.finish_reason is not None:
                 if chunk.finish_reason == FinishReason.TOOL_USE:
@@ -1103,11 +1175,13 @@ class Provider:
                     yield {"choices": [{"finish_reason": "stop"}]}
 
                 if chunk.usage:
-                    yield {"usage": {
-                        "prompt_tokens": chunk.usage.input_tokens,
-                        "completion_tokens": chunk.usage.output_tokens,
-                        "total_cost": chunk.usage.total_cost,
-                    }}
+                    yield {
+                        "usage": {
+                            "prompt_tokens": chunk.usage.input_tokens,
+                            "completion_tokens": chunk.usage.output_tokens,
+                            "total_cost": chunk.usage.total_cost,
+                        }
+                    }
 
     # -- Unified interface --
 
@@ -1123,7 +1197,9 @@ class Provider:
         Keeps original implementations for ollama and openai-compat.
         """
         if self.config.auth_method == "account" and self.config.name != "xai":
-            raise ValueError("Account authentication is unavailable for this provider; choose API key.")
+            raise ValueError(
+                "Account authentication is unavailable for this provider; choose API key."
+            )
         backend = {
             "ollama": self.chat_ollama,
             "anthropic": self.chat_anthropic,
@@ -1145,11 +1221,15 @@ class Provider:
                         yield chunk
                 return
             except (ConnectionError, httpx.HTTPStatusError) as exc:
-                status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-                transient = status in (429, 500, 502, 503, 504) or any(str(c) in str(exc) for c in (429, 500, 502, 503, 504))
+                status = (
+                    exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+                )
+                transient = status in (429, 500, 502, 503, 504) or any(
+                    str(c) in str(exc) for c in (429, 500, 502, 503, 504)
+                )
                 if emitted or not transient or attempt == 2:
                     raise
-                await asyncio.sleep(2 ** attempt)
+                await asyncio.sleep(2**attempt)
 
     # -- Embedding --
 
@@ -1168,8 +1248,7 @@ class Provider:
             return data.get("embeddings", [data.get("embedding", [])])[0]
         except httpx.ConnectError:
             raise ConnectionError(
-                "Cannot connect to Ollama for embeddings. "
-                "Start it with: ollama serve"
+                "Cannot connect to Ollama for embeddings. Start it with: ollama serve"
             )
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -1186,6 +1265,7 @@ class Provider:
         d: dict[str, Any] = {"role": msg.role, "content": msg.content}
         if msg.images:
             from djcode.vision import data_urls
+
             d["images"] = [url.split(",", 1)[1] for url in data_urls(msg.images)]
         if msg.name:
             d["tool_name"] = msg.name
@@ -1203,7 +1283,11 @@ class Provider:
     @staticmethod
     def _msg_to_openai(msg: Message) -> dict[str, Any]:
         from djcode.vision import data_urls, openai_content
-        d: dict[str, Any] = {"role": msg.role, "content": openai_content(msg.content, data_urls(msg.images))}
+
+        d: dict[str, Any] = {
+            "role": msg.role,
+            "content": openai_content(msg.content, data_urls(msg.images)),
+        }
         if msg.tool_calls:
             d["tool_calls"] = msg.tool_calls
         if msg.tool_call_id:

@@ -43,6 +43,7 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
 
 class FinishReason(StrEnum):
     """Why the model stopped generating."""
+
     STOP = "stop"
     TOOL_USE = "tool_use"
     MAX_TOKENS = "max_tokens"
@@ -52,6 +53,7 @@ class FinishReason(StrEnum):
 @dataclass(slots=True)
 class TokenUsage:
     """Token accounting for a single request."""
+
     input_tokens: int = 0
     output_tokens: int = 0
     cache_creation_tokens: int = 0
@@ -84,6 +86,7 @@ def _match_pricing_key(model: str) -> str | None:
 @dataclass(slots=True)
 class ToolCall:
     """A single tool invocation from the model."""
+
     id: str
     name: str
     arguments: str  # JSON string
@@ -95,6 +98,7 @@ class ProviderChunk:
 
     Accumulate these to reconstruct the full assistant reply.
     """
+
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     thinking: str = ""
@@ -105,6 +109,7 @@ class ProviderChunk:
 @dataclass(slots=True)
 class ModelInfo:
     """Static metadata about a model."""
+
     id: str
     provider: str
     max_context: int = 128_000
@@ -121,86 +126,134 @@ class ModelInfo:
 KNOWN_MODELS: dict[str, ModelInfo] = {
     # Anthropic
     "claude-opus-4-6": ModelInfo(
-        id="claude-opus-4-6", provider="anthropic",
-        max_context=1_000_000, max_output=32_768,
-        supports_tools=True, supports_vision=True,
-        supports_thinking=True, supports_caching=True,
+        id="claude-opus-4-6",
+        provider="anthropic",
+        max_context=1_000_000,
+        max_output=32_768,
+        supports_tools=True,
+        supports_vision=True,
+        supports_thinking=True,
+        supports_caching=True,
     ),
     "claude-sonnet-4-6": ModelInfo(
-        id="claude-sonnet-4-6", provider="anthropic",
-        max_context=1_000_000, max_output=16_384,
-        supports_tools=True, supports_vision=True,
-        supports_thinking=True, supports_caching=True,
+        id="claude-sonnet-4-6",
+        provider="anthropic",
+        max_context=1_000_000,
+        max_output=16_384,
+        supports_tools=True,
+        supports_vision=True,
+        supports_thinking=True,
+        supports_caching=True,
     ),
     "claude-haiku-4-5": ModelInfo(
-        id="claude-haiku-4-5", provider="anthropic",
-        max_context=200_000, max_output=8_192,
-        supports_tools=True, supports_vision=True,
-        supports_thinking=False, supports_caching=True,
+        id="claude-haiku-4-5",
+        provider="anthropic",
+        max_context=200_000,
+        max_output=8_192,
+        supports_tools=True,
+        supports_vision=True,
+        supports_thinking=False,
+        supports_caching=True,
     ),
     # OpenAI
     "gpt-4o": ModelInfo(
-        id="gpt-4o", provider="openai",
-        max_context=128_000, max_output=16_384,
-        supports_tools=True, supports_vision=True,
+        id="gpt-4o",
+        provider="openai",
+        max_context=128_000,
+        max_output=16_384,
+        supports_tools=True,
+        supports_vision=True,
     ),
     "gpt-4o-mini": ModelInfo(
-        id="gpt-4o-mini", provider="openai",
-        max_context=128_000, max_output=16_384,
-        supports_tools=True, supports_vision=True,
+        id="gpt-4o-mini",
+        provider="openai",
+        max_context=128_000,
+        max_output=16_384,
+        supports_tools=True,
+        supports_vision=True,
     ),
     "gpt-4.1": ModelInfo(
-        id="gpt-4.1", provider="openai",
-        max_context=1_000_000, max_output=32_768,
-        supports_tools=True, supports_vision=True,
+        id="gpt-4.1",
+        provider="openai",
+        max_context=1_000_000,
+        max_output=32_768,
+        supports_tools=True,
+        supports_vision=True,
     ),
     "gpt-4.1-mini": ModelInfo(
-        id="gpt-4.1-mini", provider="openai",
-        max_context=1_000_000, max_output=32_768,
-        supports_tools=True, supports_vision=True,
+        id="gpt-4.1-mini",
+        provider="openai",
+        max_context=1_000_000,
+        max_output=32_768,
+        supports_tools=True,
+        supports_vision=True,
     ),
     "gpt-4.1-nano": ModelInfo(
-        id="gpt-4.1-nano", provider="openai",
-        max_context=1_000_000, max_output=32_768,
-        supports_tools=True, supports_vision=True,
+        id="gpt-4.1-nano",
+        provider="openai",
+        max_context=1_000_000,
+        max_output=32_768,
+        supports_tools=True,
+        supports_vision=True,
     ),
     "o1": ModelInfo(
-        id="o1", provider="openai",
-        max_context=200_000, max_output=100_000,
-        supports_tools=True, supports_thinking=True,
+        id="o1",
+        provider="openai",
+        max_context=200_000,
+        max_output=100_000,
+        supports_tools=True,
+        supports_thinking=True,
     ),
     "o3": ModelInfo(
-        id="o3", provider="openai",
-        max_context=200_000, max_output=100_000,
-        supports_tools=True, supports_thinking=True,
+        id="o3",
+        provider="openai",
+        max_context=200_000,
+        max_output=100_000,
+        supports_tools=True,
+        supports_thinking=True,
     ),
     "o3-mini": ModelInfo(
-        id="o3-mini", provider="openai",
-        max_context=200_000, max_output=100_000,
-        supports_tools=True, supports_thinking=True,
+        id="o3-mini",
+        provider="openai",
+        max_context=200_000,
+        max_output=100_000,
+        supports_tools=True,
+        supports_thinking=True,
     ),
     "o4-mini": ModelInfo(
-        id="o4-mini", provider="openai",
-        max_context=200_000, max_output=100_000,
-        supports_tools=True, supports_thinking=True,
+        id="o4-mini",
+        provider="openai",
+        max_context=200_000,
+        max_output=100_000,
+        supports_tools=True,
+        supports_thinking=True,
     ),
     # Google
     "gemini-2.5-pro": ModelInfo(
-        id="gemini-2.5-pro-preview-03-25", provider="google",
-        max_context=1_000_000, max_output=65_536,
-        supports_tools=True, supports_vision=True,
+        id="gemini-2.5-pro-preview-03-25",
+        provider="google",
+        max_context=1_000_000,
+        max_output=65_536,
+        supports_tools=True,
+        supports_vision=True,
         supports_thinking=True,
     ),
     "gemini-2.5-flash": ModelInfo(
-        id="gemini-2.5-flash-preview-04-17", provider="google",
-        max_context=1_000_000, max_output=65_536,
-        supports_tools=True, supports_vision=True,
+        id="gemini-2.5-flash-preview-04-17",
+        provider="google",
+        max_context=1_000_000,
+        max_output=65_536,
+        supports_tools=True,
+        supports_vision=True,
         supports_thinking=True,
     ),
     "gemini-2.0-flash": ModelInfo(
-        id="gemini-2.0-flash", provider="google",
-        max_context=1_000_000, max_output=8_192,
-        supports_tools=True, supports_vision=True,
+        id="gemini-2.0-flash",
+        provider="google",
+        max_context=1_000_000,
+        max_output=8_192,
+        supports_tools=True,
+        supports_vision=True,
     ),
 }
 
@@ -282,6 +335,7 @@ class BaseProvider:
 
     def __init__(self, model: str, api_key: str, base_url: str) -> None:
         import httpx
+
         self._model = model
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
@@ -314,5 +368,6 @@ class BaseProvider:
     async def _backoff_sleep(attempt: int) -> None:
         """Exponential backoff: 1s, 2s, 4s, 8s, 16s."""
         import asyncio
-        delay = min(2 ** attempt, 16)
+
+        delay = min(2**attempt, 16)
         await asyncio.sleep(delay)

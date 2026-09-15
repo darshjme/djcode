@@ -41,7 +41,15 @@ def auth_methods(provider: str) -> list[dict]:
         }
     ]
     if provider == "openrouter":
-        methods.insert(0, {"id": "browser", "label": "Sign in with OpenRouter", "available": True, "reason": "Browser PKCE; creates a user-controlled API key."})
+        methods.insert(
+            0,
+            {
+                "id": "browser",
+                "label": "Sign in with OpenRouter",
+                "available": True,
+                "reason": "Browser PKCE; creates a user-controlled API key.",
+            },
+        )
     if provider == "xai":
         available = bool(os.environ.get("DJCODE_XAI_OAUTH_CLIENT_ID", "").strip())
         methods.append(
@@ -76,9 +84,7 @@ def auth_methods(provider: str) -> list[dict]:
 def _client_id() -> str:
     value = os.environ.get("DJCODE_XAI_OAUTH_CLIENT_ID", "").strip()
     if not value:
-        raise AccountAuthError(
-            "Set an approved DJCODE_XAI_OAUTH_CLIENT_ID or choose API key."
-        )
+        raise AccountAuthError("Set an approved DJCODE_XAI_OAUTH_CLIENT_ID or choose API key.")
     return value
 
 

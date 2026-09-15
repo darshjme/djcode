@@ -36,6 +36,7 @@ console = Console()
 # Mode system
 # ---------------------------------------------------------------------------
 
+
 class ModeState:
     """Global mode state for the TUI."""
 
@@ -88,6 +89,7 @@ def get_mode_state() -> ModeState:
 # ---------------------------------------------------------------------------
 # Keybindings
 # ---------------------------------------------------------------------------
+
 
 def register_keybindings(
     session: PromptSession,
@@ -173,14 +175,16 @@ def register_keybindings(
 
 COMMAND_GROUPS = command_groups("repl")
 
-Q_STYLE = questionary.Style([
-    ("selected", "fg:#C79B7A bold"),
-    ("pointer", "fg:#C79B7A bold"),
-    ("highlighted", "fg:#C79B7A"),
-    ("question", "fg:#C79B7A bold"),
-    ("answer", "fg:#FFFFFF bold"),
-    ("separator", "fg:#666666"),
-])
+Q_STYLE = questionary.Style(
+    [
+        ("selected", "fg:#C79B7A bold"),
+        ("pointer", "fg:#C79B7A bold"),
+        ("highlighted", "fg:#C79B7A"),
+        ("question", "fg:#C79B7A bold"),
+        ("answer", "fg:#FFFFFF bold"),
+        ("separator", "fg:#666666"),
+    ]
+)
 
 
 def show_command_picker() -> str | None:
@@ -305,6 +309,7 @@ class ProgressTracker:
 # Diff display
 # ---------------------------------------------------------------------------
 
+
 def render_diff(
     file_path: str,
     old_text: str,
@@ -321,13 +326,15 @@ def render_diff(
     old_lines = old_text.splitlines(keepends=True)
     new_lines = new_text.splitlines(keepends=True)
 
-    diff_lines = list(difflib.unified_diff(
-        old_lines,
-        new_lines,
-        fromfile=f"a/{file_path}",
-        tofile=f"b/{file_path}",
-        n=context_lines,
-    ))
+    diff_lines = list(
+        difflib.unified_diff(
+            old_lines,
+            new_lines,
+            fromfile=f"a/{file_path}",
+            tofile=f"b/{file_path}",
+            n=context_lines,
+        )
+    )
 
     if not diff_lines:
         console.print(f"[dim]  {file_path}: no changes[/]")

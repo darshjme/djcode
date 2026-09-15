@@ -24,6 +24,7 @@ from djcode.config import CONFIG_DIR
 # Skill dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Skill:
     """A single teachable skill definition."""
@@ -72,21 +73,21 @@ class Skill:
         body = text
         if fm_match:
             frontmatter = fm_match.group(1)
-            body = text[fm_match.end():]
+            body = text[fm_match.end() :]
 
             for line in frontmatter.splitlines():
                 line = line.strip()
                 if line.startswith("name:"):
-                    name = line[len("name:"):].strip()
+                    name = line[len("name:") :].strip()
                 elif line.startswith("description:"):
-                    description = line[len("description:"):].strip()
+                    description = line[len("description:") :].strip()
                 elif line.startswith("tags:"):
-                    raw_tags = line[len("tags:"):].strip()
+                    raw_tags = line[len("tags:") :].strip()
                     # Parse [tag1, tag2, tag3] format
                     raw_tags = raw_tags.strip("[]")
                     tags = [t.strip().strip("'\"") for t in raw_tags.split(",") if t.strip()]
                 elif line.startswith("created:"):
-                    created = line[len("created:"):].strip()
+                    created = line[len("created:") :].strip()
 
         # Fallback name from filename
         if not name and filename:
@@ -96,9 +97,9 @@ class Skill:
         sections = re.split(r"^##\s+", body, flags=re.MULTILINE)
         for section in sections:
             if section.lower().startswith("instructions"):
-                instructions = section[len("instructions"):].strip()
+                instructions = section[len("instructions") :].strip()
             elif section.lower().startswith("example"):
-                example = section[len("example"):].strip()
+                example = section[len("example") :].strip()
 
         return Skill(
             name=name,
@@ -113,6 +114,7 @@ class Skill:
 # ---------------------------------------------------------------------------
 # SkillManager
 # ---------------------------------------------------------------------------
+
 
 class SkillManager:
     """Manages user-defined skills stored at ~/.djcode/skills/."""
@@ -149,7 +151,9 @@ class SkillManager:
                 if path.stat().st_size > 131072:
                     continue
                 text = path.read_text(encoding="utf-8")
-                skill = Skill.from_markdown(text, filename=path.parent.name if path.name == "SKILL.md" else path.name)
+                skill = Skill.from_markdown(
+                    text, filename=path.parent.name if path.name == "SKILL.md" else path.name
+                )
                 if skill.name:
                     skills[skill.name] = skill
             except (OSError, UnicodeDecodeError):
@@ -253,8 +257,7 @@ class SkillManager:
         injection = (
             "\n\n---\n## User-Defined Skills\n"
             "The following skills have been taught by the user. "
-            "Follow these instructions when relevant.\n\n"
-            + "\n\n".join(skill_blocks)
+            "Follow these instructions when relevant.\n\n" + "\n\n".join(skill_blocks)
         )
 
         return system_prompt + injection
@@ -280,8 +283,7 @@ class SkillManager:
         """Get all skills with a specific tag."""
         tag_lower = tag.lower()
         return [
-            s for s in self.load_skills().values()
-            if any(t.lower() == tag_lower for t in s.tags)
+            s for s in self.load_skills().values() if any(t.lower() == tag_lower for t in s.tags)
         ]
 
     def get_all_tags(self) -> list[str]:
@@ -295,6 +297,7 @@ class SkillManager:
 # ---------------------------------------------------------------------------
 # Slash command handler
 # ---------------------------------------------------------------------------
+
 
 def handle_skill_command(args: str, manager: SkillManager | None = None) -> str:
     """Handle /skill <subcommand> <args>.

@@ -19,14 +19,16 @@ console = Console()
 
 # ── Permission levels ──────────────────────────────────────────────────────
 
+
 class PermissionLevel:
     """Permission levels for DJcode operations."""
-    READ = "read"           # Read files, grep, glob
-    WRITE = "write"         # Write/edit files
-    EXECUTE = "execute"     # Run shell commands
-    GIT = "git"             # Git operations (commit, push)
-    SYSTEM = "system"       # System modifications (install packages)
-    NETWORK = "network"     # Network requests (web_fetch, APIs)
+
+    READ = "read"  # Read files, grep, glob
+    WRITE = "write"  # Write/edit files
+    EXECUTE = "execute"  # Run shell commands
+    GIT = "git"  # Git operations (commit, push)
+    SYSTEM = "system"  # System modifications (install packages)
+    NETWORK = "network"  # Network requests (web_fetch, APIs)
 
 
 # Operations and their required permission levels
@@ -75,7 +77,7 @@ class PermissionManager:
         """Display the startup permission warning about what DJcode can do."""
         cwd = os.getcwd()
         home = os.path.expanduser("~")
-        cwd_display = "~" + cwd[len(home):] if cwd.startswith(home) else cwd
+        cwd_display = "~" + cwd[len(home) :] if cwd.startswith(home) else cwd
 
         # Check what's writable
         is_writable = os.access(cwd, os.W_OK)
@@ -104,7 +106,9 @@ class PermissionManager:
         else:
             lines.append(f"[{GOLD}]Folder access: [bold]{cwd_display}[/]")
             if is_writable:
-                lines.append("DJcode can [green]read[/], [yellow]write[/], and [red]execute[/] in this directory.")
+                lines.append(
+                    "DJcode can [green]read[/], [yellow]write[/], and [red]execute[/] in this directory."
+                )
             else:
                 lines.append("DJcode can [green]read[/] this directory (write access denied).")
             border = GOLD
@@ -124,12 +128,14 @@ class PermissionManager:
         else:
             lines.append("[dim]Tool execution requires your approval. Use /auto to toggle.[/]")
 
-        console.print(Panel(
-            "\n".join(lines),
-            title=f"[bold {GOLD}]DJcode Access[/]",
-            border_style=border,
-            padding=(0, 2),
-        ))
+        console.print(
+            Panel(
+                "\n".join(lines),
+                title=f"[bold {GOLD}]DJcode Access[/]",
+                border_style=border,
+                padding=(0, 2),
+            )
+        )
 
     def check_dangerous_command(self, command: str) -> str | None:
         """Check if a bash command is dangerous. Returns warning message or None."""

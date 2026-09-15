@@ -43,11 +43,9 @@ async def engine_path() -> Path:
     cargo = shutil.which("cargo")
     if not cargo:
         raise RuntimeError(
-
-                "DAF is the default engine. Install Rust/Cargo to build it, or set"
-                " DJCODE_DAF_ENGINE to a built DJcode engine. /workflow native "
-                "explicitly selects the legacy engine."
-
+            "DAF is the default engine. Install Rust/Cargo to build it, or set"
+            " DJCODE_DAF_ENGINE to a built DJcode engine. /workflow native "
+            "explicitly selects the legacy engine."
         )
     target.mkdir(parents=True, exist_ok=True)
     # Cargo's target-directory lock serializes builds across sessions/processes.
@@ -216,10 +214,8 @@ class WorkflowEngine:
                 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
                 with sqlite3.connect(CONFIG_DIR / "workflows.db") as db:
                     db.execute(
-
-                            "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, events TEXT"
-                            " NOT NULL)"
-
+                        "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, events TEXT"
+                        " NOT NULL)"
                     )
                     db.execute(
                         "INSERT INTO runs VALUES (?, ?)",

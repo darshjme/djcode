@@ -87,6 +87,7 @@ HELP_TEXT += "\n\n" + command_help("tui")
 
 class ToolApprovalScreen(ModalScreen[bool]):
     """Native, per-call permission prompt; Escape always denies."""
+
     BINDINGS = [Binding("escape", "deny", "Deny")]
     DEFAULT_CSS = """
     ToolApprovalScreen { align: center middle; background: rgba(0, 0, 0, 0.85); }
@@ -95,6 +96,7 @@ class ToolApprovalScreen(ModalScreen[bool]):
     #approval-actions { height: 3; margin-top: 1; }
     #approval-actions Button { margin-right: 2; }
     """
+
     def __init__(self, name: str, arguments: dict) -> None:
         super().__init__()
         self.tool_name = name
@@ -102,6 +104,7 @@ class ToolApprovalScreen(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         import json
+
         with Vertical(id="approval-box"):
             yield Static(f"Approve tool: {self.tool_name}", markup=False)
             with ScrollableContainer(id="approval-details"):
@@ -289,16 +292,20 @@ class ModelPicker(ModalScreen[str | None]):
 
         # Load recent models from config
         from djcode.config import load_config
+
         cfg = load_config()
         self._recent = cfg.get("recent_models", [])
 
         from djcode.startup import probe
+
         if self._base_url:
             cfg["base_url"] = self._base_url
         found = await asyncio.to_thread(probe, cfg, self._provider_name)
         self._models = [{"name": name} for name in found.get("models", [])]
         if not self._models:
-            self.query_one("#model-info", Static).update(found["message"] + " Enter an exact model ID.")
+            self.query_one("#model-info", Static).update(
+                found["message"] + " Enter an exact model ID."
+            )
 
         self._render_models("")
 
@@ -331,7 +338,11 @@ class ModelPicker(ModalScreen[str | None]):
                 option_list.add_option(Option(label, id=name))
 
         if all_matches:
-            header = "── All Models ──" if recent_matches else f"── {self._provider_name.capitalize()} Models ──"
+            header = (
+                "── All Models ──"
+                if recent_matches
+                else f"── {self._provider_name.capitalize()} Models ──"
+            )
             option_list.add_option(Option(header, disabled=True))
             for name in all_matches:
                 size = self._get_size(name)
@@ -340,9 +351,7 @@ class ModelPicker(ModalScreen[str | None]):
 
         if not recent_matches and not all_matches and query_lower:
             # Allow custom model name entry
-            option_list.add_option(
-                Option(f"  Use custom: {query_lower}", id=query_lower)
-            )
+            option_list.add_option(Option(f"  Use custom: {query_lower}", id=query_lower))
 
     def _get_size(self, model_name: str) -> str:
         """Get model size if available."""
@@ -352,6 +361,7 @@ class ModelPicker(ModalScreen[str | None]):
                 if size:
                     try:
                         from djcode.provider import format_model_size
+
                         return format_model_size(size)
                     except Exception:
                         pass
@@ -389,6 +399,7 @@ class ModelPicker(ModalScreen[str | None]):
         """Add model to recent list (max 10)."""
         try:
             from djcode.config import load_config, save_config
+
             cfg = load_config()
             recent = cfg.get("recent_models", [])
             if model in recent:
@@ -514,6 +525,7 @@ class ProviderPicker(ModalScreen[dict | None]):
         """Load available providers."""
         try:
             from djcode.auth import PROVIDERS
+
             self._providers = [
                 (pid, info.get("name", pid), info.get("description", ""))
                 for pid, info in PROVIDERS.items()
@@ -536,7 +548,9 @@ class ProviderPicker(ModalScreen[dict | None]):
         # Custom URL option always first
         if not query_lower or "custom" in query_lower or "url" in query_lower:
             option_list.add_option(
-                Option("  + Custom URL          Any OpenAI-compatible endpoint", id="__custom_url__")
+                Option(
+                    "  + Custom URL          Any OpenAI-compatible endpoint", id="__custom_url__"
+                )
             )
             option_list.add_option(Option("── Providers ──", disabled=True))
 
@@ -550,6 +564,7 @@ class ProviderPicker(ModalScreen[dict | None]):
                 from djcode.account_auth import has_account
                 from djcode.auth import PROVIDERS
                 from djcode.config import load_config
+
                 if PROVIDERS.get(pid, {}).get("needs_key"):
                     account = load_config().get(f"{pid}_auth_method") == "account"
                     needs_key = " [account]" if account and has_account(pid) else " [auth]"
@@ -586,9 +601,11 @@ class ProviderPicker(ModalScreen[dict | None]):
             return
 
         from djcode.auth import PROVIDERS
+
         if PROVIDERS.get(provider_id, {}).get("needs_key"):
             from djcode.account_auth import auth_methods, has_account
             from djcode.config import load_config
+
             self._selected_provider = provider_id
             self._mode = "auth"
             self.query_one("#provider-title", Static).update("Authentication method")
@@ -615,8 +632,11 @@ class ProviderPicker(ModalScreen[dict | None]):
     def _select_auth_method(self, method: str) -> None:
         from djcode.account_auth import auth_methods, has_account
         from djcode.auth import get_api_key
+
         provider = self._selected_provider
-        if not provider or method not in {item["id"] for item in auth_methods(provider) if item["available"]}:
+        if not provider or method not in {
+            item["id"] for item in auth_methods(provider) if item["available"]
+        }:
             return
         if method == "account":
             if has_account(provider):
@@ -641,10 +661,15 @@ class ProviderPicker(ModalScreen[dict | None]):
         from rich.text import Text
 
         from djcode.account_auth import AccountAuthError, begin_xai_login, finish_xai_login
+
         label = self.query_one("#provider-config-label", Static)
         try:
             device = await begin_xai_login()
-            label.update(Text(f"Open {device.verification_url}\nCode: {device.user_code}\nWaiting… Escape cancels"))
+            label.update(
+                Text(
+                    f"Open {device.verification_url}\nCode: {device.user_code}\nWaiting… Escape cancels"
+                )
+            )
             await finish_xai_login(device)
             self._finish_auth("account")
         except (AccountAuthError, OSError):
@@ -652,6 +677,7 @@ class ProviderPicker(ModalScreen[dict | None]):
 
     def _finish_auth(self, method: str, *, key: str = "", url: str = "") -> None:
         from djcode.config import load_config, save_config
+
         provider = self._selected_provider or "custom"
         cfg = load_config()
         if cfg.get("provider") != provider:
@@ -666,7 +692,9 @@ class ProviderPicker(ModalScreen[dict | None]):
             save_config(cfg)
         except OSError:
             self.query_one("#provider-url-section").styles.display = "block"
-            self.query_one("#provider-config-label", Static).update("Unable to save credentials. Existing setup retained.")
+            self.query_one("#provider-config-label", Static).update(
+                "Unable to save credentials. Existing setup retained."
+            )
             return
         result = {"provider": provider, "auth_method": method}
         if key:
@@ -690,12 +718,17 @@ class ProviderPicker(ModalScreen[dict | None]):
             return  # Need URL for custom
 
         from djcode.auth import PROVIDERS, get_api_key
+
         provider = self._selected_provider or "custom"
         if PROVIDERS.get(provider, {}).get("needs_key") and not key and not get_api_key(provider):
-            self.query_one("#provider-config-label", Static).update("Enter an API key or Escape to retain your setup.")
+            self.query_one("#provider-config-label", Static).update(
+                "Enter an API key or Escape to retain your setup."
+            )
             return
         if url and not url.startswith(("http://", "https://")):
-            self.query_one("#provider-config-label", Static).update("Enter an HTTP(S) API endpoint.")
+            self.query_one("#provider-config-label", Static).update(
+                "Enter an HTTP(S) API endpoint."
+            )
             return
         self._finish_auth("api_key", key=key, url=url)
 
@@ -707,9 +740,7 @@ class ProviderPicker(ModalScreen[dict | None]):
                 for i in range(option_list.option_count):
                     opt = option_list.get_option_at_index(i)
                     if not opt.disabled and opt.id:
-                        self.select_provider(
-                            OptionList.OptionSelected(option_list, opt, i)
-                        )
+                        self.select_provider(OptionList.OptionSelected(option_list, opt, i))
                         return
 
 
@@ -777,10 +808,7 @@ class CommandPalette(ModalScreen[str | None]):
                 placeholder="Type to filter commands...",
             )
             yield OptionList(
-                *[
-                    Option(f"{cmd:<20} {desc}", id=cmd)
-                    for cmd, desc in self._all_commands
-                ],
+                *[Option(f"{cmd:<20} {desc}", id=cmd) for cmd, desc in self._all_commands],
                 id="palette-list",
             )
 
@@ -792,7 +820,14 @@ class CommandPalette(ModalScreen[str | None]):
             options = self.query_one("#palette-list", OptionList)
             if options.option_count:
                 current = options.highlighted
-                options.highlighted = max(0, min(options.option_count - 1, (current if current is not None else 0) + (1 if event.key == "down" else -1)))
+                options.highlighted = max(
+                    0,
+                    min(
+                        options.option_count - 1,
+                        (current if current is not None else 0)
+                        + (1 if event.key == "down" else -1),
+                    ),
+                )
             event.stop()
             event.prevent_default()
 
@@ -804,9 +839,12 @@ class CommandPalette(ModalScreen[str | None]):
         option_list.clear_options()
 
         for command in match_commands(query):
-            option_list.add_option(Option(
-                f"{command.name:<20} {command.description}", id=command.name,
-            ))
+            option_list.add_option(
+                Option(
+                    f"{command.name:<20} {command.description}",
+                    id=command.name,
+                )
+            )
         if option_list.option_count:
             option_list.highlighted = 0
 
@@ -1015,6 +1053,7 @@ class DJcodeApp(App):
         try:
             from djcode.config import CONFIG_FILE
             from djcode.provider import Provider, ProviderConfig
+
             if not CONFIG_FILE.exists() and not self._provider_name:
                 self._show_provider_picker()
                 return
@@ -1025,6 +1064,7 @@ class DJcodeApp(App):
             )
             from djcode.account_auth import has_account
             from djcode.auth import PROVIDERS
+
             if PROVIDERS.get(config.name, {}).get("needs_key") and not (
                 has_account(config.name) if config.auth_method == "account" else config.api_key
             ):
@@ -1059,6 +1099,7 @@ class DJcodeApp(App):
             # Initialize memory manager
             try:
                 from djcode.memory.manager import MemoryManager
+
                 self._memory = MemoryManager()
             except Exception:
                 self._memory = None
@@ -1066,7 +1107,12 @@ class DJcodeApp(App):
             # Initialize orchestrator (v2 ShadowOrchestrator via compat wrapper)
             try:
                 from djcode.orchestrator import Orchestrator
-                self._orchestrator = Orchestrator(self._provider, auto_accept=self._auto_accept, approval_callback=self._approve_tool)
+
+                self._orchestrator = Orchestrator(
+                    self._provider,
+                    auto_accept=self._auto_accept,
+                    approval_callback=self._approve_tool,
+                )
             except Exception:
                 self._orchestrator = None
 
@@ -1079,6 +1125,7 @@ class DJcodeApp(App):
             # Initialize session DB
             try:
                 from djcode.sessions import SessionDB
+
                 self._session_db = SessionDB()
                 self._sqlite_session_id = self._session_db.create_session(
                     model=self._provider.config.model,
@@ -1087,11 +1134,14 @@ class DJcodeApp(App):
                 )
             except Exception as error:
                 self._session_db = None
-                self.notify(f"Session history unavailable: {type(error).__name__}", severity="warning")
+                self.notify(
+                    f"Session history unavailable: {type(error).__name__}", severity="warning"
+                )
 
             # Initialize extension manager
             try:
                 from djcode.extensions import ExtensionManager
+
                 self._ext_manager = ExtensionManager()
                 # Load extension statuses into the MCP panel
                 statuses = self._ext_manager.get_status()
@@ -1115,7 +1165,12 @@ class DJcodeApp(App):
                 pass
 
             from rich.text import Text
-            chat.write(Text(f"{prov} · {model} · approvals {'automatic' if self._auto_accept else 'ask first'}"))
+
+            chat.write(
+                Text(
+                    f"{prov} · {model} · approvals {'automatic' if self._auto_accept else 'ask first'}"
+                )
+            )
             chat.write("[dim]Ready · F4 commands · F2 model · Ctrl+B sidebar[/]\n")
 
             # Update sidebar panels
@@ -1135,6 +1190,7 @@ class DJcodeApp(App):
         except Exception as e:
             chat.write(f"[{ERROR}]Initialization error: {e}[/]")
             import traceback
+
             chat.write(f"[dim]{traceback.format_exc()[:500]}[/]")
 
     # ── Vim key actions (only when chat-log focused) ─────────────────────
@@ -1200,9 +1256,12 @@ class DJcodeApp(App):
             suggest.clear_options()
             if matches:
                 for command in matches:
-                    suggest.add_option(Option(
-                        f"{command.name:<16} {command.description}", id=command.name,
-                    ))
+                    suggest.add_option(
+                        Option(
+                            f"{command.name:<16} {command.description}",
+                            id=command.name,
+                        )
+                    )
                 suggest.styles.display = "block"
                 # Highlight first option
                 if suggest.option_count > 0:
@@ -1269,11 +1328,18 @@ class DJcodeApp(App):
         prompt = self.query_one("#prompt-input", Input)
         if self._history_index == len(self._prompt_history):
             self._draft = prompt.value
-        self._history_index = max(0, min(
-            len(self._prompt_history), self._history_index + direction,
-        ))
-        prompt.value = (self._draft if self._history_index == len(self._prompt_history)
-                        else self._prompt_history[self._history_index])
+        self._history_index = max(
+            0,
+            min(
+                len(self._prompt_history),
+                self._history_index + direction,
+            ),
+        )
+        prompt.value = (
+            self._draft
+            if self._history_index == len(self._prompt_history)
+            else self._prompt_history[self._history_index]
+        )
         prompt.cursor_position = len(prompt.value)
 
     def _remember_prompt(self, text: str) -> None:
@@ -1297,9 +1363,13 @@ class DJcodeApp(App):
         inp = self.query_one("#prompt-input", Input)
         suggest = self.query_one("#cmd-suggest", OptionList)
         # Complete partial names; Enter on an exact command executes it.
-        if (text != "/" and not any(char.isspace() for char in text)
-                and suggest.display and suggest.option_count
-                and text.lower() not in {name for name, _ in COMMAND_REGISTRY}):
+        if (
+            text != "/"
+            and not any(char.isspace() for char in text)
+            and suggest.display
+            and suggest.option_count
+            and text.lower() not in {name for name, _ in COMMAND_REGISTRY}
+        ):
             self._select_suggestion()
             return
 
@@ -1311,7 +1381,14 @@ class DJcodeApp(App):
             return
 
         if self._is_generating and text.split()[0].lower() not in {
-            "/cancel", "/help", "/shortcuts", "/exit", "/quit", "/q", "/queue", "/jobs",
+            "/cancel",
+            "/help",
+            "/shortcuts",
+            "/exit",
+            "/quit",
+            "/q",
+            "/queue",
+            "/jobs",
         }:
             self.notify("Response running. Draft kept; Ctrl+K cancels.", severity="warning")
             return
@@ -1340,11 +1417,32 @@ class DJcodeApp(App):
 
     async def _run_slash_command(self, text: str) -> None:
         """Keep the event pump free while a specialist awaits a permission modal."""
-        long_commands = {"/spawn", "/waves", "/orchestra", "/scout", "/architect", "/review", "/debug", "/test", "/refactor", "/devops", "/launch", "/campaign", "/image", "/video", "/social", "/docs", "/recipe", "/search"}
+        long_commands = {
+            "/spawn",
+            "/waves",
+            "/orchestra",
+            "/scout",
+            "/architect",
+            "/review",
+            "/debug",
+            "/test",
+            "/refactor",
+            "/devops",
+            "/launch",
+            "/campaign",
+            "/image",
+            "/video",
+            "/social",
+            "/docs",
+            "/recipe",
+            "/search",
+        }
         tracks_task = text.split()[0].lower() in long_commands
         if tracks_task:
             if self._is_generating:
-                self.notify("Already generating. Cancel or wait for completion.", severity="warning")
+                self.notify(
+                    "Already generating. Cancel or wait for completion.", severity="warning"
+                )
                 return
             self._is_generating = True
             self._generation_task = asyncio.current_task()
@@ -1355,7 +1453,10 @@ class DJcodeApp(App):
             raise
         except Exception as error:
             from rich.text import Text
-            self.query_one("#chat-log", RichLog).write(Text(f"Command failed: {error}", style=ERROR))
+
+            self.query_one("#chat-log", RichLog).write(
+                Text(f"Command failed: {error}", style=ERROR)
+            )
         finally:
             if tracks_task:
                 self._is_generating = False
@@ -1370,29 +1471,42 @@ class DJcodeApp(App):
         arg = parts[1] if len(parts) > 1 else ""
 
         from djcode.commands import plan_blocks_command
+
         if self._plan_mode and plan_blocks_command(cmd, arg):
-            chat.write("[yellow]Plan mode: switch to Act with /plan before running this command.[/]")
+            chat.write(
+                "[yellow]Plan mode: switch to Act with /plan before running this command.[/]"
+            )
             return
 
         from djcode.session_commands import NAMES, handle
+
         if cmd in NAMES:
             from rich.text import Text
+
             if self._operator:
                 self._operator.session_db = self._session_db
                 self._operator.session_id = self._sqlite_session_id
             chat.write(Text(await handle(self._operator, cmd, arg)))
             if cmd == "/workflow" and self._operator:
                 self.query_one("#workflow-state", Static).update(
-                    "DAF + DDAL · default engine" if self._operator.workflow.mode == "daf" else "Native engine · explicitly selected"
+                    "DAF + DDAL · default engine"
+                    if self._operator.workflow.mode == "daf"
+                    else "Native engine · explicitly selected"
                 )
             if self._operator:
                 self._sqlite_session_id = self._operator.session_id
             return
         if cmd == "/queue":
             from rich.text import Text
+
             if arg == "clear":
                 self._followups.clear()
-            chat.write(Text("\n".join(f"{i+1}. {text}" for i, text in enumerate(self._followups)) or "No queued follow-ups"))
+            chat.write(
+                Text(
+                    "\n".join(f"{i + 1}. {text}" for i, text in enumerate(self._followups))
+                    or "No queued follow-ups"
+                )
+            )
             return
         if cmd == "/connect":
             self._show_provider_picker()
@@ -1409,6 +1523,7 @@ class DJcodeApp(App):
 
             from djcode.design_packs import list_packs
             from djcode.design_selection import select_pack
+
             if not arg.strip():
                 for pack in list_packs():
                     chat.write(Text(f"{pack['id']}: {pack['title']} — {pack['summary']}"))
@@ -1421,10 +1536,12 @@ class DJcodeApp(App):
 
         elif cmd in ("/check", "/lint"):
             from djcode.maintenance import run_checks
+
             chat.write("[dim]Running checks…[/]")
             try:
                 result = await asyncio.to_thread(run_checks)
                 from rich.text import Text
+
                 chat.write(Text(result["summary"], style="green" if result["ok"] else "yellow"))
                 for check in result.get("checks", []):
                     chat.write(Text(f"{check['name']}: {check['status']} · {check['detail']}"))
@@ -1433,10 +1550,12 @@ class DJcodeApp(App):
 
         elif cmd == "/update":
             from djcode.updater import perform_update
+
             chat.write("[dim]Checking for updates…[/]")
             try:
                 result = await asyncio.to_thread(perform_update, force=True)
                 from rich.text import Text
+
                 chat.write(Text(result["message"], style="green" if result["ok"] else "yellow"))
                 if result.get("updated"):
                     chat.write("Restart DJcode after your current work to use the update.")
@@ -1523,6 +1642,7 @@ class DJcodeApp(App):
 
         elif cmd == "/docs":
             from djcode.docs import DOCS_SECTIONS
+
             if arg and arg not in DOCS_SECTIONS and arg != "all":
                 await self._handle_agent_command(cmd, arg)
             else:
@@ -1551,9 +1671,19 @@ class DJcodeApp(App):
 
         # Agent dispatch commands — send to orchestrator or operator
         elif cmd in (
-            "/scout", "/architect", "/orchestra", "/review", "/debug",
-            "/test", "/refactor", "/devops", "/launch", "/campaign",
-            "/image", "/video", "/social",
+            "/scout",
+            "/architect",
+            "/orchestra",
+            "/review",
+            "/debug",
+            "/test",
+            "/refactor",
+            "/devops",
+            "/launch",
+            "/campaign",
+            "/image",
+            "/video",
+            "/social",
         ):
             await self._handle_agent_command(cmd, arg)
 
@@ -1575,6 +1705,7 @@ class DJcodeApp(App):
         chat.write("[dim]Searching...[/]")
         try:
             from djcode.tools import dispatch_tool
+
             result = await dispatch_tool("web_search", {"query": query})
             chat.write(result)
         except Exception as e:
@@ -1584,6 +1715,7 @@ class DJcodeApp(App):
         """Manage session tasks: list, create, update."""
         chat = self.query_one("#chat-log", RichLog)
         from djcode.tools import dispatch_tool
+
         parts = arg.split(maxsplit=1) if arg else []
         sub = parts[0].lower() if parts else "list"
         rest = parts[1] if len(parts) > 1 else ""
@@ -1617,13 +1749,16 @@ class DJcodeApp(App):
         try:
             from djcode.tools import dispatch_tool
             from djcode.tools.agent_spawn import agent_context
+
             with agent_context(self._provider, self._auto_accept, self._approve_tool):
                 result = await dispatch_tool("spawn_agent", {"role": role, "task": task})
             chat.write(result)
             # Update agent status bar
             try:
                 bar = self.query_one("#agent-status-bar", AgentStatusBar)
-                bar.set_agent_state(role.capitalize(), "error" if result.startswith("Error") else "done")
+                bar.set_agent_state(
+                    role.capitalize(), "error" if result.startswith("Error") else "done"
+                )
             except Exception:
                 pass
         except Exception as e:
@@ -1670,10 +1805,11 @@ class DJcodeApp(App):
         chat.write("[dim]Launching wave execution...[/]")
         try:
             # Access the ShadowOrchestrator's event-based execute
-            shadow = self._orchestrator._shadow if hasattr(self._orchestrator, '_shadow') else None
+            shadow = self._orchestrator._shadow if hasattr(self._orchestrator, "_shadow") else None
             if shadow:
                 from djcode.orchestrator.engine import ExecutionStrategy
                 from djcode.orchestrator.events import EventType
+
                 completed = False
                 async for event in shadow.execute(arg, strategy_override=ExecutionStrategy.WAVE):
                     if event.event_type in (EventType.AGENT_ERROR, EventType.ORCHESTRATOR_ERROR):
@@ -1761,6 +1897,7 @@ class DJcodeApp(App):
         if cmd in agent_map and self._orchestrator:
             agent_name, _, desc = agent_map[cmd]
             from djcode.agents.registry import AgentRole
+
             role_map = {
                 "/scout": AgentRole.SCOUT,
                 "/architect": AgentRole.ARCHITECT,
@@ -1796,7 +1933,7 @@ class DJcodeApp(App):
         }
         if cmd in content_map:
             if cmd == "/launch" and not self._orchestrator:
-                chat.write(f"[{ERROR}]Launch requires an initialized orchestrator.[/]" )
+                chat.write(f"[{ERROR}]Launch requires an initialized orchestrator.[/]")
                 return
             if not arg and cmd == "/launch":
                 chat.write(f"[{WARNING}]Usage: /launch <product description>[/]")
@@ -1824,8 +1961,11 @@ class DJcodeApp(App):
                     chat.write(f"  [{GOLD}]Phase 2: Campaign[/]")
                     spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
                     runner = AgentRunner(
-                        self._provider, spec,
-                        self._orchestrator.bus, auto_accept=self._auto_accept, approval_callback=self._approve_tool,
+                        self._provider,
+                        spec,
+                        self._orchestrator.bus,
+                        auto_accept=self._auto_accept,
+                        approval_callback=self._approve_tool,
                     )
                     async for token in runner.run_streaming(
                         f"Create a full launch campaign for: {arg}"
@@ -1837,7 +1977,11 @@ class DJcodeApp(App):
                     spec = get_content_spec(role)
                     bus = self._orchestrator.bus if self._orchestrator else None
                     runner = AgentRunner(
-                        self._provider, spec, bus, auto_accept=self._auto_accept, approval_callback=self._approve_tool,
+                        self._provider,
+                        spec,
+                        bus,
+                        auto_accept=self._auto_accept,
+                        approval_callback=self._approve_tool,
                     )
                     async for token in runner.run_streaming(arg or "create content"):
                         chat.write(token, shrink=True, scroll_end=True)
@@ -1874,13 +2018,16 @@ class DJcodeApp(App):
             return
 
         from djcode.connect import ConnectScreen
+
         def connected(result):
             if result:
                 self.run_worker(self._apply_connection(result), group="connection")
+
         self.push_screen(ConnectScreen(), callback=connected)
 
     async def _apply_connection(self, config):
         from djcode.provider import Provider, ProviderConfig
+
         self._provider_name = config["provider"]
         self._model_name = config["model"]
         previous = self._provider
@@ -1926,15 +2073,16 @@ class DJcodeApp(App):
         if ok:
             new_model = self._provider.config.model
             chat.write(f"[{SUCCESS}]Model: {old_model} -> {new_model}[/]")
-            self.sub_title = (
-                f"v{__version__} | {new_model} | {self._provider.config.name}"
-            )
+            self.sub_title = f"v{__version__} | {new_model} | {self._provider.config.name}"
 
             if self._provider._new_provider is not None:
                 await self._provider._new_provider.close()
                 self._provider._new_provider = None
             from djcode.context.manager import ContextWindowManager
-            self._operator.context_manager = ContextWindowManager(model=new_model, provider=self._provider)
+
+            self._operator.context_manager = ContextWindowManager(
+                model=new_model, provider=self._provider
+            )
             self._operator.context_manager.replace_messages(self._operator.messages)
             self._context_mgr = self._operator.context_manager
             side.stats_panel.update_stats(model=new_model)
@@ -1973,7 +2121,12 @@ class DJcodeApp(App):
             # Re-initialize orchestrator with new provider
             try:
                 from djcode.orchestrator import Orchestrator
-                self._orchestrator = Orchestrator(self._provider, auto_accept=self._auto_accept, approval_callback=self._approve_tool)
+
+                self._orchestrator = Orchestrator(
+                    self._provider,
+                    auto_accept=self._auto_accept,
+                    approval_callback=self._approve_tool,
+                )
             except Exception:
                 pass
 
@@ -2008,11 +2161,10 @@ class DJcodeApp(App):
 
         try:
             from djcode.provider import fetch_ollama_models_sync, format_model_size
+
             models = fetch_ollama_models_sync(self._provider.config.base_url)
             if not models:
-                chat.write(
-                    f"[{WARNING}]No models found. Is Ollama running?[/]"
-                )
+                chat.write(f"[{WARNING}]No models found. Is Ollama running?[/]")
                 return
             chat.write(f"\n[bold {GOLD}]Available Models[/]")
             for m in models:
@@ -2048,12 +2200,18 @@ class DJcodeApp(App):
         key, value = key.strip(), value.strip()
         try:
             import json
+
             parsed = json.loads(value)
         except (json.JSONDecodeError, ValueError):
             parsed = value
         from djcode.config import set_value
+
         set_value(key, parsed)
-        display = "***" if any(word in key.lower() for word in ("key", "token", "secret", "password")) else str(parsed)
+        display = (
+            "***"
+            if any(word in key.lower() for word in ("key", "token", "secret", "password"))
+            else str(parsed)
+        )
         chat.write(f"[{SUCCESS}]Set {key}={display}[/]")
 
     def _show_session_stats(self) -> None:
@@ -2073,15 +2231,9 @@ class DJcodeApp(App):
         chat.write(f"  [dim]Tokens out:[/]   [{GOLD}]{self._tokens_out}[/]")
         chat.write(f"  [dim]Elapsed:[/]      [{GOLD}]{mins}m {secs}s[/]")
         chat.write(f"  [dim]Avg response:[/] [{GOLD}]{avg_rt}[/]")
-        chat.write(
-            f"  [dim]Mode:[/]         [{GOLD}]{'PLAN' if self._plan_mode else 'ACT'}[/]"
-        )
-        chat.write(
-            f"  [dim]Thinking:[/]     [{GOLD}]{'ON' if self._show_thinking else 'OFF'}[/]"
-        )
-        chat.write(
-            f"  [dim]Auto-accept:[/]  [{GOLD}]{'ON' if self._auto_accept else 'OFF'}[/]"
-        )
+        chat.write(f"  [dim]Mode:[/]         [{GOLD}]{'PLAN' if self._plan_mode else 'ACT'}[/]")
+        chat.write(f"  [dim]Thinking:[/]     [{GOLD}]{'ON' if self._show_thinking else 'OFF'}[/]")
+        chat.write(f"  [dim]Auto-accept:[/]  [{GOLD}]{'ON' if self._auto_accept else 'OFF'}[/]")
         chat.write(f"  [dim]Agent:[/]        [{GOLD}]{self._active_agent}[/]")
         chat.write("")
 
@@ -2166,7 +2318,12 @@ class DJcodeApp(App):
                 from rich.markdown import Markdown
 
                 from djcode.docs import DOCS_SECTIONS
-                sections = DOCS_SECTIONS.values() if arg.strip() == "all" else [DOCS_SECTIONS.get(arg.strip(), "Unknown documentation topic")]
+
+                sections = (
+                    DOCS_SECTIONS.values()
+                    if arg.strip() == "all"
+                    else [DOCS_SECTIONS.get(arg.strip(), "Unknown documentation topic")]
+                )
                 for section in sections:
                     chat.write(Markdown(section))
             else:
@@ -2226,9 +2383,7 @@ class DJcodeApp(App):
                 chat.write(f"[{WARNING}]Usage: /todo rm <id>[/]")
 
         else:
-            chat.write(
-                "[dim]Usage: /todo [add|done|rm|list] ...[/]"
-            )
+            chat.write("[dim]Usage: /todo [add|done|rm|list] ...[/]")
 
     def _show_cost(self) -> None:
         """Show cost estimates in chat."""
@@ -2259,6 +2414,7 @@ class DJcodeApp(App):
         if not self._ext_manager:
             try:
                 from djcode.extensions import ExtensionManager
+
                 self._ext_manager = ExtensionManager()
             except Exception:
                 chat.write(f"[{ERROR}]Extension manager unavailable.[/]")
@@ -2375,6 +2531,7 @@ class DJcodeApp(App):
         if not self._session_db:
             try:
                 from djcode.sessions import SessionDB
+
                 self._session_db = SessionDB()
             except Exception:
                 chat.write(f"[{ERROR}]Session history unavailable.[/]")
@@ -2401,9 +2558,7 @@ class DJcodeApp(App):
             if results:
                 chat.write(f"\n[bold {GOLD}]Sessions matching '{sub[1]}':[/]")
                 for s in results:
-                    chat.write(
-                        f"  [{GOLD}]{s.id[:8]}[/] [dim]{s.model} | {s.start[:16]}[/]"
-                    )
+                    chat.write(f"  [{GOLD}]{s.id[:8]}[/] [dim]{s.model} | {s.start[:16]}[/]")
                 chat.write("")
             else:
                 chat.write(f"[dim]No sessions match '{sub[1]}'[/]")
@@ -2417,6 +2572,7 @@ class DJcodeApp(App):
         if not self._session_db:
             try:
                 from djcode.sessions import SessionDB
+
                 self._session_db = SessionDB()
             except Exception:
                 chat.write(f"[{ERROR}]Session DB unavailable.[/]")
@@ -2435,6 +2591,7 @@ class DJcodeApp(App):
 
         if self._operator:
             from djcode.provider import Message as _Msg
+
             system_msg = self._operator.messages[0] if self._operator.messages else None
             self._operator.messages.clear()
             if system_msg:
@@ -2448,13 +2605,19 @@ class DJcodeApp(App):
                 content = m.get("content", "")
                 tc = m.get("tool_calls")
                 self._operator.messages.append(
-                    _Msg(role=role, content=content, tool_calls=tc or [], tool_call_id=m.get("tool_call_id"), name=m.get("name"), images=m.get("images", []))
+                    _Msg(
+                        role=role,
+                        content=content,
+                        tool_calls=tc or [],
+                        tool_call_id=m.get("tool_call_id"),
+                        name=m.get("name"),
+                        images=m.get("images", []),
+                    )
                 )
                 restored += 1
 
             chat.write(
-                f"[{SUCCESS}]Resumed session {target_id} "
-                f"({session.model}, {restored} messages)[/]"
+                f"[{SUCCESS}]Resumed session {target_id} ({session.model}, {restored} messages)[/]"
             )
 
     # ── Message sending and streaming ────────────────────────────────────
@@ -2468,9 +2631,11 @@ class DJcodeApp(App):
     async def _show_tool_approval(self, name: str, arguments: dict) -> bool:
         decision = asyncio.get_running_loop().create_future()
         screen = ToolApprovalScreen(name, arguments)
+
         def finish(value: bool | None) -> None:
             if not decision.done():
                 decision.set_result(bool(value))
+
         self.push_screen(screen, finish)
         try:
             return await decision
@@ -2480,6 +2645,7 @@ class DJcodeApp(App):
 
     def _workflow_event(self, event):
         from rich.text import Text
+
         kind = event.get("event")
         if kind == "preparing":
             label = "DAF + DDAL · preparing engine"
@@ -2511,6 +2677,7 @@ class DJcodeApp(App):
 
         # Show user message
         from rich.text import Text
+
         chat.write(Text(f"\n❯ {text}", style=GOLD))
 
         # Track in memory
@@ -2521,6 +2688,7 @@ class DJcodeApp(App):
         actual_input = text
         try:
             from djcode.prompt_enhancer import enhance_prompt
+
             enhanced = enhance_prompt(text)
             if enhanced.was_enhanced:
                 actual_input = enhanced.enhanced
@@ -2550,7 +2718,9 @@ class DJcodeApp(App):
 
             self._operator.plan_mode = self._plan_mode
             if self._session_db and self._sqlite_session_id:
-                self._operator.on_checkpoint = lambda messages: self._session_db.save_conversation(self._sqlite_session_id, messages)
+                self._operator.on_checkpoint = lambda messages: self._session_db.save_conversation(
+                    self._sqlite_session_id, messages
+                )
             async for token in self._operator.send(actual_input):
                 # Check for cancel
                 if self._cancel_requested:
@@ -2625,7 +2795,8 @@ class DJcodeApp(App):
             # Update cost panel
             avg_ms = (
                 (sum(self._response_times) / len(self._response_times)) * 1000
-                if self._response_times else 0
+                if self._response_times
+                else 0
             )
             side.cost_panel.update_cost(
                 tokens_in=self._tokens_in,
@@ -2641,7 +2812,9 @@ class DJcodeApp(App):
             # Session DB tracking
             if self._session_db and self._sqlite_session_id:
                 try:
-                    self._session_db.save_conversation(self._sqlite_session_id, self._operator.messages)
+                    self._session_db.save_conversation(
+                        self._sqlite_session_id, self._operator.messages
+                    )
                     self._session_db.update_session(
                         self._sqlite_session_id,
                         tokens_out=token_est,
@@ -2652,14 +2825,8 @@ class DJcodeApp(App):
 
             # Stats line
             if response_buf:
-                tok_str = (
-                    f"{token_est / 1000:.1f}k"
-                    if token_est >= 1000
-                    else str(token_est)
-                )
-                chat.write(
-                    f"[dim]\u2193 {tok_str} tokens \u00b7 {elapsed:.1f}s[/]"
-                )
+                tok_str = f"{token_est / 1000:.1f}k" if token_est >= 1000 else str(token_est)
+                chat.write(f"[dim]\u2193 {tok_str} tokens \u00b7 {elapsed:.1f}s[/]")
 
             chat.write("")  # Blank line after response
 
@@ -2685,6 +2852,7 @@ class DJcodeApp(App):
             # Suggest fallback model
             try:
                 from djcode.errors import classify_error, get_fallback_model
+
                 err = classify_error(e)
                 if err.fallback == "retry_with_smaller_model":
                     fb = get_fallback_model(self._provider.config.model)
@@ -2697,7 +2865,9 @@ class DJcodeApp(App):
             self._generation_task = None
             if self._followups and not self._cancel_requested:
                 next_input = self._followups.pop(0)
-                self.call_later(lambda: self.run_worker(self._send_message(next_input), group="conversation"))
+                self.call_later(
+                    lambda: self.run_worker(self._send_message(next_input), group="conversation")
+                )
 
     # ── Key bindings / actions ───────────────────────────────────────────
 
@@ -2743,12 +2913,14 @@ class DJcodeApp(App):
             except AttributeError:
                 from djcode.prompt import build_system_prompt
                 from djcode.provider import Message
+
                 model = self._provider.config.model if self._provider else ""
                 self._operator.messages = [
                     Message(
                         role="system",
                         content=build_system_prompt(
-                            bypass_rlhf=self._bypass_rlhf, model=model,
+                            bypass_rlhf=self._bypass_rlhf,
+                            model=model,
                         ),
                     )
                 ]
@@ -2778,7 +2950,9 @@ class DJcodeApp(App):
             chat = self.query_one("#chat-log", RichLog)
             chat.write(f"[dim]Rerunning: {self._last_input}[/]")
             self.run_worker(
-                self._send_message(self._last_input), group="conversation", exclusive=False,
+                self._send_message(self._last_input),
+                group="conversation",
+                exclusive=False,
             )
         else:
             self.notify("Nothing to rerun", severity="warning")
@@ -2825,20 +2999,24 @@ class DJcodeApp(App):
     async def on_unmount(self) -> None:
         """Clean up on exit."""
         from djcode.tools.agent_spawn import cancel_background_agents
+
         await cancel_background_agents()
         if self._session_db and self._sqlite_session_id:
             try:
                 if self._operator:
                     self._session_db.save_conversation(
-                        self._sqlite_session_id, self._operator.messages,
+                        self._sqlite_session_id,
+                        self._operator.messages,
                     )
                 self._session_db.end_session(self._sqlite_session_id)
             except Exception:
                 import logging
+
                 logging.getLogger(__name__).exception("Could not save terminal session on exit")
         # Record session end
         try:
             from djcode.stats import record_session_end
+
             record_session_end()
         except Exception:
             pass

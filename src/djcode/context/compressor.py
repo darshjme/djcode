@@ -57,10 +57,12 @@ class CompressionResult:
 # Token estimation (shared utility)
 # ---------------------------------------------------------------------------
 
+
 def _count_tokens(text: str) -> int:
     """Estimate token count. Uses tiktoken if available, else ~4 chars/token."""
     try:
         import tiktoken
+
         enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text))
     except (ImportError, Exception):
@@ -75,6 +77,7 @@ def _message_tokens(msg: Message) -> int:
     # Tool calls add significant tokens
     if msg.tool_calls:
         import json
+
         for tc in msg.tool_calls:
             tokens += _count_tokens(json.dumps(tc, default=str))
     if msg.name:
@@ -91,20 +94,65 @@ def _total_tokens(messages: list[Message]) -> int:
 # Extractive summarizer (no LLM needed)
 # ---------------------------------------------------------------------------
 
-_ACTION_WORDS = frozenset({
-    "created", "fixed", "added", "removed", "updated", "changed",
-    "implemented", "built", "wrote", "deployed", "configured",
-    "installed", "error", "bug", "issue", "working", "failed",
-    "success", "complete", "moved", "deleted", "refactored",
-    "tested", "merged", "committed", "resolved", "found",
-    "modified", "set", "enabled", "disabled", "connected",
-})
+_ACTION_WORDS = frozenset(
+    {
+        "created",
+        "fixed",
+        "added",
+        "removed",
+        "updated",
+        "changed",
+        "implemented",
+        "built",
+        "wrote",
+        "deployed",
+        "configured",
+        "installed",
+        "error",
+        "bug",
+        "issue",
+        "working",
+        "failed",
+        "success",
+        "complete",
+        "moved",
+        "deleted",
+        "refactored",
+        "tested",
+        "merged",
+        "committed",
+        "resolved",
+        "found",
+        "modified",
+        "set",
+        "enabled",
+        "disabled",
+        "connected",
+    }
+)
 
-_IMPORTANCE_WORDS = frozenset({
-    "important", "critical", "must", "should", "need", "required",
-    "decision", "architecture", "design", "plan", "goal", "next",
-    "todo", "blocker", "priority", "key", "note", "warning",
-})
+_IMPORTANCE_WORDS = frozenset(
+    {
+        "important",
+        "critical",
+        "must",
+        "should",
+        "need",
+        "required",
+        "decision",
+        "architecture",
+        "design",
+        "plan",
+        "goal",
+        "next",
+        "todo",
+        "blocker",
+        "priority",
+        "key",
+        "note",
+        "warning",
+    }
+)
 
 
 def extractive_summarize(messages: list[Message], max_sentences: int = 15) -> str:
@@ -207,6 +255,7 @@ def extractive_summarize(messages: list[Message], max_sentences: int = 15) -> st
 # ---------------------------------------------------------------------------
 # ConversationCompressor
 # ---------------------------------------------------------------------------
+
 
 class ConversationCompressor:
     """Compresses conversation history to reclaim context space.
@@ -315,7 +364,9 @@ class ConversationCompressor:
 
         # Drop from the front of compressible until we fit
         removed = 0
-        while compressible and _total_tokens(system + pinned + compressible + recent) > target_tokens:
+        while (
+            compressible and _total_tokens(system + pinned + compressible + recent) > target_tokens
+        ):
             removed += self._drop_oldest_group(compressible)
 
         result_msgs = system + pinned + compressible + recent
@@ -425,7 +476,9 @@ class ConversationCompressor:
         )
 
         summary_msgs = [
-            Msg(role="system", content="You are a conversation summarizer. Be concise and factual."),
+            Msg(
+                role="system", content="You are a conversation summarizer. Be concise and factual."
+            ),
             Msg(role="user", content=prompt_text),
         ]
 

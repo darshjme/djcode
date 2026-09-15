@@ -28,12 +28,14 @@ CONVERSATIONS_DIR = MEMORY_DIR / "conversations"
 
 def _locked_facts(method):
     """Serialize read-modify-write transactions across concurrent CLI sessions."""
+
     @wraps(method)
     def wrapped(self, *args, **kwargs):
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
         with open(MEMORY_DIR / "facts.lock", "a+") as lock:
             if os.name == "nt":
                 import msvcrt
+
                 lock.seek(0)
                 if not lock.read(1):
                     lock.write("0")
@@ -42,6 +44,7 @@ def _locked_facts(method):
                 msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
             try:
                 self._load_facts()
@@ -55,6 +58,7 @@ def _locked_facts(method):
                     msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
                 else:
                     fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
     return wrapped
 
 
@@ -108,7 +112,9 @@ class MemoryManager:
                 for key, entry_data in data.items():
                     self._facts[key] = MemoryEntry.from_dict(entry_data)
             except (json.JSONDecodeError, TypeError, AttributeError, ValueError) as exc:
-                raise ValueError(f"Cannot read memory file {FACTS_FILE}; repair or back it up before saving") from exc
+                raise ValueError(
+                    f"Cannot read memory file {FACTS_FILE}; repair or back it up before saving"
+                ) from exc
 
     @staticmethod
     def _write_json(path: Path, data: Any) -> None:
@@ -241,7 +247,8 @@ class MemoryManager:
                 return [
                     (r["id"], r["score"])
                     for r in results
-                    if r["score"] >= min_similarity and r["id"] in self._facts
+                    if r["score"] >= min_similarity
+                    and r["id"] in self._facts
                     and self._facts[r["id"]].embedding
                 ]
 
@@ -275,8 +282,10 @@ class MemoryManager:
                 with open(path) as f:
                     messages = json.load(f)
                 if not isinstance(messages, list) or any(
-                    not isinstance(m, dict) or not isinstance(m.get("role"), str)
-                    or not isinstance(m.get("content"), str) for m in messages
+                    not isinstance(m, dict)
+                    or not isinstance(m.get("role"), str)
+                    or not isinstance(m.get("content"), str)
+                    for m in messages
                 ):
                     return False
                 self._session = messages
@@ -293,6 +302,8 @@ class MemoryManager:
             "persistent_facts": len(self._facts),
             "facts_with_embeddings": sum(1 for f in self._facts.values() if f.embedding),
             "vector_store_docs": self._vectors.count(),
-            "vector_store_backend": "chromadb" if self._vectors.is_chroma else "stored-embedding cosine",
+            "vector_store_backend": "chromadb"
+            if self._vectors.is_chroma
+            else "stored-embedding cosine",
             "search_backend": "lexical (offline); semantic requires supplied embeddings",
         }

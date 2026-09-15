@@ -91,6 +91,7 @@ def record_session_end(session_id: str) -> None:
 
 # ── Heatmap rendering ──────────────────────────────────────────────────────
 
+
 def _build_heatmap(sessions: list[dict], days: int = 365) -> list[str]:
     """Build a GitHub-style contribution heatmap.
 
@@ -254,6 +255,7 @@ def _format_tokens(count: int) -> str:
 
 # ── Main render ────────────────────────────────────────────────────────────
 
+
 def render_stats(console: Console, period: str = "all") -> None:
     """Render the full stats dashboard."""
     data = _load_stats()
@@ -385,10 +387,14 @@ def render_stats(console: Console, period: str = "all") -> None:
     stats_table.add_row(Text(), Text())  # spacer
     stats_table.add_row(
         Text.assemble(("Sessions: ", "bold"), (str(num_sessions), f"bold {GOLD}")),
-        Text.assemble(("Longest session: ", "bold"), (_format_duration(longest_session), f"bold {GOLD}")),
+        Text.assemble(
+            ("Longest session: ", "bold"), (_format_duration(longest_session), f"bold {GOLD}")
+        ),
     )
     stats_table.add_row(
-        Text.assemble(("Active days: ", "bold"), (f"{len(active_days)}/{total_days}", f"bold {GOLD}")),
+        Text.assemble(
+            ("Active days: ", "bold"), (f"{len(active_days)}/{total_days}", f"bold {GOLD}")
+        ),
         Text.assemble(("Longest streak: ", "bold"), (f"{longest_streak} days", f"bold {GOLD}")),
     )
     stats_table.add_row(

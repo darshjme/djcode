@@ -219,6 +219,7 @@ class SessionDB:
         """Create a new session. Returns session_id."""
         import os
         import uuid
+
         session_id = f"s_{uuid.uuid4().hex}"
         now = datetime.now().isoformat()
         cwd = cwd or os.getcwd()
@@ -312,9 +313,7 @@ class SessionDB:
         """Get a single session by ID."""
         conn = self._connect()
         try:
-            row = conn.execute(
-                "SELECT * FROM sessions WHERE id = ?", (session_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
             if row:
                 return self._row_to_session(row)
             return None
@@ -438,12 +437,23 @@ class SessionDB:
                 else:
                     continue
 
-                images = getattr(msg, "images", []) if hasattr(msg, "role") else msg.get("images", [])
+                images = (
+                    getattr(msg, "images", []) if hasattr(msg, "role") else msg.get("images", [])
+                )
                 tc_json = json.dumps(tc) if tc else ""
                 conn.execute(
                     """INSERT INTO conversations (session_id, role, content, timestamp, tool_calls_json, tool_call_id, name, images_json)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (session_id, role, content, now, tc_json, tool_call_id, name, json.dumps(images)),
+                    (
+                        session_id,
+                        role,
+                        content,
+                        now,
+                        tc_json,
+                        tool_call_id,
+                        name,
+                        json.dumps(images),
+                    ),
                 )
 
             conn.commit()
@@ -550,7 +560,7 @@ class SessionDB:
                     CAST((julianday(end_time) - julianday(start_time)) * 86400 AS INTEGER)
                 ) as max_dur
                 FROM sessions
-                {where + ' AND' if where else 'WHERE'} end_time IS NOT NULL
+                {where + " AND" if where else "WHERE"} end_time IS NOT NULL
             """).fetchone()
             if dur_row and dur_row["max_dur"]:
                 stats.longest_session_seconds = float(dur_row["max_dur"])
@@ -577,9 +587,7 @@ class SessionDB:
         finally:
             conn.close()
 
-    def _compute_streaks(
-        self, conn: sqlite3.Connection, where: str = ""
-    ) -> tuple[int, int]:
+    def _compute_streaks(self, conn: sqlite3.Connection, where: str = "") -> tuple[int, int]:
         """Compute longest and current streaks from active days."""
         try:
             rows = conn.execute("""
@@ -624,13 +632,16 @@ class SessionDB:
         conn = self._connect()
         try:
             cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT DATE(start_time) as day, SUM(tokens_in + tokens_out) as total
                 FROM sessions
                 WHERE start_time >= ?
                 GROUP BY day
                 ORDER BY day ASC
-            """, (cutoff,)).fetchall()
+            """,
+                (cutoff,),
+            ).fetchall()
 
             return {r["day"]: r["total"] for r in rows if r["day"]}
         except sqlite3.Error:
@@ -666,9 +677,7 @@ class SessionDB:
             for s in sessions:
                 sid = s.get("id", f"s_migrated_{count}")
                 # Skip if already exists
-                existing = conn.execute(
-                    "SELECT id FROM sessions WHERE id = ?", (sid,)
-                ).fetchone()
+                existing = conn.execute("SELECT id FROM sessions WHERE id = ?", (sid,)).fetchone()
                 if existing:
                     continue
 
@@ -740,6 +749,7 @@ class SessionDB:
 
 
 # ── Rendering helpers ─────────────────────────────────────────────────────
+
 
 def render_session_list(console: Any, sessions: list[Session]) -> None:
     """Render a formatted list of sessions for /history."""

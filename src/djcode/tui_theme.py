@@ -34,21 +34,21 @@ BORDER_SUBTLE = "#1A1A1A"
 LINK = "#2196F3"
 
 # Status — vibrant cyberpunk palette
-SUCCESS = "#A2BA9A"       # Matrix neon green
-ERROR = "#FF1744"         # Blood red
-WARNING = "#FF8C00"       # Amber
-INFO = "#2196F3"          # Electric blue
-THINKING = "#00BCD4"      # Cyan/teal for AI thinking
+SUCCESS = "#A2BA9A"  # Matrix neon green
+ERROR = "#FF1744"  # Blood red
+WARNING = "#FF8C00"  # Amber
+INFO = "#2196F3"  # Electric blue
+THINKING = "#00BCD4"  # Cyan/teal for AI thinking
 
 # Modes
-PLAN_MODE = "#9C27B0"     # Purple — architecture mode
-ACT_MODE = "#A2BA9A"      # Neon green — execution mode
+PLAN_MODE = "#9C27B0"  # Purple — architecture mode
+ACT_MODE = "#A2BA9A"  # Neon green — execution mode
 
 # Agent tier accents
-TIER_4_CONTROL = "#C79B7A"   # Pure gold — Vyasa, Control tier
+TIER_4_CONTROL = "#C79B7A"  # Pure gold — Vyasa, Control tier
 TIER_3_ENTERPRISE = "#2196F3"  # Electric blue — Enterprise tier
 TIER_2_ARCHITECTURE = "#9C27B0"  # Purple — Architecture tier
-TIER_1_EXECUTION = "#A2BA9A"   # Neon green — Execution tier
+TIER_1_EXECUTION = "#A2BA9A"  # Neon green — Execution tier
 
 # Threat agents
 THREAT_KAVACH = "#FF1744"

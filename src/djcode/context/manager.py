@@ -40,18 +40,20 @@ if TYPE_CHECKING:
 # Priority levels for injected context
 # ---------------------------------------------------------------------------
 
+
 class Priority(IntEnum):
     """Priority levels for context injection. Higher = more important."""
 
-    LOW = 10        # Nice-to-have background info
-    NORMAL = 50     # Standard context (memory recalls, file contents)
-    HIGH = 80       # Important context (recent file edits, errors)
+    LOW = 10  # Nice-to-have background info
+    NORMAL = 50  # Standard context (memory recalls, file contents)
+    HIGH = 80  # Important context (recent file edits, errors)
     CRITICAL = 100  # Must-have context (user instructions, project rules)
 
 
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ContextStats:
@@ -110,6 +112,7 @@ class InjectedContext:
 # ---------------------------------------------------------------------------
 # ContextWindowManager
 # ---------------------------------------------------------------------------
+
 
 class ContextWindowManager:
     """Manages the conversation's context window with model-aware limits.
@@ -357,13 +360,15 @@ class ContextWindowManager:
 
         tokens = _count_tokens(content)
 
-        self._injected.append(InjectedContext(
-            content=content.strip(),
-            priority=priority,
-            source=source,
-            tokens=tokens,
-            ttl=ttl,
-        ))
+        self._injected.append(
+            InjectedContext(
+                content=content.strip(),
+                priority=priority,
+                source=source,
+                tokens=tokens,
+                ttl=ttl,
+            )
+        )
 
         self._invalidate_cache()
 

@@ -13,12 +13,13 @@ from dataclasses import dataclass
 @dataclass
 class DJcodeError:
     """A structured error with user-friendly message and suggested fix."""
-    category: str           # connection, model, tool, auth, memory, system
-    message: str            # One-line human-readable description
-    suggestion: str         # What the user should do
-    original: str           # Original exception message
-    recoverable: bool       # Can the system retry/fallback?
-    fallback: str | None    # Fallback action to take (or None)
+
+    category: str  # connection, model, tool, auth, memory, system
+    message: str  # One-line human-readable description
+    suggestion: str  # What the user should do
+    original: str  # Original exception message
+    recoverable: bool  # Can the system retry/fallback?
+    fallback: str | None  # Fallback action to take (or None)
 
 
 # ── Error pattern registry ─────────────────────────────────────────────────
@@ -58,7 +59,6 @@ _ERROR_PATTERNS: list[tuple[re.Pattern[str], str, str, str, bool, str | None]] =
         False,
         None,
     ),
-
     # ── Model errors ───────────────────────────────────────────────────
     (
         re.compile(r"model.*not found|404.*model|pull.*model", re.I),
@@ -92,7 +92,6 @@ _ERROR_PATTERNS: list[tuple[re.Pattern[str], str, str, str, bool, str | None]] =
         True,
         "retry_without_tools",
     ),
-
     # ── Auth errors ────────────────────────────────────────────────────
     (
         re.compile(r"(401|unauthorized|invalid.*key|api.key|authentication)", re.I),
@@ -118,7 +117,6 @@ _ERROR_PATTERNS: list[tuple[re.Pattern[str], str, str, str, bool, str | None]] =
         True,
         "retry_after_delay",
     ),
-
     # ── Tool errors ────────────────────────────────────────────────────
     (
         re.compile(r"(permission denied|errno 13|eacces)", re.I),
@@ -129,7 +127,10 @@ _ERROR_PATTERNS: list[tuple[re.Pattern[str], str, str, str, bool, str | None]] =
         None,
     ),
     (
-        re.compile(r"(no such file|enoent|FileNotFoundError|does not exist|not found.*file|not found.*dir)", re.I),
+        re.compile(
+            r"(no such file|enoent|FileNotFoundError|does not exist|not found.*file|not found.*dir)",
+            re.I,
+        ),
         "tool",
         "File or directory not found.",
         "Check the path. Use /scout to explore the codebase first.",
@@ -144,7 +145,6 @@ _ERROR_PATTERNS: list[tuple[re.Pattern[str], str, str, str, bool, str | None]] =
         False,
         None,
     ),
-
     # ── JSON / parsing ─────────────────────────────────────────────────
     (
         re.compile(r"(json.*decode|invalid json|unexpected token|parse error)", re.I),
@@ -154,7 +154,6 @@ _ERROR_PATTERNS: list[tuple[re.Pattern[str], str, str, str, bool, str | None]] =
         True,
         "retry",
     ),
-
     # ── Python / system ────────────────────────────────────────────────
     (
         re.compile(r"asyncio.*run.*running.*loop", re.I),
@@ -200,12 +199,12 @@ def format_error(err: DJcodeError, *, verbose: bool = False) -> str:
     """Format a DJcodeError as a Rich-compatible string for display."""
     icon = {
         "connection": "\U0001f50c",  # plug
-        "model": "\U0001f9e0",       # brain
-        "auth": "\U0001f511",        # key
-        "tool": "\U0001f6e0",        # wrench
-        "system": "\u26a0\ufe0f",    # warning
-        "memory": "\U0001f4be",      # floppy
-        "unknown": "\u2753",         # question
+        "model": "\U0001f9e0",  # brain
+        "auth": "\U0001f511",  # key
+        "tool": "\U0001f6e0",  # wrench
+        "system": "\u26a0\ufe0f",  # warning
+        "memory": "\U0001f4be",  # floppy
+        "unknown": "\u2753",  # question
     }.get(err.category, "\u274c")
 
     lines = [

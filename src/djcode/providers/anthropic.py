@@ -110,14 +110,18 @@ class AnthropicProvider(BaseProvider):
 
             # Tool result messages
             if role == "tool":
-                result.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": msg.get("tool_call_id", ""),
-                        "content": msg.get("content", ""),
-                    }],
-                })
+                result.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": msg.get("tool_call_id", ""),
+                                "content": msg.get("content", ""),
+                            }
+                        ],
+                    }
+                )
                 continue
 
             content = msg.get("content", "")
@@ -135,12 +139,14 @@ class AnthropicProvider(BaseProvider):
                         args = json.loads(args_str) if isinstance(args_str, str) else args_str
                     except json.JSONDecodeError:
                         args = {}
-                    blocks.append({
-                        "type": "tool_use",
-                        "id": tc.get("id", ""),
-                        "name": func.get("name", ""),
-                        "input": args,
-                    })
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.get("id", ""),
+                            "name": func.get("name", ""),
+                            "input": args,
+                        }
+                    )
                 result.append({"role": "assistant", "content": blocks})
             elif role == "user":
                 block: dict[str, Any] = {"type": "text", "text": content}
@@ -150,7 +156,16 @@ class AnthropicProvider(BaseProvider):
                 blocks = [block]
                 for image in msg.get("images", []):
                     mime, data = image.split(",", 1)
-                    blocks.append({"type": "image", "source": {"type": "base64", "media_type": mime[5:].split(";")[0], "data": data}})
+                    blocks.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": mime[5:].split(";")[0],
+                                "data": data,
+                            },
+                        }
+                    )
                 result.append({"role": "user", "content": blocks})
             else:
                 result.append({"role": role, "content": content})
@@ -231,7 +246,9 @@ class AnthropicProvider(BaseProvider):
                     if attempt < max_retries - 1:
                         logger.warning(
                             "Anthropic rate limit/server error %d, retry %d/%d",
-                            status, attempt + 1, max_retries,
+                            status,
+                            attempt + 1,
+                            max_retries,
                         )
                         await self._backoff_sleep(attempt)
                         continue
@@ -281,12 +298,8 @@ class AnthropicProvider(BaseProvider):
                 if event_type == "message_start":
                     msg_usage = event.get("message", {}).get("usage", {})
                     usage.input_tokens = msg_usage.get("input_tokens", 0)
-                    usage.cache_creation_tokens = msg_usage.get(
-                        "cache_creation_input_tokens", 0
-                    )
-                    usage.cache_read_tokens = msg_usage.get(
-                        "cache_read_input_tokens", 0
-                    )
+                    usage.cache_creation_tokens = msg_usage.get("cache_creation_input_tokens", 0)
+                    usage.cache_read_tokens = msg_usage.get("cache_read_input_tokens", 0)
 
                 # -- content_block_start --
                 elif event_type == "content_block_start":
@@ -320,11 +333,13 @@ class AnthropicProvider(BaseProvider):
                 elif event_type == "content_block_stop":
                     if current_tool_id and current_tool_name:
                         yield ProviderChunk(
-                            tool_calls=[ToolCall(
-                                id=current_tool_id,
-                                name=current_tool_name,
-                                arguments=tool_args_buffer,
-                            )]
+                            tool_calls=[
+                                ToolCall(
+                                    id=current_tool_id,
+                                    name=current_tool_name,
+                                    arguments=tool_args_buffer,
+                                )
+                            ]
                         )
                         current_tool_id = ""
                         current_tool_name = ""
@@ -373,11 +388,13 @@ class AnthropicProvider(BaseProvider):
             elif btype == "thinking":
                 thinking_parts.append(block.get("thinking", ""))
             elif btype == "tool_use":
-                tool_calls.append(ToolCall(
-                    id=block.get("id", ""),
-                    name=block.get("name", ""),
-                    arguments=json.dumps(block.get("input", {})),
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=block.get("id", ""),
+                        name=block.get("name", ""),
+                        arguments=json.dumps(block.get("input", {})),
+                    )
+                )
 
         # Build usage from response
         resp_usage = data.get("usage", {})
@@ -442,9 +459,7 @@ class AnthropicProvider(BaseProvider):
         elif status == 404:
             raise ConnectionError(f"Anthropic model not found. Response: {body}")
         elif status == 429:
-            raise ConnectionError(
-                "Anthropic rate limit exceeded. Wait a moment and retry."
-            )
+            raise ConnectionError("Anthropic rate limit exceeded. Wait a moment and retry.")
         elif status == 529:
             raise ConnectionError("Anthropic API is overloaded. Try again shortly.")
         else:

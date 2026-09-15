@@ -443,9 +443,7 @@ def _check_deps_exist(dep_ids: list[str]) -> list[str]:
 
 def _get_blocking_deps(task_id: str, conn: sqlite3.Connection) -> list[str]:
     """Get list of dependency task IDs that are not yet completed."""
-    row = conn.execute(
-        "SELECT depends_on FROM tasks WHERE id = ?", (task_id,)
-    ).fetchone()
+    row = conn.execute("SELECT depends_on FROM tasks WHERE id = ?", (task_id,)).fetchone()
 
     if not row or not row["depends_on"]:
         return []

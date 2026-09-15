@@ -27,7 +27,9 @@ class VectorContextStore:
     """SQLite lexical context with optional explicitly supplied Chroma embeddings."""
 
     def __init__(
-        self, provider: Any | None = None, *,
+        self,
+        provider: Any | None = None,
+        *,
         embedding_function: Callable[[str], list[float]] | None = None,
     ) -> None:
         # Provider is retained for constructor compatibility; it is never called
@@ -55,11 +57,14 @@ class VectorContextStore:
             try:
                 import chromadb
                 from chromadb.config import Settings
+
                 self._client = chromadb.PersistentClient(
-                    path=str(VECTOR_DIR), settings=Settings(anonymized_telemetry=False),
+                    path=str(VECTOR_DIR),
+                    settings=Settings(anonymized_telemetry=False),
                 )
                 self._collection = self._client.get_or_create_collection(
-                    name="djcode_context", metadata={"hnsw:space": "cosine"},
+                    name="djcode_context",
+                    metadata={"hnsw:space": "cosine"},
                     embedding_function=None,
                 )
             except Exception:
@@ -72,10 +77,14 @@ class VectorContextStore:
 
     @property
     def backend(self) -> str:
-        return "semantic (supplied embeddings)" if self._collection is not None else "lexical (SQLite)"
+        return (
+            "semantic (supplied embeddings)" if self._collection is not None else "lexical (SQLite)"
+        )
 
     def store(
-        self, text: str, metadata: dict[str, str] | None = None,
+        self,
+        text: str,
+        metadata: dict[str, str] | None = None,
         category: str = "conversation",
     ) -> None:
         """Persist text offline; index semantically only with explicit embeddings."""
@@ -85,8 +94,10 @@ class VectorContextStore:
         meta = {**(metadata or {}), "category": category, "timestamp": str(time.time())}
         try:
             with sqlite3.connect(self._db_path) as conn:
-                conn.execute("INSERT OR REPLACE INTO snippets VALUES (?, ?, ?)",
-                             (doc_id, text, json.dumps(meta)))
+                conn.execute(
+                    "INSERT OR REPLACE INTO snippets VALUES (?, ?, ?)",
+                    (doc_id, text, json.dumps(meta)),
+                )
         except sqlite3.Error:
             logger.warning("Context snippet could not be saved")
             return
@@ -94,8 +105,9 @@ class VectorContextStore:
             try:
                 embedding = self._embedding_function(text)
                 if embedding:
-                    self._collection.upsert(documents=[text], metadatas=[meta],
-                                            ids=[doc_id], embeddings=[embedding])
+                    self._collection.upsert(
+                        documents=[text], metadatas=[meta], ids=[doc_id], embeddings=[embedding]
+                    )
             except Exception:
                 logger.debug("Context embedding failed; lexical copy retained")
 
@@ -145,7 +157,10 @@ class VectorContextStore:
         )
 
     def retrieve(
-        self, query: str, n_results: int = 5, category: str | None = None,
+        self,
+        query: str,
+        n_results: int = 5,
+        category: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return ranked context with its actual retrieval backend and distance."""
         if not self.is_ready or n_results <= 0:
@@ -154,16 +169,23 @@ class VectorContextStore:
             try:
                 embedding = self._embedding_function(query)
                 results = self._collection.query(
-                    query_embeddings=[embedding], n_results=n_results,
+                    query_embeddings=[embedding],
+                    n_results=n_results,
                     where={"category": category} if category else None,
                 )
                 docs = results.get("documents", [[]])[0]
                 metadata = results.get("metadatas", [[]])[0]
                 distances = results.get("distances", [[]])[0]
                 if docs:
-                    return [{"text": text, "metadata": metadata[i],
-                             "distance": distances[i], "backend": "semantic"}
-                            for i, text in enumerate(docs)]
+                    return [
+                        {
+                            "text": text,
+                            "metadata": metadata[i],
+                            "distance": distances[i],
+                            "backend": "semantic",
+                        }
+                        for i, text in enumerate(docs)
+                    ]
             except Exception:
                 logger.debug("Semantic query unavailable; using lexical context")
         terms = set(re.findall(r"\w+", query.casefold()))
@@ -180,8 +202,14 @@ class VectorContextStore:
                 words = set(re.findall(r"\w+", text.casefold()))
                 score = len(terms & words) / len(terms)
                 if score:
-                    matches.append({"text": text, "metadata": meta,
-                                    "distance": 1.0 - score, "backend": "lexical"})
+                    matches.append(
+                        {
+                            "text": text,
+                            "metadata": meta,
+                            "distance": 1.0 - score,
+                            "backend": "lexical",
+                        }
+                    )
             return sorted(matches, key=lambda doc: (doc["distance"], doc["text"]))[:n_results]
         except (sqlite3.Error, ValueError):
             return []
@@ -202,7 +230,8 @@ class VectorContextStore:
                 bus.write(
                     agent="ContextStore",
                     role="memory",
-                    key="retrieved_context_" + hashlib.sha256(doc["text"].encode()).hexdigest()[:12],
+                    key="retrieved_context_"
+                    + hashlib.sha256(doc["text"].encode()).hexdigest()[:12],
                     content=doc["text"],
                     source=doc["backend"],
                     distance=doc["distance"],

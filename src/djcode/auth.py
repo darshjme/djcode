@@ -216,6 +216,7 @@ def interactive_auth() -> str | None:
         import webbrowser
 
         from djcode.openrouter_auth import begin, exchange
+
         verifier, url = begin()
         console.print(url, markup=False)
         webbrowser.open(url)

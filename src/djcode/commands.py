@@ -17,7 +17,11 @@ class Command:
 
 COMMANDS = (
     Command("/connect", "Connect provider, sign in and select model", "Models & setup"),
-    Command("/workflow", "Default DAF/DDAL engine status or explicit engine selection", "Context & tools"),
+    Command(
+        "/workflow",
+        "Default DAF/DDAL engine status or explicit engine selection",
+        "Context & tools",
+    ),
     Command("/skills", "Discover user skills", "Context & tools"),
     Command("/skill", "Load a skill by name", "Context & tools"),
     Command("/schedule", "Manage durable command schedules (JSON arguments)", "Context & tools"),

@@ -19,7 +19,7 @@ def _shorten_cwd() -> str:
     cwd = os.getcwd()
     home = os.path.expanduser("~")
     if cwd.startswith(home):
-        return "~" + cwd[len(home):]
+        return "~" + cwd[len(home) :]
     return cwd
 
 
@@ -94,21 +94,21 @@ class StatusBar:
             f'<style bg="#111111">'
             f' <style fg="{GOLD}">\u23fa</style> '
             f'<b><style fg="{GOLD}">{name}</style></b>'
-            f'{sep}'
-            f'{mode_segment}'
-            f'{sep}'
+            f"{sep}"
+            f"{mode_segment}"
+            f"{sep}"
             f'<style fg="#AAAAAA">{model_display}</style>'
-            f'{sep}'
+            f"{sep}"
             f'<style fg="#666666">{escape(self.provider)}</style>'
-            f'{sep}'
+            f"{sep}"
             f'<style fg="#666666">\u2193 {tokens} tokens</style>'
-            f'{sep}'
+            f"{sep}"
             f'<style fg="#555555">{cwd}</style>'
-            f'{sep}'
+            f"{sep}"
             f'<style fg="#AAAAAA">Approvals: {"auto" if self.auto_accept else "ask"}</style>'
-            f'{sep}'
+            f"{sep}"
             f'<style fg="#888888">/help · Tab complete</style>'
-            f' </style>'
+            f" </style>"
         )
 
 

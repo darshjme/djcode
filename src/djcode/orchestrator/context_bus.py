@@ -28,32 +28,33 @@ logger = logging.getLogger(__name__)
 
 # -- Entry Types and Priorities ------------------------------------------------
 
+
 class EntryType(str, Enum):
     """Typed categories for bus entries."""
 
-    CODE            = "code"
-    PLAN            = "plan"
-    REVIEW          = "review"
-    TEST            = "test"
-    DEPLOYMENT      = "deployment"
-    SECURITY_AUDIT  = "security_audit"
-    ANALYSIS        = "analysis"
-    DOCUMENTATION   = "documentation"
+    CODE = "code"
+    PLAN = "plan"
+    REVIEW = "review"
+    TEST = "test"
+    DEPLOYMENT = "deployment"
+    SECURITY_AUDIT = "security_audit"
+    ANALYSIS = "analysis"
+    DOCUMENTATION = "documentation"
     RISK_ASSESSMENT = "risk_assessment"
-    COST_ANALYSIS   = "cost_analysis"
-    INTEGRATION     = "integration"
-    RESULT          = "result"
-    MEMORY          = "memory"
-    GENERAL         = "general"
+    COST_ANALYSIS = "cost_analysis"
+    INTEGRATION = "integration"
+    RESULT = "result"
+    MEMORY = "memory"
+    GENERAL = "general"
 
 
 class Priority(str, Enum):
     """Priority levels for bus entries. Higher priority = shown first in summaries."""
 
     CRITICAL = "critical"
-    HIGH     = "high"
-    NORMAL   = "normal"
-    LOW      = "low"
+    HIGH = "high"
+    NORMAL = "normal"
+    LOW = "low"
 
 
 _PRIORITY_ORDER: dict[Priority, int] = {
@@ -65,6 +66,7 @@ _PRIORITY_ORDER: dict[Priority, int] = {
 
 
 # -- Bus Entry -----------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class BusEntry:
@@ -95,6 +97,7 @@ BusWriteCallback = Callable[[BusEntry], Coroutine[Any, Any, None]]
 
 
 # -- Context Bus ---------------------------------------------------------------
+
 
 class ContextBus:
     """Thread-safe shared context for multi-agent orchestration.
@@ -175,7 +178,9 @@ class ContextBus:
                 self._conflicts.append(conflict)
                 logger.warning(
                     "Context bus conflict on key '%s': %s vs %s",
-                    key, existing[-1].agent, agent,
+                    key,
+                    existing[-1].agent,
+                    agent,
                 )
 
             entry = BusEntry(
@@ -336,8 +341,7 @@ class ContextBus:
                 content = content[:max_content_len] + "\n... (truncated)"
 
             parts.append(
-                f"### [{entry.role}] {entry.agent} -- {entry.key}{priority_tag}\n"
-                f"{content}\n"
+                f"### [{entry.role}] {entry.agent} -- {entry.key}{priority_tag}\n{content}\n"
             )
             shown += 1
 
@@ -362,9 +366,7 @@ class ContextBus:
             return ""
 
         # Sort by priority then recency
-        other_entries.sort(
-            key=lambda e: (_PRIORITY_ORDER.get(e.priority, 2), -e.timestamp)
-        )
+        other_entries.sort(key=lambda e: (_PRIORITY_ORDER.get(e.priority, 2), -e.timestamp))
 
         total_len = 0
         for entry in other_entries:
@@ -372,10 +374,7 @@ class ContextBus:
             if len(content) > 500:
                 content = content[:500] + "..."
 
-            block = (
-                f"### [{entry.role}] {entry.agent} -- {entry.key}\n"
-                f"{content}\n"
-            )
+            block = f"### [{entry.role}] {entry.agent} -- {entry.key}\n{content}\n"
             if total_len + len(block) > max_len:
                 parts.append("... (remaining context truncated for prompt budget)")
                 break

@@ -77,13 +77,15 @@ console = Console()
 
 GOLD = "#C79B7A"
 
-Q_STYLE = questionary.Style([
-    ("selected", "fg:#C79B7A bold"),
-    ("pointer", "fg:#C79B7A bold"),
-    ("highlighted", "fg:#C79B7A"),
-    ("question", "fg:#C79B7A bold"),
-    ("answer", "fg:#FFFFFF bold"),
-])
+Q_STYLE = questionary.Style(
+    [
+        ("selected", "fg:#C79B7A bold"),
+        ("pointer", "fg:#C79B7A bold"),
+        ("highlighted", "fg:#C79B7A"),
+        ("question", "fg:#C79B7A bold"),
+        ("answer", "fg:#FFFFFF bold"),
+    ]
+)
 
 
 def print_banner(provider: Provider, *, auto_accept: bool = False) -> None:
@@ -102,13 +104,21 @@ def print_banner(provider: Provider, *, auto_accept: bool = False) -> None:
     console.print(Panel(body, border_style=GOLD, padding=(0, 1)))
 
 
-HELP_TEXT = command_help("repl") + "\n\n[dim]Tab completes commands · Up/Down history · /shortcuts for keys[/]"
+HELP_TEXT = (
+    command_help("repl")
+    + "\n\n[dim]Tab completes commands · Up/Down history · /shortcuts for keys[/]"
+)
 
 
 def _discover_current_models(provider):
     from djcode.startup import probe
+
     config = load_config()
-    config.update(provider=provider.config.name, model=provider.config.model, base_url=provider.config.base_url)
+    config.update(
+        provider=provider.config.name,
+        model=provider.config.model,
+        base_url=provider.config.base_url,
+    )
     config[f"{provider.config.name}_api_key"] = provider.config.api_key
     config[f"{provider.config.name}_auth_method"] = provider.config.auth_method
     return probe(config)
@@ -129,7 +139,9 @@ def _handle_models_list(provider: Provider) -> None:
 async def _handle_model_switch_interactive(operator: Operator, status_bar: StatusBar) -> None:
     found = await asyncio.to_thread(_discover_current_models, operator.provider)
     if found["models"]:
-        selected = await questionary.autocomplete("Select model:", choices=found["models"], match_middle=True, ignore_case=True).ask_async()
+        selected = await questionary.autocomplete(
+            "Select model:", choices=found["models"], match_middle=True, ignore_case=True
+        ).ask_async()
     else:
         console.print(found["message"], markup=False)
         selected = await questionary.text("Exact model ID:").ask_async()
@@ -156,6 +168,7 @@ def _handle_model_switch(arg: str, operator: Operator, status_bar: StatusBar) ->
 
                 if uncensored or operator.bypass_rlhf:
                     from djcode.prompt import build_system_prompt
+
                     operator.messages[0].content = build_system_prompt(
                         bypass_rlhf=operator.bypass_rlhf, model=match
                     )
@@ -193,9 +206,16 @@ def _handle_provider_switch_interactive(operator: Operator, status_bar: StatusBa
 
     new_config = ProviderConfig.from_config(provider_override=provider_id)
     from djcode.account_auth import has_account
-    authenticated = has_account(provider_id) if new_config.auth_method == "account" else bool(new_config.api_key)
+
+    authenticated = (
+        has_account(provider_id)
+        if new_config.auth_method == "account"
+        else bool(new_config.api_key)
+    )
     if prov_info.get("needs_key") and not authenticated:
-        console.print(f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]")
+        console.print(
+            f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]"
+        )
         return
 
     operator.provider = Provider(new_config)
@@ -218,6 +238,7 @@ async def handle_slash_command(
     command = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
     from djcode.commands import plan_blocks_command
+
     if getattr(operator, "plan_mode", False) and plan_blocks_command(command, arg):
         console.print("[yellow]Plan mode: switch to Act with /plan before running this command.[/]")
         return True
@@ -229,19 +250,25 @@ async def handle_slash_command(
         orchestrator._shadow.auto_accept = operator.auto_accept
 
     from djcode.session_commands import NAMES, handle
+
     if command in NAMES:
         console.print(await handle(operator, command, arg), markup=False)
         return True
     if command == "/connect":
         from djcode.startup import setup
+
         configured = await asyncio.to_thread(setup, load_config())
         previous = operator.provider
-        operator.provider = Provider(ProviderConfig.from_config(configured["provider"], configured["model"]))
+        operator.provider = Provider(
+            ProviderConfig.from_config(configured["provider"], configured["model"])
+        )
         operator.provider._session_runtimes = [operator.capabilities]
         previous._session_runtimes = []
         operator.context_manager.provider = operator.provider
         await previous.close()
-        status_bar.update(model=operator.provider.config.model, provider=operator.provider.config.name)
+        status_bar.update(
+            model=operator.provider.config.model, provider=operator.provider.config.name
+        )
         return True
 
     if command == "/help":
@@ -249,6 +276,7 @@ async def handle_slash_command(
 
     elif command in ("/check", "/lint"):
         from djcode.maintenance import run_checks
+
         result = await asyncio.to_thread(run_checks)
         console.print(result["summary"], markup=False)
         for item in result.get("checks", []):
@@ -256,6 +284,7 @@ async def handle_slash_command(
 
     elif command == "/update":
         from djcode.updater import perform_update
+
         result = await asyncio.to_thread(perform_update, force=True)
         console.print(result["message"], markup=False)
         if result.get("updated"):
@@ -276,6 +305,7 @@ async def handle_slash_command(
     elif command == "/design":
         from djcode.design_packs import list_packs
         from djcode.design_selection import select_pack
+
         if not arg.strip():
             for pack in list_packs():
                 console.print(f"{pack['id']}: {pack['title']} · {pack['summary']}", markup=False)
@@ -300,7 +330,10 @@ async def handle_slash_command(
             operator.provider._new_provider = None
         if hasattr(operator, "context_manager"):
             from djcode.context.manager import ContextWindowManager
-            operator.context_manager = ContextWindowManager(model=operator.provider.config.model, provider=operator.provider)
+
+            operator.context_manager = ContextWindowManager(
+                model=operator.provider.config.model, provider=operator.provider
+            )
             operator.context_manager.replace_messages(operator.messages)
 
     elif command == "/provider":
@@ -312,9 +345,16 @@ async def handle_slash_command(
                 prov_info = PROVIDERS[arg]
                 new_config = ProviderConfig.from_config(provider_override=arg)
                 from djcode.account_auth import has_account
-                authenticated = has_account(arg) if new_config.auth_method == "account" else bool(new_config.api_key)
+
+                authenticated = (
+                    has_account(arg)
+                    if new_config.auth_method == "account"
+                    else bool(new_config.api_key)
+                )
                 if prov_info.get("needs_key") and not authenticated:
-                    console.print(f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]")
+                    console.print(
+                        f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]"
+                    )
                 else:
                     operator.provider = Provider(new_config)
                     set_value("provider", arg)
@@ -447,24 +487,26 @@ async def handle_slash_command(
             console.print(Markdown(result))
 
     elif command == "/uncensored":
-        console.print(Panel(
-            "[bold]Uncensored Models:[/]\n\n"
-            "  dolphin3          — Fully uncensored, no RLHF\n"
-            "  abliterated       — RLHF removed via activation engineering\n"
-            "  wizard-vicuna     — Classic unrestricted model\n"
-            "  nous-hermes       — Minimal alignment, broad capabilities\n\n"
-            "[bold]How it works:[/]\n"
-            "  DJcode detects uncensored models and injects a strong\n"
-            "  RLHF-override system prompt that forces direct answers\n"
-            "  without refusals, disclaimers, or safety warnings.\n\n"
-            "[bold]Censored models:[/]\n"
-            "  gemma4, qwen2.5-coder, deepseek-coder, llama3\n"
-            "  These may refuse certain requests. Use --bypass-rlhf\n"
-            "  to attempt override (not guaranteed).\n\n"
-            "[bold]Switch:[/] /model dolphin3",
-            title=f"[bold {GOLD}]Uncensored Mode[/]",
-            border_style=GOLD,
-        ))
+        console.print(
+            Panel(
+                "[bold]Uncensored Models:[/]\n\n"
+                "  dolphin3          — Fully uncensored, no RLHF\n"
+                "  abliterated       — RLHF removed via activation engineering\n"
+                "  wizard-vicuna     — Classic unrestricted model\n"
+                "  nous-hermes       — Minimal alignment, broad capabilities\n\n"
+                "[bold]How it works:[/]\n"
+                "  DJcode detects uncensored models and injects a strong\n"
+                "  RLHF-override system prompt that forces direct answers\n"
+                "  without refusals, disclaimers, or safety warnings.\n\n"
+                "[bold]Censored models:[/]\n"
+                "  gemma4, qwen2.5-coder, deepseek-coder, llama3\n"
+                "  These may refuse certain requests. Use --bypass-rlhf\n"
+                "  to attempt override (not guaranteed).\n\n"
+                "[bold]Switch:[/] /model dolphin3",
+                title=f"[bold {GOLD}]Uncensored Mode[/]",
+                border_style=GOLD,
+            )
+        )
 
     elif command == "/orchestra":
         if not arg:
@@ -512,6 +554,7 @@ async def handle_slash_command(
 
     elif command == "/docs":
         from djcode.docs import DOCS_SECTIONS, render_docs, render_docs_index
+
         topic = arg.strip().lower()
         if not topic:
             render_docs_index(console)
@@ -545,7 +588,14 @@ async def handle_slash_command(
             # Run campaign director
             spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
             from djcode.orchestrator.engine import AgentRunner
-            runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
+
+            runner = AgentRunner(
+                operator.provider,
+                spec,
+                orchestrator.bus,
+                auto_accept=operator.auto_accept,
+                approval_callback=operator.approval_callback,
+            )
             async for token in runner.run_streaming(campaign_brief):
                 sys.stdout.write(token)
                 sys.stdout.flush()
@@ -559,7 +609,14 @@ async def handle_slash_command(
             console.print(f"\n  [{GOLD}]📢 Content Campaign[/]\n")
             spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
             from djcode.orchestrator.engine import AgentRunner
-            runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
+
+            runner = AgentRunner(
+                operator.provider,
+                spec,
+                orchestrator.bus,
+                auto_accept=operator.auto_accept,
+                approval_callback=operator.approval_callback,
+            )
             async for token in runner.run_streaming(arg):
                 sys.stdout.write(token)
                 sys.stdout.flush()
@@ -570,7 +627,14 @@ async def handle_slash_command(
         console.print(f"\n  [{GOLD}]🎨 Maya (Image Prompter)[/]\n")
         spec = get_content_spec(ContentRole.IMAGE_PROMPTER)
         from djcode.orchestrator.engine import AgentRunner
-        runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
+
+        runner = AgentRunner(
+            operator.provider,
+            spec,
+            orchestrator.bus,
+            auto_accept=operator.auto_accept,
+            approval_callback=operator.approval_callback,
+        )
         async for token in runner.run_streaming(task):
             sys.stdout.write(token)
             sys.stdout.flush()
@@ -581,7 +645,14 @@ async def handle_slash_command(
         console.print(f"\n  [{GOLD}]🎬 Kubera (Video Director)[/]\n")
         spec = get_content_spec(ContentRole.VIDEO_DIRECTOR)
         from djcode.orchestrator.engine import AgentRunner
-        runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
+
+        runner = AgentRunner(
+            operator.provider,
+            spec,
+            orchestrator.bus,
+            auto_accept=operator.auto_accept,
+            approval_callback=operator.approval_callback,
+        )
         async for token in runner.run_streaming(task):
             sys.stdout.write(token)
             sys.stdout.flush()
@@ -592,7 +663,14 @@ async def handle_slash_command(
         console.print(f"\n  [{GOLD}]📱 Chitragupta (Social Strategist)[/]\n")
         spec = get_content_spec(ContentRole.SOCIAL_STRATEGIST)
         from djcode.orchestrator.engine import AgentRunner
-        runner = AgentRunner(operator.provider, spec, orchestrator.bus, auto_accept=operator.auto_accept, approval_callback=operator.approval_callback)
+
+        runner = AgentRunner(
+            operator.provider,
+            spec,
+            orchestrator.bus,
+            auto_accept=operator.auto_accept,
+            approval_callback=operator.approval_callback,
+        )
         async for token in runner.run_streaming(task):
             sys.stdout.write(token)
             sys.stdout.flush()
@@ -638,6 +716,7 @@ async def handle_slash_command(
                 console.print("[dim]Add one: /extension add <name> <command> [args...][/]")
             else:
                 from rich.table import Table as _T
+
                 table = _T(show_header=True, header_style=f"bold {GOLD}", border_style="dim")
                 table.add_column("Name", style="bold white")
                 table.add_column("Command", style="dim")
@@ -661,7 +740,9 @@ async def handle_slash_command(
             ext_args = ext_cmd_parts[1:] if len(ext_cmd_parts) > 1 else []
             ext = ext_mgr.add(ext_name, ext_cmd, ext_args)
             console.print(f"[green]Added extension:[/] {ext.name} -> {ext.cmd}")
-            console.print(f"[dim]Tools will be discovered on first use. Try: /extension tools {ext_name}[/]")
+            console.print(
+                f"[dim]Tools will be discovered on first use. Try: /extension tools {ext_name}[/]"
+            )
 
         elif sub[0] in ("rm", "remove") and len(sub) >= 2:
             if ext_mgr.remove(sub[1]):
@@ -723,7 +804,8 @@ async def handle_slash_command(
 
                 # Check for missing required params — prompt interactively
                 missing = [
-                    p for p in recipe.parameters
+                    p
+                    for p in recipe.parameters
                     if p.required and p.key not in params and not p.default
                 ]
                 if missing:
@@ -761,6 +843,7 @@ async def handle_slash_command(
                 param_keys = input("  Parameters (comma-separated keys): ").strip()
 
                 from djcode.recipes import Recipe, RecipeParam
+
                 params = []
                 for key in param_keys.split(","):
                     key = key.strip()
@@ -827,6 +910,7 @@ async def handle_slash_command(
                 else:
                     # Restore messages into operator
                     from djcode.provider import Message as _Msg
+
                     # Keep the current system prompt, replace the rest
                     system_msg = operator.messages[0] if operator.messages else None
                     operator.messages.clear()
@@ -840,19 +924,25 @@ async def handle_slash_command(
                             continue  # Keep our own system prompt
                         content = m.get("content", "")
                         tc = m.get("tool_calls")
-                        operator.messages.append(_Msg(
-                            role=role,
-                            content=content,
-                            tool_calls=tc or [],
-                            tool_call_id=m.get("tool_call_id"), name=m.get("name"), images=m.get("images", []),
-                        ))
+                        operator.messages.append(
+                            _Msg(
+                                role=role,
+                                content=content,
+                                tool_calls=tc or [],
+                                tool_call_id=m.get("tool_call_id"),
+                                name=m.get("name"),
+                                images=m.get("images", []),
+                            )
+                        )
                         restored += 1
 
                     console.print(
                         f"[green]Resumed session {target_id}[/] "
                         f"({session.model}, {restored} messages)"
                     )
-                    console.print("[dim]Conversation context restored. Continue where you left off.[/]")
+                    console.print(
+                        "[dim]Conversation context restored. Continue where you left off.[/]"
+                    )
 
     else:
         console.print(f"[yellow]Unknown command:[/] {command}")
@@ -869,6 +959,7 @@ def _estimate_tokens(messages: list) -> int:
 
 async def _approve_repl_tool(name: str, arguments: dict) -> bool:
     import json
+
     body = Text(f"Tool: {name}\n{json.dumps(arguments, indent=2)[:2000]}")
     console.print(Panel(body, title="Approve tool"))
     return bool(await questionary.confirm("Execute this tool?", default=False).ask_async())
@@ -876,9 +967,15 @@ async def _approve_repl_tool(name: str, arguments: dict) -> bool:
 
 async def _run_repl_command(command, operator, memory, status_bar, orchestrator) -> bool:
     try:
-        result = await run_interruptible(handle_slash_command(
-            command, operator, memory, status_bar, orchestrator,
-        ))
+        result = await run_interruptible(
+            handle_slash_command(
+                command,
+                operator,
+                memory,
+                status_bar,
+                orchestrator,
+            )
+        )
         if result is None:
             console.print("[yellow]Command cancelled. Ready for another prompt.[/]")
         return result is not False
@@ -936,8 +1033,9 @@ async def run_repl(
     memory = MemoryManager()
 
     # Initialize orchestrator
-    orchestrator = Orchestrator(llm, auto_accept=effective_auto_accept,
-                                approval_callback=_approve_repl_tool)
+    orchestrator = Orchestrator(
+        llm, auto_accept=effective_auto_accept, approval_callback=_approve_repl_tool
+    )
 
     # Initialize status bar
     status_bar = StatusBar()
@@ -955,7 +1053,9 @@ async def run_repl(
     session_db.migrate_from_json()  # One-time migration, no-op if already done
     operator.session_id = session_db.create_session(llm.config.model, llm.config.name)
     operator.session_db = session_db
-    operator.on_checkpoint = lambda messages: session_db.save_conversation(operator.session_id, messages)
+    operator.on_checkpoint = lambda messages: session_db.save_conversation(
+        operator.session_id, messages
+    )
     files_touched: list[str] = []
 
     # Initialize extension manager
@@ -984,7 +1084,6 @@ async def run_repl(
     try:
         while True:
             try:
-
                 # Prompt: ❯ (gold) in ACT mode, ⏸ (magenta) in PLAN mode
                 if tui_mode.plan_mode:
                     _prompt_html = HTML("<style fg='#FF00FF'><b>\u23f8 </b></style>")
@@ -1006,6 +1105,7 @@ async def run_repl(
             # Interactive command picker: bare "/" triggers fuzzy picker
             if user_input == "/":
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     picked = await asyncio.get_event_loop().run_in_executor(
                         pool, show_command_picker
@@ -1054,6 +1154,7 @@ async def run_repl(
 
                     # Live thinking indicator: ⏺ Thinking... (Xs · ↓ N tokens)
                     import time as _time
+
                     _start_time = _time.monotonic()
                     _token_count = 0
                     first_token = True
@@ -1085,7 +1186,9 @@ async def run_repl(
                         # Periodically update thinking line if we haven't started output yet
                         if first_token and _token_count % 3 == 0:
                             elapsed = _time.monotonic() - _start_time
-                            sys.stdout.write(f"\r\033[K\033[33m\u23fa\033[0m \033[2mThinking... ({elapsed:.1f}s \u00b7 \u2193 {_token_count} tokens)\033[0m")
+                            sys.stdout.write(
+                                f"\r\033[K\033[33m\u23fa\033[0m \033[2mThinking... ({elapsed:.1f}s \u00b7 \u2193 {_token_count} tokens)\033[0m"
+                            )
                             sys.stdout.flush()
 
                     if first_token:
@@ -1100,7 +1203,9 @@ async def run_repl(
                             _tok_str = f"{_est_tokens / 1000:.1f}k"
                         else:
                             _tok_str = str(_est_tokens)
-                        console.print(f"\n  [dim]\u2193 {_tok_str} tokens \u00b7 {_elapsed:.1f}s[/]")
+                        console.print(
+                            f"\n  [dim]\u2193 {_tok_str} tokens \u00b7 {_elapsed:.1f}s[/]"
+                        )
 
                     if full_response:
                         memory.add_session_message("assistant", full_response)
@@ -1109,7 +1214,9 @@ async def run_repl(
                         token_est = len(full_response) // 4
                         record_session_update(session_id, tokens=token_est, messages=1)
                         session_db.update_session(
-                            operator.session_id, tokens_out=token_est, messages=1,
+                            operator.session_id,
+                            tokens_out=token_est,
+                            messages=1,
                         )
                         # Persist conversation for /resume
                         session_db.save_conversation(operator.session_id, operator.messages)
@@ -1118,12 +1225,16 @@ async def run_repl(
                         # Censorship detection — warn if aligned model refuses
                         from djcode.prompt import CENSORED_WARNING, detect_refusal
 
-                        if detect_refusal(full_response) and not is_uncensored_model(llm.config.model):
-                            console.print(Panel(
-                                CENSORED_WARNING.format(model=llm.config.model),
-                                title="[yellow]Model Censorship Detected[/]",
-                                border_style="yellow",
-                            ))
+                        if detect_refusal(full_response) and not is_uncensored_model(
+                            llm.config.model
+                        ):
+                            console.print(
+                                Panel(
+                                    CENSORED_WARNING.format(model=llm.config.model),
+                                    title="[yellow]Model Censorship Detected[/]",
+                                    border_style="yellow",
+                                )
+                            )
 
                     # Update status bar token count (toolbar auto-updates on next prompt)
                     token_est = _estimate_tokens(operator.messages)
@@ -1152,6 +1263,7 @@ async def run_repl(
                         if fb:
                             console.print(f"  [dim]Try: /model {fb}[/]")
                 return True
+
             if await run_interruptible(respond()) is None:
                 sys.stdout.write("\r\033[K")
                 console.print("[yellow]Response cancelled. Ready for another prompt.[/]")
@@ -1190,11 +1302,15 @@ async def run_oneshot(
 ) -> None:
     """Run one task; preserve failures in the process exit status and always close HTTP."""
     import click
+
     config = ProviderConfig.from_config(provider_override=provider, model_override=model)
     llm = Provider(config)
     from djcode.sessions import SessionDB
+
     session_db = SessionDB()
-    session_id = session_db.create_session(model=config.model, provider=config.name, cwd=os.getcwd())
+    session_id = session_db.create_session(
+        model=config.model, provider=config.name, cwd=os.getcwd()
+    )
     operator = None
     try:
         ok, msg = llm.validate_model()
@@ -1202,9 +1318,14 @@ async def run_oneshot(
             raise click.ClickException(msg)
         if msg:
             console.print(msg, markup=False)
-        operator = Operator(llm, bypass_rlhf=bypass_rlhf, raw=raw,
-                            model=llm.config.model, show_thinking=show_thinking,
-                            auto_accept=auto_accept)
+        operator = Operator(
+            llm,
+            bypass_rlhf=bypass_rlhf,
+            raw=raw,
+            model=llm.config.model,
+            show_thinking=show_thinking,
+            auto_accept=auto_accept,
+        )
         operator.on_checkpoint = lambda messages: session_db.save_conversation(session_id, messages)
         async for token in operator.send(prompt):
             sys.stdout.write(token)

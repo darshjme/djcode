@@ -25,55 +25,57 @@ from typing import Any
 
 # -- Event Types ---------------------------------------------------------------
 
+
 class EventType(str, enum.Enum):
     """All event types emitted during orchestration."""
 
     # Orchestrator lifecycle
-    ORCHESTRATOR_START    = "orchestrator_start"
+    ORCHESTRATOR_START = "orchestrator_start"
     ORCHESTRATOR_COMPLETE = "orchestrator_complete"
-    ORCHESTRATOR_ERROR    = "orchestrator_error"
+    ORCHESTRATOR_ERROR = "orchestrator_error"
 
     # Agent lifecycle
-    AGENT_START    = "agent_start"
-    AGENT_TOKEN    = "agent_token"
-    AGENT_TOOL     = "agent_tool"
+    AGENT_START = "agent_start"
+    AGENT_TOKEN = "agent_token"
+    AGENT_TOOL = "agent_tool"
     AGENT_COMPLETE = "agent_complete"
-    AGENT_ERROR    = "agent_error"
+    AGENT_ERROR = "agent_error"
 
     # Pipeline control
-    WAVE_START     = "wave_start"
-    WAVE_COMPLETE  = "wave_complete"
-    BLOCKING_GATE  = "blocking_gate"
+    WAVE_START = "wave_start"
+    WAVE_COMPLETE = "wave_complete"
+    BLOCKING_GATE = "blocking_gate"
 
     # Synthesis
-    SYNTHESIS_START    = "synthesis_start"
+    SYNTHESIS_START = "synthesis_start"
     SYNTHESIS_COMPLETE = "synthesis_complete"
 
     # Context
-    CONTEXT_INJECT  = "context_inject"
-    CONTEXT_WRITE   = "context_write"
+    CONTEXT_INJECT = "context_inject"
+    CONTEXT_WRITE = "context_write"
     CONTEXT_CONFLICT = "context_conflict"
 
 
 class GateSeverity(str, enum.Enum):
     """Severity levels for blocking gate events."""
 
-    INFO     = "info"
-    WARNING  = "warning"
-    HIGH     = "high"
+    INFO = "info"
+    WARNING = "warning"
+    HIGH = "high"
     CRITICAL = "critical"
 
 
 class GateAction(str, enum.Enum):
     """Actions taken by blocking gate agents."""
 
-    PASS     = "pass"
-    WARN     = "warn"
-    HALT     = "halt"
+    PASS = "pass"
+    WARN = "warn"
+    HALT = "halt"
     ESCALATE = "escalate"
 
 
 # -- Base Event ----------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class OrchestratorEvent:
@@ -411,13 +413,14 @@ class EventBus:
         # Record in history (ring buffer)
         self._history.append(event)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         for cb in self._callbacks:
             try:
                 await cb(event)
             except Exception:
                 import logging
+
                 logging.getLogger(__name__).exception(
                     "Event callback error for %s", event.event_type.value
                 )

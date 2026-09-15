@@ -6,15 +6,35 @@ import shlex
 
 # Commands that are safe to run without confirmation
 SAFE_SUBCOMMANDS = {
-    "status", "diff", "log", "show", "branch", "remote", "tag",
-    "stash list", "blame", "shortlog", "reflog",
+    "status",
+    "diff",
+    "log",
+    "show",
+    "branch",
+    "remote",
+    "tag",
+    "stash list",
+    "blame",
+    "shortlog",
+    "reflog",
 }
 
 # Commands that modify state but are generally safe
 MODIFY_SUBCOMMANDS = {
-    "add", "commit", "stash", "stash pop", "stash drop",
-    "checkout", "switch", "restore", "merge", "rebase",
-    "pull", "fetch", "push", "cherry-pick",
+    "add",
+    "commit",
+    "stash",
+    "stash pop",
+    "stash drop",
+    "checkout",
+    "switch",
+    "restore",
+    "merge",
+    "rebase",
+    "pull",
+    "fetch",
+    "push",
+    "cherry-pick",
 }
 
 # Dangerous commands that need extra care
@@ -32,6 +52,7 @@ async def execute_git(subcommand: str) -> str:
             )
 
     from djcode.tools.bash import run_process
+
     try:
         arguments = shlex.split(subcommand)
         if not arguments or arguments[0].startswith("-"):

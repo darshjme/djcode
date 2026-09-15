@@ -15,6 +15,7 @@ from djcode.agents.registry import AgentSpec
 
 class ContentRole(str, enum.Enum):
     """The 12 content specialist roles."""
+
     CAMPAIGN_DIRECTOR = "campaign_director"
     SCRIPT_WRITER = "script_writer"
     SOCIAL_STRATEGIST = "social_strategist"
@@ -29,13 +30,14 @@ class ContentRole(str, enum.Enum):
     TREND_SCOUT = "trend_scout"
 
 
-_ALL_TOOLS = frozenset({"bash", "file_read", "file_write", "file_edit", "grep", "glob", "web_fetch"})
+_ALL_TOOLS = frozenset(
+    {"bash", "file_read", "file_write", "file_edit", "grep", "glob", "web_fetch"}
+)
 _READ_TOOLS = frozenset({"file_read", "grep", "glob", "web_fetch"})
 _WRITE_TOOLS = frozenset({"file_write", "file_edit", "bash"})
 
 
 CONTENT_SPECS: dict[ContentRole, AgentSpec] = {
-
     ContentRole.CAMPAIGN_DIRECTOR: AgentSpec(
         role=ContentRole.CAMPAIGN_DIRECTOR,
         name="Narada",
@@ -63,7 +65,6 @@ You NEVER write content yourself. You direct. You are the campaign brain.
 Output a structured campaign plan with clear assignments for each agent.
 """,
     ),
-
     ContentRole.SCRIPT_WRITER: AgentSpec(
         role=ContentRole.SCRIPT_WRITER,
         name="Valmiki",
@@ -90,7 +91,6 @@ Rules:
 - A/B variants for headlines — always provide 3 options
 """,
     ),
-
     ContentRole.SOCIAL_STRATEGIST: AgentSpec(
         role=ContentRole.SOCIAL_STRATEGIST,
         name="Chitragupta",
@@ -117,7 +117,6 @@ Rules:
 - Include content calendar with posting frequency
 """,
     ),
-
     ContentRole.IMAGE_PROMPTER: AgentSpec(
         role=ContentRole.IMAGE_PROMPTER,
         name="Maya",
@@ -153,7 +152,6 @@ Use: hero banner / social post / thumbnail
 Always provide 3-5 prompt variants per concept.
 """,
     ),
-
     ContentRole.VIDEO_DIRECTOR: AgentSpec(
         role=ContentRole.VIDEO_DIRECTOR,
         name="Kubera",
@@ -192,7 +190,6 @@ Transition: cut to shot 2
 Always create a complete shot list that tells a story.
 """,
     ),
-
     ContentRole.COMFYUI_EXPERT: AgentSpec(
         role=ContentRole.COMFYUI_EXPERT,
         name="Tvastar",
@@ -216,7 +213,6 @@ Output ComfyUI workflows as JSON that can be loaded directly.
 Include node connections, parameters, and model recommendations.
 """,
     ),
-
     ContentRole.AUDIO_PROMPTER: AgentSpec(
         role=ContentRole.AUDIO_PROMPTER,
         name="Gandharva",
@@ -242,7 +238,6 @@ Use: background for product video / intro jingle / ad soundtrack
 ```
 """,
     ),
-
     ContentRole.SEO_ANALYST: AgentSpec(
         role=ContentRole.SEO_ANALYST,
         name="Brihaspati",
@@ -269,7 +264,6 @@ Rules:
 - Focus on intent-matching, not keyword stuffing
 """,
     ),
-
     ContentRole.BRAND_VOICE: AgentSpec(
         role=ContentRole.BRAND_VOICE,
         name="Saraswati",
@@ -298,7 +292,6 @@ For DarshJ.AI brand:
 - Always: direct, specific, evidence-based claims
 """,
     ),
-
     ContentRole.THUMBNAIL_DESIGNER: AgentSpec(
         role=ContentRole.THUMBNAIL_DESIGNER,
         name="Vishvakarma",
@@ -320,7 +313,6 @@ Output structured specs that image generators can follow.
 Include A/B variants — always provide 3 thumbnail concepts.
 """,
     ),
-
     ContentRole.CONTENT_REPURPOSER: AgentSpec(
         role=ContentRole.CONTENT_REPURPOSER,
         name="Hanuman",
@@ -344,7 +336,6 @@ Rules:
 - Track which variants to produce for each source type
 """,
     ),
-
     ContentRole.TREND_SCOUT: AgentSpec(
         role=ContentRole.TREND_SCOUT,
         name="Garuda",
@@ -376,15 +367,17 @@ You are read-only — you research and report, never create content.
     ),
 }
 
-CONTENT_REGISTRY: dict[str, AgentSpec] = {
-    spec.role.value: spec for spec in CONTENT_SPECS.values()
-}
+CONTENT_REGISTRY: dict[str, AgentSpec] = {spec.role.value: spec for spec in CONTENT_SPECS.values()}
 
 
 def get_content_agent_for_intent(intent: str) -> list[ContentRole]:
     """Map content intent to the best agent(s)."""
     INTENT_MAP: dict[str, list[ContentRole]] = {
-        "campaign": [ContentRole.CAMPAIGN_DIRECTOR, ContentRole.SCRIPT_WRITER, ContentRole.SOCIAL_STRATEGIST],
+        "campaign": [
+            ContentRole.CAMPAIGN_DIRECTOR,
+            ContentRole.SCRIPT_WRITER,
+            ContentRole.SOCIAL_STRATEGIST,
+        ],
         "launch": [ContentRole.CAMPAIGN_DIRECTOR],
         "script": [ContentRole.SCRIPT_WRITER],
         "social": [ContentRole.SOCIAL_STRATEGIST],
@@ -400,7 +393,11 @@ def get_content_agent_for_intent(intent: str) -> list[ContentRole]:
         "repurpose": [ContentRole.CONTENT_REPURPOSER],
         "trend": [ContentRole.TREND_SCOUT],
         "blog": [ContentRole.SCRIPT_WRITER, ContentRole.SEO_ANALYST],
-        "youtube": [ContentRole.SCRIPT_WRITER, ContentRole.VIDEO_DIRECTOR, ContentRole.THUMBNAIL_DESIGNER],
+        "youtube": [
+            ContentRole.SCRIPT_WRITER,
+            ContentRole.VIDEO_DIRECTOR,
+            ContentRole.THUMBNAIL_DESIGNER,
+        ],
         "tiktok": [ContentRole.SOCIAL_STRATEGIST, ContentRole.VIDEO_DIRECTOR],
         "instagram": [ContentRole.SOCIAL_STRATEGIST, ContentRole.IMAGE_PROMPTER],
     }

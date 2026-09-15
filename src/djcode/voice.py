@@ -31,6 +31,7 @@ except (ImportError, OSError):
 # Transcription backends
 # ---------------------------------------------------------------------------
 
+
 class _TranscriptionBackend:
     """Base class for transcription backends."""
 
@@ -67,8 +68,10 @@ class WhisperCppBackend(_TranscriptionBackend):
             return ""
         proc = await asyncio.create_subprocess_exec(
             self._binary,
-            "-m", self.model,
-            "-f", wav_path,
+            "-m",
+            self.model,
+            "-f",
+            wav_path,
             "--no-timestamps",
             "-nt",
             stdout=asyncio.subprocess.PIPE,
@@ -175,7 +178,8 @@ semaphore.wait()
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                "swift", swift_path,
+                "swift",
+                swift_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -191,6 +195,7 @@ semaphore.wait()
 # Voice Activity Detection (energy-based)
 # ---------------------------------------------------------------------------
 
+
 def _rms_energy(data: bytes) -> float:
     """Compute RMS energy of 16-bit PCM audio."""
     if len(data) < 2:
@@ -205,6 +210,7 @@ def _rms_energy(data: bytes) -> float:
 # ---------------------------------------------------------------------------
 # Main VoiceInput class
 # ---------------------------------------------------------------------------
+
 
 class VoiceInput:
     """Record from the system microphone and transcribe locally.
@@ -411,10 +417,12 @@ def get_missing_deps_message() -> str:
             "  pip install sounddevice   (or: uv pip install sounddevice)"
         )
 
-    backends_available = any([
-        WhisperCppBackend().is_available(),
-        MacOSSpeechBackend().is_available(),
-    ])
+    backends_available = any(
+        [
+            WhisperCppBackend().is_available(),
+            MacOSSpeechBackend().is_available(),
+        ]
+    )
     if not backends_available:
         parts.append(
             "No transcription backend found. Install one of:\n"
