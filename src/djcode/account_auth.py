@@ -88,7 +88,7 @@ def _path() -> Path:
 
 def _read() -> dict:
     try:
-        value = json.loads(_path().read_text())
+        value = json.loads(_path().read_text(encoding="utf-8"))
         return value if isinstance(value, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -105,19 +105,42 @@ def has_account(provider: str) -> bool:
 
 
 def _save(value: dict) -> None:
+    """Write the credential atomically, never leaving a readable partial file.
+
+    Ownership of the mkstemp descriptor is tracked explicitly: on Windows an
+    exception between mkstemp() and fdopen() used to leave the descriptor open,
+    and the cleanup unlink() then failed with WinError 32 ("used by another
+    process"), masking the original error and leaking the temporary file.
+    """
     path = _path()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, temporary = tempfile.mkstemp(prefix=".xai-", dir=path.parent)
+    replaced = False
     try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w") as handle:
+        # POSIX: tighten the mode before the first byte is written so the token
+        # never exists group/world readable. Windows has no fchmod; there the
+        # real control is the ACL on %USERPROFILE%\.djcode (docs/ACCOUNT-AUTH.md),
+        # not a mode bit -- do not pretend otherwise.
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            fd = -1  # fdopen owns the descriptor; closing it twice is an error.
             json.dump(value, handle)
             handle.flush()
             os.fsync(handle.fileno())
+        # Windows refuses os.replace while any handle on either path is open;
+        # the with-block above has already closed ours.
         os.replace(temporary, path)
+        replaced = True
     finally:
-        if os.path.exists(temporary):
+        if fd != -1:
+            os.close(fd)
+        if not replaced and os.path.exists(temporary):
             os.unlink(temporary)
+    # Re-assert the mode on the destination: os.replace keeps the temporary
+    # file's metadata on POSIX, and this is a no-op beyond the read-only bit on
+    # Windows, where directory ACLs are the control.
+    os.chmod(path, 0o600)
 
 
 def forget_account(provider: str) -> None:

@@ -75,7 +75,15 @@ def test_grant_pending_slowdown_persistence(monkeypatch):
     assert b"djcode-test-registration" in requests[0].content
     assert b"device_code" in requests[1].content
     assert auth.has_account("xai")
-    assert os.stat(auth._path()).st_mode & 0o777 == 0o600
+    if os.name == "posix":
+        assert os.stat(auth._path()).st_mode & 0o777 == 0o600
+    else:
+        # Windows does not implement POSIX mode bits; os.chmod only toggles the
+        # read-only attribute, so st_mode is always 0o666 or 0o444 there. The
+        # confidentiality control on Windows is the ACL inherited from the
+        # DJcode config directory (docs/ACCOUNT-AUTH.md). Assert what is real:
+        # the credential landed, and it is still writable so refresh can rotate it.
+        assert auth._path().is_file() and os.access(auth._path(), os.W_OK)
     assert run(auth.account_token("xai", "https://api.x.ai/v1")) == "private-access"
     auth.forget_account("openai")
     assert auth._path().exists()
