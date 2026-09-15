@@ -37,6 +37,20 @@ tokens = ["tiktoken>=0.7"]
 djcode = "djcode.cli:main"
 djcode-colibri = "djcode.colibri:main"
 
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[tool.pytest.ini_options]
+# The release gate (scripts/publish_update.py) runs `pytest -q` from the repo
+# root. Without testpaths that also collects scripts/test_release_helpers.py,
+# whose POSIX-only install fixtures error on Windows before any real test runs.
+testpaths = ["tests"]
+addopts = "-q"
+# "coroutine ... was never awaited" is the exact symptom of calling a
+# sync-wrapped asyncio.run() helper from inside a running loop. Make it fail
+# the suite instead of scrolling past on stderr.
+filterwarnings = ["error::RuntimeWarning:djcode.*"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
