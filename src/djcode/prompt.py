@@ -7,6 +7,7 @@ Zero mentions of any external AI company. DJcode is its own identity.
 from __future__ import annotations
 
 import os
+import platform as _platform
 from pathlib import Path
 
 SYSTEM_PROMPT = """\
@@ -230,7 +231,9 @@ def build_system_prompt(*, bypass_rlhf: bool = False, model: str = "") -> str:
     from djcode.auth import is_uncensored_model
 
     cwd = os.getcwd()
-    platform = os.uname().sysname
+    # Never bind this to a local named `platform`: that shadows the module and
+    # the next `platform.` call in this function silently becomes an AttributeError.
+    platform_name = _platform.system()  # 'Windows' | 'Linux' | 'Darwin'
 
     prompt = ""
 
@@ -238,7 +241,7 @@ def build_system_prompt(*, bypass_rlhf: bool = False, model: str = "") -> str:
     if bypass_rlhf or is_uncensored_model(model):
         prompt = UNCENSORED_PREFIX
 
-    prompt += SYSTEM_PROMPT.format(cwd=cwd, platform=platform)
+    prompt += SYSTEM_PROMPT.format(cwd=cwd, platform=platform_name)
 
     if bypass_rlhf:
         prompt += BYPASS_RLHF_ADDENDUM
