@@ -77,7 +77,6 @@ COMMANDS = (
     Command("/search", "Web search (DuckDuckGo/Brave)", "Context & tools", repl=False),
     Command("/tasks", "List/create/update session tasks", "Context & tools", repl=False),
     Command("/spawn", "Spawn a specialist agent", "Specialists", repl=False),
-    Command("/army", "Show the specialist roster", "Specialists", repl=False),
     Command("/context", "Show context window utilization", "Context & tools", repl=False),
     Command("/waves", "Run multi-agent wave execution", "Specialists", repl=False),
     Command("/cancel", "Cancel the active response or specialist", "Session", repl=False),

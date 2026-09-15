@@ -81,12 +81,6 @@ def redact_config(value, name=""):
     help="Show current configuration",
 )
 @click.option(
-    "--army",
-    is_flag=True,
-    default=False,
-    help="Launch with army panel visible (18-agent overview)",
-)
-@click.option(
     "--wave",
     type=str,
     default=None,
@@ -122,7 +116,6 @@ def main(
     auto_accept: bool,
     thinking: bool,
     show_config: bool,
-    army: bool,
     wave: str | None,
     use_repl: bool,
     use_tui: bool,
@@ -328,7 +321,6 @@ def main(
                 bypass_rlhf=bypass_rlhf,
                 auto_accept=auto_accept,
                 show_thinking=thinking,
-                army=army,
             )
         else:
             # Default: line-oriented REPL

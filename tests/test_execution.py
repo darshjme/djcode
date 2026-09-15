@@ -167,7 +167,7 @@ def test_tui_mount_permission_and_immediate_cancel(monkeypatch, tmp_path, settle
             assert app._operator.approval_callback is not None
             from textual.widgets import Input, RichLog
             # Execute real read-only dispatch paths; no model inference is needed.
-            for command in ("/help", "/agents", "/models", "/provider", "/auth", "/context", "/stats", "/memory", "/extension", "/recipe", "/history", "/todo", "/tasks", "/cost", "/army", "/docs", "/docs overview", "/skills", "/mcp"):
+            for command in ("/help", "/agents", "/models", "/provider", "/auth", "/context", "/stats", "/memory", "/extension", "/recipe", "/history", "/todo", "/tasks", "/cost", "/docs", "/docs overview", "/skills", "/mcp"):
                 chat = app.query_one("#chat-log", RichLog)
                 before = len(chat.lines)
                 await app._handle_slash_command(command)

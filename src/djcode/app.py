@@ -1138,14 +1138,6 @@ class DJcodeApp(App):
                     vectors=stats.get("facts_with_embeddings", 0),
                 )
 
-            # If --army flag was passed, switch sidebar to Army tab
-            if getattr(self, "_show_army_on_start", False):
-                try:
-                    tabbed = side.query_one("TabbedContent")
-                    tabbed.active = "army-tab"
-                except Exception:
-                    pass
-
         except Exception as e:
             chat.write(f"[{ERROR}]Initialization error: {e}[/]")
             import traceback
@@ -1562,9 +1554,6 @@ class DJcodeApp(App):
         elif cmd == "/spawn":
             await self._handle_spawn(arg)
 
-        elif cmd == "/army":
-            self._show_army()
-
         elif cmd == "/context":
             self._show_context()
 
@@ -1650,27 +1639,6 @@ class DJcodeApp(App):
                 pass
         except Exception as e:
             chat.write(f"[{ERROR}]Spawn error: {e}[/]")
-
-    def _show_army(self) -> None:
-        """Show the full 18-agent army status view."""
-        chat = self.query_one("#chat-log", RichLog)
-        try:
-            bar = self.query_one("#agent-status-bar", AgentStatusBar)
-            active = bar.get_active_count()
-            chat.write(
-                f"\n[bold {GOLD}]Shadow Army Status[/]  "
-                f"[dim]Active: {active}/18[/]\n"
-            )
-        except Exception:
-            pass
-
-        # Switch sidebar to Army tab
-        try:
-            side = self.query_one(SidePanel)
-            tabbed = side.query_one("TabbedContent")
-            tabbed.active = "army-tab"
-        except Exception:
-            pass
 
     def _show_context(self) -> None:
         """Show context window utilization stats."""
@@ -2910,7 +2878,6 @@ def run_tui(
     bypass_rlhf: bool = False,
     auto_accept: bool = False,
     show_thinking: bool = True,
-    army: bool = False,
 ) -> None:
     """Entry point to launch the Textual TUI."""
     app = DJcodeApp(
@@ -2920,7 +2887,6 @@ def run_tui(
         auto_accept=auto_accept,
         show_thinking=show_thinking,
     )
-    app._show_army_on_start = army
     app.run()
 
 

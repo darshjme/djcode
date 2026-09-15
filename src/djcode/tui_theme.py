@@ -546,39 +546,6 @@ Input > .input--cursor {
     color: #FF1744;
 }
 
-/* Army view grid */
-
-.army-grid {
-    background: #17191D;
-    padding: 1;
-}
-
-.army-cell {
-    height: 3;
-    width: 1fr;
-    background: #1B1E23;
-    border: solid #1E1E1E;
-    padding: 0 1;
-    content-align: center middle;
-}
-
-.army-cell-active {
-    border: solid #A2BA9A;
-    color: #A2BA9A;
-}
-
-.army-cell-idle {
-    color: #333333;
-}
-
-/* Matrix rain overlay */
-
-.matrix-rain {
-    background: #17191D;
-    color: #A2BA9A;
-    overflow: hidden;
-}
-
 /* ── Utility classes ──────────────────────────────────────────── */
 
 .gold {

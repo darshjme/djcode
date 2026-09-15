@@ -1328,7 +1328,7 @@ class CostPanel(Vertical):
 # ---------------------------------------------------------------------------
 
 class SidePanel(Vertical):
-    """Tabbed side panel: Files, Agent, Stats, MCP, Todo, Cost, Army, Intel."""
+    """Tabbed side panel: Files, Agent, Stats, MCP, Todo, Cost."""
 
     DEFAULT_CSS = """
     SidePanel {
