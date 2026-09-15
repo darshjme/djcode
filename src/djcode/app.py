@@ -831,47 +831,6 @@ class CommandPalette(ModalScreen[str | None]):
                 self.dismiss(str(opt.id))
 
 
-# ── Search overlay ─────────────────────────────────────────────────────
-
-
-class SearchBar(ModalScreen[str | None]):
-    """Simple search bar overlay."""
-
-    BINDINGS = [Binding("escape", "dismiss", "Close")]
-
-    DEFAULT_CSS = """
-    SearchBar {
-        align: center top;
-        background: transparent;
-    }
-    #search-box {
-        width: 60;
-        margin-top: 2;
-        background: #111111;
-        border: solid #C79B7A;
-        padding: 0 1;
-        height: 3;
-    }
-    #search-input {
-        background: #111111;
-        color: #C79B7A;
-        height: 3;
-    }
-    """
-
-    def compose(self) -> ComposeResult:
-        with Horizontal(id="search-box"):
-            yield Static("/", id="search-prefix")
-            yield Input(id="search-input", placeholder="Search chat...")
-
-    def on_mount(self) -> None:
-        self.query_one("#search-input", Input).focus()
-
-    @on(Input.Submitted, "#search-input")
-    def submit_search(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value)
-
-
 # ── Main application ───────────────────────────────────────────────────
 
 

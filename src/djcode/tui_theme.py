@@ -99,7 +99,7 @@ ToolApprovalScreen {
 }
 
 /* Fit all dialogs inside small terminals without hiding their controls. */
-#approval-box, #help-box, #agents-box, #model-box, #provider-box, #palette-box, #search-box {
+#approval-box, #help-box, #agents-box, #model-box, #provider-box, #palette-box {
     max-width: 95%;
     max-height: 90%;
 }
