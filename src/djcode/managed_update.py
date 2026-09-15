@@ -140,7 +140,9 @@ def stage_build(prefix: Path, info: dict, manifest: dict, client: httpx.Client) 
             raise ValueError("Staged package version differs from its manifest")
         bounded_run([str(venv / "bin/djcode"), "--check"], limit=60, env=env)
         receipt = {**info, "commit": manifest["commit"], "version": manifest["version"], "run_id": manifest.get("run_id", 0)}
-        (release / ".djcode-install.json").write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+        (release / ".djcode-install.json").write_text(
+            json.dumps(receipt, indent=2), encoding="utf-8"
+        )
         return release
     except BaseException:
         shutil.rmtree(release)  # Only this newly created, never activated build.
