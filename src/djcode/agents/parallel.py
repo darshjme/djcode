@@ -18,15 +18,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import Any
 
 from djcode.agents.executor import AgentExecutor, AgentResult
 from djcode.agents.registry import (
     BLOCKING_AGENTS,
     AgentRole,
     AgentSpec,
-    AGENT_SPECS,
 )
 from djcode.agents.state import (
     AgentEvent,
@@ -514,7 +514,7 @@ class ParallelCoordinator:
                 executor.execute(task),
                 timeout=self.per_agent_timeout_s,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             error_msg = f"Agent {spec.name} timed out after {self.per_agent_timeout_s}s"
             logger.error(error_msg)
             return AgentResult(

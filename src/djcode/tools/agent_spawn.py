@@ -10,12 +10,11 @@ Supports foreground (blocking) and background (async) execution.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 import uuid
-from contextvars import ContextVar
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import replace
 from typing import Any
 
@@ -92,7 +91,7 @@ async def execute_spawn_agent(
 
     # Validate role exists in registry
     try:
-        from djcode.agents.registry import AgentRole, AGENT_SPECS
+        from djcode.agents.registry import AGENT_SPECS, AgentRole
 
         role_enum = _resolve_role(role)
         if role_enum is None:
@@ -121,9 +120,9 @@ async def _spawn_foreground(spec: Any, task: str, max_rounds: int | None) -> str
     owns_provider = False
     depth_token = _spawn_depth.set(_spawn_depth.get() + 1)
     try:
-        from djcode.provider import Provider, ProviderConfig
-        from djcode.orchestrator.engine import AgentRunner
         from djcode.orchestrator.context_bus import ContextBus
+        from djcode.orchestrator.engine import AgentRunner
+        from djcode.provider import Provider, ProviderConfig
         parent = _parent_context.get()
         if parent is None:
             provider = Provider(ProviderConfig.from_config())

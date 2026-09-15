@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from djcode.tools.agent_spawn import execute_agent_status, execute_spawn_agent
 from djcode.tools.bash import execute_bash
 from djcode.tools.file_edit import execute_file_edit
 from djcode.tools.file_read import execute_file_read
@@ -11,12 +12,11 @@ from djcode.tools.file_write import execute_file_write
 from djcode.tools.git import execute_git
 from djcode.tools.glob import execute_glob
 from djcode.tools.grep import execute_grep
+from djcode.tools.notebook import execute_notebook_edit, execute_notebook_read
+from djcode.tools.parallel_exec import execute_parallel
+from djcode.tools.task_tracker import execute_task_create, execute_task_list, execute_task_update
 from djcode.tools.web_fetch import execute_web_fetch
 from djcode.tools.web_search import execute_web_search
-from djcode.tools.task_tracker import execute_task_create, execute_task_update, execute_task_list
-from djcode.tools.notebook import execute_notebook_read, execute_notebook_edit
-from djcode.tools.parallel_exec import execute_parallel
-from djcode.tools.agent_spawn import execute_spawn_agent, execute_agent_status
 
 # Central dispatch table
 TOOL_DISPATCH: dict[str, Any] = {
@@ -41,10 +41,13 @@ TOOL_DISPATCH: dict[str, Any] = {
 
 
 from djcode.scheduler import schedule_tool
+
 TOOL_DISPATCH["schedule"] = schedule_tool
 
 from functools import partial
+
 from djcode.capabilities import dispatch_capability
+
 for _name in ("skill", "mcp", "process", "browser", "computer", "workflow"):
     TOOL_DISPATCH[_name] = partial(dispatch_capability, _name)
 

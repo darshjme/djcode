@@ -139,8 +139,9 @@ def main(
     if vyasa_employee and not vyasa:
         raise click.UsageError("--vyasa-employee requires --vyasa")
     if vyasa:
-        from djcode.vyasa import request_fleet
         import httpx
+
+        from djcode.vyasa import request_fleet
         try:
             result = request_fleet(prompt, employee=vyasa_employee, session=vyasa_session)
         except (ValueError, httpx.HTTPError) as exc:
@@ -168,7 +169,7 @@ def main(
     if design_export and not design_pack:
         raise click.UsageError("--design-export requires --design-pack ID")
     if design_pack:
-        from djcode.design_packs import get_pack, get_example, get_license
+        from djcode.design_packs import get_example, get_license, get_pack
         try:
             reference = get_pack(design_pack)
             if design_export:
@@ -214,7 +215,8 @@ def main(
         console.print(f"Update mode: {update_mode}", markup=False)
         return
     if update or rollback:
-        from djcode.managed_update import perform_update, rollback as restore_previous
+        from djcode.managed_update import perform_update
+        from djcode.managed_update import rollback as restore_previous
         result = restore_previous() if rollback else perform_update(force=True)
         console.print(result["message"], markup=False)
         if not result["ok"]:
@@ -227,8 +229,9 @@ def main(
         raise click.BadParameter(f"Unknown provider: {provider}", param_hint="--provider")
 
     if show_config:
-        from djcode.config import load_config
         from rich.table import Table
+
+        from djcode.config import load_config
 
         cfg = load_config()
         table = Table(title="DJcode Configuration", border_style="blue")
@@ -258,9 +261,9 @@ def main(
             return
         if wave:
             # Wave execution mode: run a task with multi-agent wave strategy
-            from djcode.provider import Provider, ProviderConfig
             from djcode.orchestrator import Orchestrator
             from djcode.orchestrator.events import EventType
+            from djcode.provider import Provider, ProviderConfig
 
             config = ProviderConfig.from_config(
                 provider_override=provider,

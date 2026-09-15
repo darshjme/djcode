@@ -8,10 +8,8 @@ Zero cloud dependency — everything runs locally.
 from __future__ import annotations
 
 import asyncio
-import io
 import shutil
 import struct
-import subprocess
 import tempfile
 import wave
 from pathlib import Path

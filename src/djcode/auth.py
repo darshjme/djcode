@@ -214,6 +214,7 @@ def interactive_auth() -> str | None:
     if method == "browser" and provider_id == "openrouter":
         import asyncio
         import webbrowser
+
         from djcode.openrouter_auth import begin, exchange
         verifier, url = begin()
         console.print(url, markup=False)

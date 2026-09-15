@@ -84,9 +84,9 @@ class StatusBar:
         # Mode indicator: PLAN highlighted magenta, ACT normal
         mode = self.mode
         if mode == "PLAN":
-            mode_segment = f'<style fg="#FF00FF"><b>PLAN</b></style>'
+            mode_segment = '<style fg="#FF00FF"><b>PLAN</b></style>'
         else:
-            mode_segment = f'<style fg="#00FF00">ACT</style>'
+            mode_segment = '<style fg="#00FF00">ACT</style>'
 
         sep = ' <style fg="#444444">\u00b7</style> '
 

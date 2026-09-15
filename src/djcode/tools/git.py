@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 import shlex
-
 
 # Commands that are safe to run without confirmation
 SAFE_SUBCOMMANDS = {

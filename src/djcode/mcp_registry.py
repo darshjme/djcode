@@ -18,7 +18,7 @@ Integration with ExtensionManager:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -364,7 +364,7 @@ def get_install_instructions(name: str) -> str:
 
     # Install step
     if info.install_cmd:
-        lines.append(f"Install (optional, npx handles this automatically):")
+        lines.append("Install (optional, npx handles this automatically):")
         lines.append(f"  $ {info.install_cmd}")
         lines.append("")
 
@@ -383,10 +383,10 @@ def get_install_instructions(name: str) -> str:
     # DJcode quick-add
     if info.env_keys:
         env_snippet = " ".join(f'--env {k}=...' for k in info.env_keys)
-        lines.append(f"Quick add to DJcode:")
+        lines.append("Quick add to DJcode:")
         lines.append(f"  /extension add {info.name} {env_snippet}")
     else:
-        lines.append(f"Quick add to DJcode:")
+        lines.append("Quick add to DJcode:")
         lines.append(f"  /extension add {info.name}")
 
     lines.append("")

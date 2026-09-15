@@ -9,8 +9,8 @@ Provides intelligent 1M context window management with:
 Works with ANY LLM -- from 4K Ollama models to 1M Claude Opus.
 """
 
-from djcode.context.manager import ContextStats, ContextWindowManager
 from djcode.context.compressor import CompressionStrategy, ConversationCompressor
+from djcode.context.manager import ContextStats, ContextWindowManager
 from djcode.context.models import (
     MODEL_REGISTRY,
     ModelInfo,

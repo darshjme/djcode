@@ -14,7 +14,6 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-
 # ── Intent detection ───────────────────────────────────────────────────────
 
 _INTENT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [

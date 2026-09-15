@@ -9,10 +9,8 @@ Users can register custom models at runtime via register_model().
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from difflib import get_close_matches
-from typing import Any
 
 
 @dataclass(frozen=True)

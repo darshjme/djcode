@@ -39,7 +39,7 @@ async def execute_grep(
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return "Search timed out after 30s"
 
     result = stdout.decode("utf-8", errors="replace").strip()

@@ -19,15 +19,13 @@ import concurrent.futures
 import logging
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import questionary
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 
 from djcode.tools import dispatch_tool
 
@@ -1075,7 +1073,7 @@ class ToolExtractionRouter:
         self._display_intents_summary(intents)
 
         console.print(
-            f"  [bold]Execute all?[/] [dim]([/][bold]Y[/][dim])es / ([/][bold]n[/][dim])o / ([/][bold]s[/][dim])elect[/]"
+            "  [bold]Execute all?[/] [dim]([/][bold]Y[/][dim])es / ([/][bold]n[/][dim])o / ([/][bold]s[/][dim])elect[/]"
         )
 
         with concurrent.futures.ThreadPoolExecutor() as pool:

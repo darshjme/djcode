@@ -13,10 +13,9 @@ use the LLM for higher-quality compression.
 from __future__ import annotations
 
 import re
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from djcode.provider import Message, Provider

@@ -15,13 +15,14 @@ The new providers/ package adds:
 
 from __future__ import annotations
 
-import json
 import asyncio
-from contextlib import aclosing
+import json
 import os
+from collections.abc import AsyncIterator
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from difflib import get_close_matches
-from typing import Any, AsyncIterator
+from typing import Any
 
 import httpx
 
@@ -621,6 +622,7 @@ def format_model_size(size_bytes: int) -> str:
 
 
 from djcode.capabilities import CAPABILITY_TOOLS
+
 TOOL_DEFINITIONS.extend(CAPABILITY_TOOLS)
 
 def _messages_to_dicts(messages: list[Message]) -> list[dict[str, Any]]:
@@ -890,7 +892,7 @@ class Provider:
 
     def _check_colibri_context(self, messages: list[Message]) -> None:
         """Approximate preflight only; the server tokenizer remains authoritative."""
-        from djcode.context.compressor import _total_tokens, _count_tokens
+        from djcode.context.compressor import _count_tokens, _total_tokens
         context = self.config.context_window or 8192
         if not 1 <= self.config.max_tokens < context <= 1_048_576:
             raise ValueError("Invalid Colibri context/output budget; set DJCODE_COLIBRI_CONTEXT to served --ctx and a smaller positive DJCODE_COLIBRI_MAX_TOKENS")

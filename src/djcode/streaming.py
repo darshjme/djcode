@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
-from contextlib import aclosing
 import uuid
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from contextlib import aclosing
+from typing import Any
 
 from djcode.provider import Message, Provider
 

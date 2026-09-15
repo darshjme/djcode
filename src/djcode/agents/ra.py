@@ -18,8 +18,7 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from djcode.agents.registry import AgentRole, AgentSpec
 from djcode.orchestrator.context_bus import ContextBus
@@ -167,7 +166,7 @@ class ResearchAssistant:
                 ),
                 timeout=self.timeout_s,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "RA briefing timed out after %.1fs for %s",
                 self.timeout_s,

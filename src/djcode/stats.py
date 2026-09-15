@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import json
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 

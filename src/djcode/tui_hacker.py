@@ -18,30 +18,27 @@ from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Static
 
-from djcode.tui_theme import (
-    GOLD,
-    SUCCESS,
-    ERROR,
-    WARNING,
-    THINKING,
-    TEXT_BASE,
-    TEXT_DIM,
-    TEXT_STRONG,
-    TIER_4_CONTROL,
-    TIER_3_ENTERPRISE,
-    TIER_2_ARCHITECTURE,
-    TIER_1_EXECUTION,
-    INFO,
-)
-
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
 # Use the execution registry so new roles cannot silently disappear from the HUD.
 from djcode import __version__
 from djcode.agents.registry import AGENT_SPECS
+from djcode.tui_theme import (
+    ERROR,
+    GOLD,
+    INFO,
+    SUCCESS,
+    TEXT_BASE,
+    TEXT_DIM,
+    TEXT_STRONG,
+    THINKING,
+    TIER_1_EXECUTION,
+    TIER_2_ARCHITECTURE,
+    TIER_3_ENTERPRISE,
+    TIER_4_CONTROL,
+    WARNING,
+)
 
 AGENT_ROSTER: list[tuple[str, str, int]] = [
     (spec.name, spec.title, spec.tier) for spec in AGENT_SPECS.values()

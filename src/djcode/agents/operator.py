@@ -7,17 +7,17 @@ calls tools, and produces results. It manages the tool-calling loop.
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import json
 import sys
-from typing import Any, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any
 
 import questionary
 from rich.console import Console
 from rich.panel import Panel
 
-from djcode.provider import Message, Provider
 from djcode.prompt import build_system_prompt
+from djcode.provider import Message, Provider
 from djcode.tools import dispatch_tool
 
 console = Console()

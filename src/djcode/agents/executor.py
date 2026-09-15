@@ -20,11 +20,12 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any
 
 from djcode.agents.ra import RABriefing, ResearchAssistant
-from djcode.agents.registry import AgentRole, AgentSpec, BLOCKING_AGENTS
+from djcode.agents.registry import BLOCKING_AGENTS, AgentRole, AgentSpec
 from djcode.agents.state import (
     AgentEvent,
     AgentEventType,
@@ -253,7 +254,7 @@ class AgentExecutor:
                 tools=self._sm.tool_count,
             )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             error_msg = f"Execution timed out after {self.execution_timeout_s}s"
             await self._sm.fail(error_msg)
             yield self._make_event(AgentEventType.ERROR, error=error_msg)
@@ -379,7 +380,7 @@ class AgentExecutor:
                 self.spec.name, tool_name, elapsed_ms,
             )
             return result
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return f"Error: Tool '{tool_name}' timed out after 120s."
         except Exception as e:
             return f"Error executing '{tool_name}': {type(e).__name__}: {e}"

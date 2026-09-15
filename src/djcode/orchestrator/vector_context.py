@@ -13,8 +13,8 @@ import logging
 import re
 import sqlite3
 import time
-from pathlib import Path
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from djcode.config import CONFIG_DIR
 from djcode.orchestrator.context_bus import ContextBus

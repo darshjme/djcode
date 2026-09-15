@@ -7,25 +7,24 @@ for keybindings and Rich for rendering.
 
 from __future__ import annotations
 
-import asyncio
-import os
 import sys
-import time
 import threading
-from typing import TYPE_CHECKING, Any, Callable
+import time
+from typing import TYPE_CHECKING, Any
 
 import questionary
 from prompt_toolkit.key_binding import KeyBindings
-from djcode.commands import command_groups
-from prompt_toolkit.keys import Keys
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
+from djcode.commands import command_groups
+
 if TYPE_CHECKING:
     from prompt_toolkit import PromptSession
+
     from djcode.agents.operator import Operator
     from djcode.status import StatusBar
 

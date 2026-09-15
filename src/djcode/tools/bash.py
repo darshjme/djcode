@@ -34,7 +34,7 @@ async def run_process(*args: str, timeout: float, shell: bool = False, output_li
 
     try:
         await asyncio.wait_for(read_output(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         await stop()
         return f"Error: Command timed out after {timeout}s\n" + chunks.decode(errors="replace")
     except asyncio.CancelledError:

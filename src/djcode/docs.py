@@ -8,9 +8,6 @@ from __future__ import annotations
 
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 
 GOLD = "#FFD700"
 
@@ -272,5 +269,5 @@ def render_docs_index(console: Console) -> None:
                 break
         console.print(f"  [{GOLD}]/docs {key}[/]  [dim]— {title}[/]")
 
-    console.print(f"\n  [dim]/docs all — show everything[/]")
-    console.print(f"  [dim]Online: https://cli.darshj.ai/docs[/]\n")
+    console.print("\n  [dim]/docs all — show everything[/]")
+    console.print("  [dim]Online: https://cli.darshj.ai/docs[/]\n")

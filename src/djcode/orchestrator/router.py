@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from djcode.agents.registry import AgentRole, get_agents_for_intent, get_agent
+from djcode.agents.registry import AgentRole, get_agent, get_agents_for_intent
 
 # Backwards-compatible aliases
 get_agent_for_intent = get_agents_for_intent

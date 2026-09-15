@@ -12,9 +12,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, field, asdict
+from collections.abc import AsyncIterator
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from djcode.config import CONFIG_DIR
 
@@ -460,7 +461,6 @@ class RecipeManager:
 def render_recipe_list(console: Any) -> None:
     """Render a formatted list of all recipes."""
     from rich.table import Table
-    from rich.text import Text
 
     manager = RecipeManager()
     recipes = manager.list_recipes()

@@ -8,12 +8,9 @@ Tracks granted permissions per session.
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 
 GOLD = "#FFD700"
 
@@ -95,21 +92,21 @@ class PermissionManager:
         lines: list[str] = []
 
         if warning_level == "critical":
-            lines.append(f"[bold red]WARNING: System directory[/]")
+            lines.append("[bold red]WARNING: System directory[/]")
             lines.append(f"DJcode has access to [bold]{cwd_display}[/]")
-            lines.append(f"Modifications here can break your system.")
+            lines.append("Modifications here can break your system.")
             border = "red"
         elif warning_level == "elevated":
-            lines.append(f"[bold yellow]NOTICE: Home directory[/]")
+            lines.append("[bold yellow]NOTICE: Home directory[/]")
             lines.append(f"DJcode has access to [bold]{cwd_display}[/]")
-            lines.append(f"Be careful with file operations.")
+            lines.append("Be careful with file operations.")
             border = "yellow"
         else:
             lines.append(f"[{GOLD}]Folder access: [bold]{cwd_display}[/]")
             if is_writable:
-                lines.append(f"DJcode can [green]read[/], [yellow]write[/], and [red]execute[/] in this directory.")
+                lines.append("DJcode can [green]read[/], [yellow]write[/], and [red]execute[/] in this directory.")
             else:
-                lines.append(f"DJcode can [green]read[/] this directory (write access denied).")
+                lines.append("DJcode can [green]read[/] this directory (write access denied).")
             border = GOLD
 
         lines.append("")

@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
 import os
 import sys
+from copy import deepcopy
 
 import click
 import httpx
@@ -70,7 +70,7 @@ def probe(config: dict, provider: str | None = None, model: str | None = None) -
     if not base.startswith(("http://", "https://")):
         return outcome("missing", "Choose a provider endpoint.")
     if details["method"] == "account":
-        from djcode.account_auth import has_account, get_account_token, AccountAuthError
+        from djcode.account_auth import AccountAuthError, get_account_token, has_account
         if name != "xai" or base != "https://api.x.ai/v1":
             return outcome("missing", "Account authentication requires the supported provider endpoint.")
         if not has_account(name):
@@ -155,6 +155,7 @@ def setup(existing: dict | None = None) -> dict:
         config[f"{selected}_auth_method"] = method
         if method == "browser" and selected == "openrouter":
             import webbrowser
+
             from djcode.openrouter_auth import begin, exchange
             verifier, url = begin()
             console.print(url, markup=False)

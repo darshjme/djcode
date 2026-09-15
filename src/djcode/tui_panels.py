@@ -15,52 +15,42 @@ Cyberpunk hacker aesthetic: neon green, electric gold, deep black.
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 from typing import Any
 
-from textual import on, work
+from textual import on
 from textual.app import ComposeResult
-from textual.containers import Vertical, Horizontal, ScrollableContainer
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.message import Message
 from textual.reactive import reactive
 from textual.timer import Timer
-from textual.widget import Widget
 from textual.widgets import (
     DirectoryTree,
     Label,
+    Rule,
     Static,
+    Switch,
     TabbedContent,
     TabPane,
-    ProgressBar,
-    Rule,
-    Switch,
     Tree,
 )
 
 from djcode.tui_theme import (
-    GOLD,
     BG_PRIMARY,
-    BG_PANEL,
-    BG_HEADER,
-    BG_INPUT,
-    BORDER,
-    BORDER_SUBTLE,
-    TEXT_STRONG,
+    ERROR,
+    GOLD,
+    SUCCESS,
     TEXT_BASE,
     TEXT_DIM,
-    SUCCESS,
-    ERROR,
-    WARNING,
+    TEXT_STRONG,
     THINKING,
-    TIER_4_CONTROL,
-    TIER_3_ENTERPRISE,
-    TIER_2_ARCHITECTURE,
     TIER_1_EXECUTION,
-    MATRIX_GREEN,
+    TIER_2_ARCHITECTURE,
+    TIER_3_ENTERPRISE,
+    TIER_4_CONTROL,
+    WARNING,
 )
-
 
 # ---------------------------------------------------------------------------
 # Theme constants (shorthand for inline Rich markup)
@@ -443,10 +433,6 @@ class AgentPanel(Vertical):
 
     def _build_agent_display(self) -> str:
         """Build agent display with tier badge."""
-        from djcode.tui_theme import (
-            TIER_4_CONTROL, TIER_3_ENTERPRISE,
-            TIER_2_ARCHITECTURE, TIER_1_EXECUTION,
-        )
         tier_colors = {
             4: TIER_4_CONTROL, 3: TIER_3_ENTERPRISE,
             2: TIER_2_ARCHITECTURE, 1: TIER_1_EXECUTION,

@@ -15,11 +15,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
-from djcode.config import CONFIG_DIR
 
+from djcode.config import CONFIG_DIR
 
 # ---------------------------------------------------------------------------
 # Skill dataclass
@@ -181,7 +180,7 @@ class SkillManager:
             description=description,
             instructions=instructions,
             example=example,
-            created=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            created=datetime.now(UTC).strftime("%Y-%m-%d"),
             tags=tags or [],
         )
 

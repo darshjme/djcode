@@ -12,8 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -219,7 +218,6 @@ class SessionDB:
     def create_session(self, model: str, provider: str, cwd: str = "") -> str:
         """Create a new session. Returns session_id."""
         import os
-
         import uuid
         session_id = f"s_{uuid.uuid4().hex}"
         now = datetime.now().isoformat()
@@ -584,7 +582,7 @@ class SessionDB:
     ) -> tuple[int, int]:
         """Compute longest and current streaks from active days."""
         try:
-            rows = conn.execute(f"""
+            rows = conn.execute("""
                 SELECT DISTINCT DATE(start_time) as day
                 FROM sessions
                 ORDER BY day ASC

@@ -12,11 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import subprocess
-import sys
-import time
-from dataclasses import dataclass, field, asdict
-from pathlib import Path
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from djcode.config import CONFIG_DIR

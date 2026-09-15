@@ -22,26 +22,24 @@ from __future__ import annotations
 
 import asyncio
 import enum
-import json
 import logging
 import os
 import time
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from rich.console import Console
 
 from djcode.agents.registry import (
-    AGENT_SPECS,
     BLOCKING_AGENTS,
     AgentRole,
     AgentSpec,
     AgentTier,
-    ROLE_TIERS,
     get_agent,
     get_agents_by_tier,
     get_agents_for_intent,
 )
-from djcode.orchestrator.context_bus import ContextBus, EntryType, Priority
+from djcode.orchestrator.context_bus import ContextBus
 from djcode.orchestrator.events import (
     EventBus,
     EventType,
@@ -58,14 +56,11 @@ from djcode.orchestrator.events import (
     orchestrator_complete_event,
     orchestrator_error_event,
     orchestrator_start_event,
-    synthesis_complete_event,
-    synthesis_start_event,
     wave_complete_event,
     wave_start_event,
 )
 from djcode.prompt_enhancer import detect_intent
-from djcode.provider import Message, Provider
-from djcode.tools import dispatch_tool
+from djcode.provider import Provider
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -688,8 +683,8 @@ class ShadowOrchestrator:
                 task, "Halted by blocking gate agent (CRITICAL finding)", agent_names,
             )
             console.print(
-                f"\n  [bold red]HALTED[/] — Blocking agent issued CRITICAL halt. "
-                f"Review findings above before proceeding."
+                "\n  [bold red]HALTED[/] — Blocking agent issued CRITICAL halt. "
+                "Review findings above before proceeding."
             )
             return
 
@@ -823,8 +818,8 @@ class ShadowOrchestrator:
                     f"{tools} tools  {mode}  [dim]p={spec.priority}[/]{blocking}"
                 )
 
-        console.print(f"\n  [dim]Use /orchestra <task> for multi-agent execution[/]")
-        console.print(f"  [dim]Use /review, /debug, /test, /refactor, /devops, /docs for single-agent[/]\n")
+        console.print("\n  [dim]Use /orchestra <task> for multi-agent execution[/]")
+        console.print("  [dim]Use /review, /debug, /test, /refactor, /devops, /docs for single-agent[/]\n")
 
 
 # ==============================================================================

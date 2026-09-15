@@ -90,7 +90,7 @@ async def execute_parallel(
                 "elapsed": elapsed,
                 "success": not result.startswith("Error:") if isinstance(result, str) else True,
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             elapsed = time.monotonic() - t0
             return {
                 "id": call["id"],

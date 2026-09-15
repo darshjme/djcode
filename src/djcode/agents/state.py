@@ -12,8 +12,9 @@ import asyncio
 import enum
 import logging
 import time
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine
+from typing import Any
 
 from djcode.agents.registry import AgentRole, AgentSpec
 

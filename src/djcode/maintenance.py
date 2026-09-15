@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import ast
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def run_checks() -> dict:
@@ -19,9 +19,9 @@ def run_checks() -> dict:
     except (SyntaxError, OSError, UnicodeError) as error:
         checks.append({"name": "Python syntax", "status": "failed", "detail": str(error)})
     try:
+        from djcode.agents.registry import AGENT_SPECS
         from djcode.auth import PROVIDERS
         from djcode.provider import TOOL_DEFINITIONS
-        from djcode.agents.registry import AGENT_SPECS
         names = [tool["function"]["name"] for tool in TOOL_DEFINITIONS]
         assert len(names) == len(set(names)), "Duplicate tool definitions"
         assert PROVIDERS and AGENT_SPECS and names, "Empty runtime registry"

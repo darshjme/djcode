@@ -9,8 +9,6 @@ Wired directly into DJcode so you can /campaign right after /orchestra ships.
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass
-from typing import Any
 
 from djcode.agents.registry import AgentSpec
 

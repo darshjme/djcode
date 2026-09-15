@@ -19,11 +19,9 @@ from __future__ import annotations
 
 import enum
 import time
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine
-
-from djcode.agents.registry import AgentRole
-
+from typing import Any
 
 # -- Event Types ---------------------------------------------------------------
 

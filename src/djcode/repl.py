@@ -12,16 +12,15 @@ import logging
 import os
 import sys
 import uuid
-from typing import Any
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 import questionary
 from prompt_toolkit import PromptSession
-from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.history import FileHistory
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -29,42 +28,42 @@ from rich.table import Table
 from rich.text import Text
 
 from djcode import __version__
-from djcode.commands import SlashCompleter, command_help
-from djcode.repl_runtime import run_interruptible
+from djcode.agents.content_registry import ContentRole, get_content_spec, list_content_agents
 from djcode.agents.operator import Operator
+from djcode.agents.registry import AgentRole
 from djcode.auth import (
     PROVIDERS,
-    get_api_key,
-    get_base_url,
     interactive_auth,
     interactive_provider_picker,
     is_uncensored_model,
 )
-from djcode.errors import classify_error, format_error, get_fallback_model
-from djcode.orchestrator import Orchestrator
-from djcode.agents.registry import AgentRole
-from djcode.agents.content_registry import ContentRole, list_content_agents, get_content_spec
-from djcode.context_file import save_context, inject_context_into_prompt
-from djcode.prompt_enhancer import enhance_prompt, describe_enhancement
-from djcode.stats import record_session_start, record_session_update, record_session_end, render_stats
-from djcode.extensions import ExtensionManager
-from djcode.recipes import RecipeManager, render_recipe_list, render_recipe_detail
-from djcode.sessions import SessionDB, render_session_list
+from djcode.commands import SlashCompleter, command_help
 from djcode.config import (
     HISTORY_FILE,
     ensure_dirs,
     load_config,
-    save_config,
     set_value,
 )
+from djcode.context_file import save_context
+from djcode.errors import classify_error, format_error, get_fallback_model
+from djcode.extensions import ExtensionManager
 from djcode.memory.manager import MemoryManager
+from djcode.orchestrator import Orchestrator
+from djcode.prompt_enhancer import describe_enhancement, enhance_prompt
 from djcode.provider import (
     Provider,
     ProviderConfig,
-    fetch_ollama_models_sync,
-    format_model_size,
     fuzzy_match_model,
     get_ollama_model_names,
+)
+from djcode.recipes import RecipeManager, render_recipe_detail, render_recipe_list
+from djcode.repl_runtime import run_interruptible
+from djcode.sessions import SessionDB, render_session_list
+from djcode.stats import (
+    record_session_end,
+    record_session_start,
+    record_session_update,
+    render_stats,
 )
 from djcode.status import StatusBar
 from djcode.tui import (
@@ -72,8 +71,6 @@ from djcode.tui import (
     register_keybindings,
     show_command_picker,
     show_shortcuts,
-    render_inline_diff,
-    ProgressTracker,
 )
 
 console = Console()
@@ -165,7 +162,7 @@ def _handle_model_switch(arg: str, operator: Operator, status_bar: StatusBar) ->
 
                 console.print(f"[green]Model switched to:[/] {match}")
                 if uncensored:
-                    console.print(f"  [dim]\U0001f513 Uncensored mode active[/]")
+                    console.print("  [dim]\U0001f513 Uncensored mode active[/]")
             else:
                 console.print(f"[red]Model '{arg}' not found.[/]")
                 names = ", ".join(available[:10])
@@ -173,7 +170,7 @@ def _handle_model_switch(arg: str, operator: Operator, status_bar: StatusBar) ->
                 console.print(f"[dim]Pull it with: ollama pull {arg}[/]")
         else:
             # Can't reach Ollama — set it anyway, will fail at chat time
-            console.print(f"[yellow]Cannot verify model (Ollama unreachable).[/]")
+            console.print("[yellow]Cannot verify model (Ollama unreachable).[/]")
             provider.config.model = arg
             set_value("model", arg)
             status_bar.update(model=arg, uncensored=is_uncensored_model(arg))
@@ -429,23 +426,23 @@ async def handle_slash_command(
 
     elif command == "/scout":
         if not arg:
-            console.print(f"[yellow]Usage: /scout <query>[/]")
+            console.print("[yellow]Usage: /scout <query>[/]")
         else:
             from djcode.agents.scout import Scout
 
             scout = Scout(operator.provider)
-            console.print(f"[dim]Scout investigating...[/]")
+            console.print("[dim]Scout investigating...[/]")
             result = await scout.investigate(arg)
             console.print(Markdown(result))
 
     elif command == "/architect":
         if not arg:
-            console.print(f"[yellow]Usage: /architect <task>[/]")
+            console.print("[yellow]Usage: /architect <task>[/]")
         else:
             from djcode.agents.architect import Architect
 
             architect = Architect(operator.provider)
-            console.print(f"[dim]Architect planning...[/]")
+            console.print("[dim]Architect planning...[/]")
             result = await architect.plan(arg)
             console.print(Markdown(result))
 
@@ -471,7 +468,7 @@ async def handle_slash_command(
 
     elif command == "/orchestra":
         if not arg:
-            console.print(f"[yellow]Usage: /orchestra <task>[/]")
+            console.print("[yellow]Usage: /orchestra <task>[/]")
         else:
             async for token in orchestrator.execute(arg):
                 sys.stdout.write(token)
@@ -528,7 +525,7 @@ async def handle_slash_command(
 
     elif command == "/launch":
         if not arg:
-            console.print(f"[yellow]Usage: /launch <product description>[/]")
+            console.print("[yellow]Usage: /launch <product description>[/]")
         else:
             # Full pipeline: Build → Ship → Campaign
             console.print(f"\n  [{GOLD}]🚀 LAUNCH PIPELINE[/] [dim]build → ship → go viral[/]\n")
@@ -557,7 +554,7 @@ async def handle_slash_command(
 
     elif command == "/campaign":
         if not arg:
-            console.print(f"[yellow]Usage: /campaign <brief>[/]")
+            console.print("[yellow]Usage: /campaign <brief>[/]")
         else:
             console.print(f"\n  [{GOLD}]📢 Content Campaign[/]\n")
             spec = get_content_spec(ContentRole.CAMPAIGN_DIRECTOR)
@@ -613,8 +610,8 @@ async def handle_slash_command(
                 f"{'[dim red]read-only[/]' if spec.read_only else '[dim green]full[/]'}  "
                 f"[dim]t={spec.temperature}[/]"
             )
-        console.print(f"\n  [dim]Use /campaign, /image, /video, /social for content agents[/]")
-        console.print(f"  [dim]Use /launch for full build → ship → campaign pipeline[/]\n")
+        console.print("\n  [dim]Use /campaign, /image, /video, /social for content agents[/]")
+        console.print("  [dim]Use /launch for full build → ship → campaign pipeline[/]\n")
 
     elif command == "/stats":
         period = arg.strip().lower() if arg.strip() else "all"
@@ -651,7 +648,7 @@ async def handle_slash_command(
                     if s.get("connected"):
                         status = "[green]connected[/]"
                     if s.get("last_error"):
-                        status = f"[red]error[/]"
+                        status = "[red]error[/]"
                     table.add_row(s["name"], s["cmd"], status, str(s["tools_count"]))
                 console.print()
                 console.print(table)
@@ -731,7 +728,7 @@ async def handle_slash_command(
                 ]
                 if missing:
                     console.print(f"[bold {GOLD}]Recipe: {recipe.name}[/] — {recipe.description}")
-                    console.print(f"[dim]Fill in the required parameters:[/]")
+                    console.print("[dim]Fill in the required parameters:[/]")
                     extra = recipe_mgr.collect_params_interactive(recipe)
                     params.update(extra)
 
@@ -855,7 +852,7 @@ async def handle_slash_command(
                         f"[green]Resumed session {target_id}[/] "
                         f"({session.model}, {restored} messages)"
                     )
-                    console.print(f"[dim]Conversation context restored. Continue where you left off.[/]")
+                    console.print("[dim]Conversation context restored. Continue where you left off.[/]")
 
     else:
         console.print(f"[yellow]Unknown command:[/] {command}")
@@ -1062,7 +1059,7 @@ async def run_repl(
                     first_token = True
 
                     # Show initial thinking indicator
-                    sys.stdout.write(f"\033[33m\u23fa\033[0m \033[2mThinking...\033[0m")
+                    sys.stdout.write("\033[33m\u23fa\033[0m \033[2mThinking...\033[0m")
                     sys.stdout.flush()
 
                     async for token in operator.send(send_text):
@@ -1170,7 +1167,7 @@ async def run_repl(
                 messages_count=msg_count,
                 files_touched=files_touched,
             )
-            console.print(f"  [dim]Saved djcode.md[/]")
+            console.print("  [dim]Saved djcode.md[/]")
 
             record_session_end(session_id)
             session_db.end_session(operator.session_id)
