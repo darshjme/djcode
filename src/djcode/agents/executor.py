@@ -363,7 +363,8 @@ class AgentExecutor:
         # Check if tool is in the allowed list
         if tool_name not in self.spec.tools_allowed:
             return (
-                f"Error: Tool '{tool_name}' is not in the allowed tool set for agent {self.spec.name}. "
+                f"Error: Tool '{tool_name}' is not in the allowed tool set for agent "
+                f"{self.spec.name}. "
                 f"Allowed: {', '.join(sorted(self.spec.tools_allowed))}"
             )
 

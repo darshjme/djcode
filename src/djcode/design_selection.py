@@ -32,4 +32,7 @@ def select_pack(operator, identifier: str) -> str:
     if content is None:
         return "Design reference cleared."
     title = next(pack["title"] for pack in list_packs() if pack["id"] == identifier)
-    return f"Design reference selected: {title}. Describe what you want to build; /design off clears it."
+    return (
+        f"Design reference selected: {title}. Describe what you want to build; /design off "
+        "clears it."
+    )

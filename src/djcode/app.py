@@ -91,7 +91,8 @@ class ToolApprovalScreen(ModalScreen[bool]):
     BINDINGS = [Binding("escape", "deny", "Deny")]
     DEFAULT_CSS = """
     ToolApprovalScreen { align: center middle; background: rgba(0, 0, 0, 0.85); }
-    #approval-box { width: 76; height: auto; max-height: 85%; border: round #C79B7A; background: #111111; padding: 1 2; }
+    #approval-box { width: 76; height: auto; max-height: 85%; \
+border: round #C79B7A; background: #111111; padding: 1 2; }
     #approval-details { height: auto; max-height: 12; overflow-y: auto; }
     #approval-actions { height: 3; margin-top: 1; }
     #approval-actions Button { margin-right: 2; }
@@ -288,8 +289,6 @@ class ModelPicker(ModalScreen[str | None]):
 
     async def _load_models(self) -> None:
         """Fetch models from the current provider."""
-        option_list = self.query_one("#model-list", OptionList)
-
         # Load recent models from config
         from djcode.config import load_config
 
@@ -667,7 +666,8 @@ class ProviderPicker(ModalScreen[dict | None]):
             device = await begin_xai_login()
             label.update(
                 Text(
-                    f"Open {device.verification_url}\nCode: {device.user_code}\nWaiting… Escape cancels"
+                    f"Open {device.verification_url}\nCode: {device.user_code}\nWaiting… Escape "
+                    "cancels"
                 )
             )
             await finish_xai_login(device)
@@ -1010,7 +1010,10 @@ class DJcodeApp(App):
         auto = "ON" if self._auto_accept else "OFF"
 
         if self.size.width < 110:
-            return f" {provider} · ↑{in_str} ↓{out_str} · {mode} · Approvals: {'auto' if self._auto_accept else 'ask'} · Ctrl+B sidebar"
+            return (
+                f" {provider} · ↑{in_str} ↓{out_str} · {mode} · Approvals: "
+                f"{'auto' if self._auto_accept else 'ask'} · Ctrl+B sidebar"
+            )
 
         return (
             f"  {model} | {provider} | "
@@ -1168,7 +1171,8 @@ class DJcodeApp(App):
 
             chat.write(
                 Text(
-                    f"{prov} · {model} · approvals {'automatic' if self._auto_accept else 'ask first'}"
+                    f"{prov} · {model} · approvals "
+                    f"{'automatic' if self._auto_accept else 'ask first'}"
                 )
             )
             chat.write("[dim]Ready · F4 commands · F2 model · Ctrl+B sidebar[/]\n")
@@ -1465,7 +1469,6 @@ class DJcodeApp(App):
     async def _handle_slash_command(self, text: str) -> None:
         """Route slash commands — ported from classic REPL."""
         chat = self.query_one("#chat-log", RichLog)
-        side = self.query_one(SidePanel)
         parts = text.split(maxsplit=1)
         cmd = parts[0].lower()
         arg = parts[1] if len(parts) > 1 else ""

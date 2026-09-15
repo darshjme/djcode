@@ -14,8 +14,6 @@ import sys
 import uuid
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 import questionary
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -73,6 +71,7 @@ from djcode.tui import (
     show_shortcuts,
 )
 
+logger = logging.getLogger(__name__)
 console = Console()
 
 GOLD = "#C79B7A"
@@ -214,7 +213,8 @@ def _handle_provider_switch_interactive(operator: Operator, status_bar: StatusBa
     )
     if prov_info.get("needs_key") and not authenticated:
         console.print(
-            f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]"
+            f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to "
+            "configure.[/]"
         )
         return
 
@@ -353,7 +353,8 @@ async def handle_slash_command(
                 )
                 if prov_info.get("needs_key") and not authenticated:
                     console.print(
-                        f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]"
+                        f"[yellow]No configured authentication for {prov_info['name']}.[/] "
+                        "[dim]Run /auth to configure.[/]"
                     )
                 else:
                     operator.provider = Provider(new_config)
@@ -715,9 +716,7 @@ async def handle_slash_command(
                 console.print(f"[{GOLD}]No extensions registered.[/]")
                 console.print("[dim]Add one: /extension add <name> <command> [args...][/]")
             else:
-                from rich.table import Table as _T
-
-                table = _T(show_header=True, header_style=f"bold {GOLD}", border_style="dim")
+                table = Table(show_header=True, header_style=f"bold {GOLD}", border_style="dim")
                 table.add_column("Name", style="bold white")
                 table.add_column("Command", style="dim")
                 table.add_column("Status")
@@ -1187,7 +1186,8 @@ async def run_repl(
                         if first_token and _token_count % 3 == 0:
                             elapsed = _time.monotonic() - _start_time
                             sys.stdout.write(
-                                f"\r\033[K\033[33m\u23fa\033[0m \033[2mThinking... ({elapsed:.1f}s \u00b7 \u2193 {_token_count} tokens)\033[0m"
+                                f"\r\033[K\033[33m\u23fa\033[0m \033[2mThinking... ({elapsed:.1f}s "
+                                f"\u00b7 \u2193 {_token_count} tokens)\033[0m"
                             )
                             sys.stdout.flush()
 

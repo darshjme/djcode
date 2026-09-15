@@ -26,7 +26,7 @@ from typing import Any
 # -- Event Types ---------------------------------------------------------------
 
 
-class EventType(str, enum.Enum):
+class EventType(enum.StrEnum):
     """All event types emitted during orchestration."""
 
     # Orchestrator lifecycle
@@ -56,7 +56,7 @@ class EventType(str, enum.Enum):
     CONTEXT_CONFLICT = "context_conflict"
 
 
-class GateSeverity(str, enum.Enum):
+class GateSeverity(enum.StrEnum):
     """Severity levels for blocking gate events."""
 
     INFO = "info"
@@ -65,7 +65,7 @@ class GateSeverity(str, enum.Enum):
     CRITICAL = "critical"
 
 
-class GateAction(str, enum.Enum):
+class GateAction(enum.StrEnum):
     """Actions taken by blocking gate agents."""
 
     PASS = "pass"

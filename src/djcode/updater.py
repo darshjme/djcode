@@ -97,7 +97,8 @@ def check_for_updates(force: bool = False) -> dict[str, Any] | None:
     """Check GitHub for a newer version. Returns update info or None.
 
     Returns:
-        dict with keys: latest_version, current_version, update_available, changelog_url, download_url
+        dict with keys: latest_version, current_version, update_available,
+        changelog_url, download_url
         None if check was skipped or failed
     """
     if os.environ.get("DJCODE_NO_UPDATE_CHECK", "").lower() in {"1", "true", "yes"}:

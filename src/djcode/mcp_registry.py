@@ -638,7 +638,10 @@ def get_missing_env_keys(name: str, env: dict[str, str] | None = None) -> list[s
 #                     console.print(f"[red]Unknown server: {name}[/red]")
 #
 #         else:
-#             console.print("[dim]Usage: /mcp list | search <q> | info <name> | install <name> | categories[/dim]")
+#             console.print(
+#                 "[dim]Usage: /mcp list | search <q> | info <name> "
+#                 "| install <name> | categories[/dim]"
+#             )
 #
 # This keeps the registry pure-data and the REPL handler thin.
 # The registry has zero runtime dependencies beyond dataclasses.

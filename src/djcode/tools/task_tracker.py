@@ -12,7 +12,7 @@ import logging
 import sqlite3
 import time
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from djcode.config import CONFIG_DIR
@@ -26,7 +26,7 @@ VALID_STATUSES = {"pending", "in_progress", "completed", "blocked", "cancelled"}
 VALID_PRIORITIES = {"low", "medium", "high", "critical"}
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -113,7 +113,10 @@ async def execute_task_create(
 
     priority = priority.lower().strip()
     if priority not in VALID_PRIORITIES:
-        return f"Error: Invalid priority '{priority}'. Must be one of: {', '.join(sorted(VALID_PRIORITIES))}"
+        return (
+            f"Error: Invalid priority '{priority}'. Must be one of: "
+            f"{', '.join(sorted(VALID_PRIORITIES))}"
+        )
 
     # Validate dependencies exist if specified
     if depends_on:
@@ -208,7 +211,10 @@ async def execute_task_update(
         if status is not None:
             status = status.lower().strip()
             if status not in VALID_STATUSES:
-                return f"Error: Invalid status '{status}'. Must be one of: {', '.join(sorted(VALID_STATUSES))}"
+                return (
+                    f"Error: Invalid status '{status}'. Must be one of: "
+                    f"{', '.join(sorted(VALID_STATUSES))}"
+                )
 
             # Check if dependencies are met before allowing in_progress/completed
             if status in ("in_progress", "completed"):
@@ -242,7 +248,10 @@ async def execute_task_update(
         if priority is not None:
             priority = priority.lower().strip()
             if priority not in VALID_PRIORITIES:
-                return f"Error: Invalid priority '{priority}'. Must be one of: {', '.join(sorted(VALID_PRIORITIES))}"
+                return (
+                    f"Error: Invalid priority '{priority}'. Must be one of: "
+                    f"{', '.join(sorted(VALID_PRIORITIES))}"
+                )
             updates.append("priority = ?")
             params.append(priority)
 
@@ -263,7 +272,10 @@ async def execute_task_update(
             params.append(tags.strip())
 
         if not updates:
-            return "Error: No fields to update. Provide at least one of: status, subject, description, priority, depends_on, tags"
+            return (
+                "Error: No fields to update. Provide at least one of: status, subject, "
+                "description, priority, depends_on, tags"
+            )
 
         updates.append("updated_at = ?")
         params.append(datetime.now().isoformat())
@@ -311,7 +323,10 @@ async def execute_task_list(
         if status:
             status = status.lower().strip()
             if status not in VALID_STATUSES:
-                return f"Error: Invalid status '{status}'. Must be one of: {', '.join(sorted(VALID_STATUSES))}"
+                return (
+                    f"Error: Invalid status '{status}'. Must be one of: "
+                    f"{', '.join(sorted(VALID_STATUSES))}"
+                )
             conditions.append("status = ?")
             params.append(status)
 
@@ -377,7 +392,8 @@ async def execute_task_list(
     bar = "=" * filled + "-" * (bar_len - filled)
 
     lines = [
-        f"Tasks: {total} total | {completed} done | {in_progress} active | {pending} pending | {blocked} blocked",
+        f"Tasks: {total} total | {completed} done | {in_progress} active | {pending} pending | "
+        f"{blocked} blocked",
         f"Progress: [{bar}] {pct:.0f}%",
         "",
     ]

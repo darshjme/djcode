@@ -175,8 +175,6 @@ class HackerHeader(Widget):
         else:
             ctx_color = ERROR
 
-        ctx_bar = self._mini_bar(self.context_pct)
-
         # Agent count color
         agent_color = SUCCESS if self.active_agents > 0 else TEXT_DIM
 

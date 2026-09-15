@@ -127,7 +127,7 @@ def _get_git_context() -> str | None:
             timeout=3,
         )
         branch_name = branch.stdout.strip()
-        changed = len([l for l in status.stdout.strip().split("\n") if l.strip()])
+        changed = len([ln for ln in status.stdout.strip().split("\n") if ln.strip()])
 
         if changed > 0:
             return f"Git: branch={branch_name}, {changed} changed files"

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
+from djcode.capabilities import dispatch_capability
+from djcode.scheduler import schedule_tool
 from djcode.tools.agent_spawn import execute_agent_status, execute_spawn_agent
 from djcode.tools.bash import execute_bash
 from djcode.tools.file_edit import execute_file_edit
@@ -37,17 +40,10 @@ TOOL_DISPATCH: dict[str, Any] = {
     "parallel_execute": execute_parallel,
     "spawn_agent": execute_spawn_agent,
     "agent_status": execute_agent_status,
+    "schedule": schedule_tool,
 }
 
-
-from djcode.scheduler import schedule_tool
-
-TOOL_DISPATCH["schedule"] = schedule_tool
-
-from functools import partial
-
-from djcode.capabilities import dispatch_capability
-
+# The six capability tools share one dispatcher, keyed by the tool name.
 for _name in ("skill", "mcp", "process", "browser", "computer", "workflow"):
     TOOL_DISPATCH[_name] = partial(dispatch_capability, _name)
 

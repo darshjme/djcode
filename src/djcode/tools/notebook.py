@@ -64,7 +64,10 @@ async def execute_notebook_read(
         if cell_type:
             cell_type = cell_type.lower().strip()
             if cell_type not in valid_types:
-                return f"Error: Invalid cell_type '{cell_type}'. Must be one of: {', '.join(sorted(valid_types))}"
+                return (
+                    f"Error: Invalid cell_type '{cell_type}'. Must be one of: "
+                    f"{', '.join(sorted(valid_types))}"
+                )
 
         # Build output
         lines: list[str] = [

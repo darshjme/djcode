@@ -265,7 +265,8 @@ BUILTIN_RECIPES: list[Recipe] = [
             RecipeParam(key="target", description="File or function to refactor"),
             RecipeParam(
                 key="goal",
-                description="What the refactoring should achieve (e.g., 'extract into separate module', 'simplify control flow')",
+                description="What the refactoring should achieve (e.g., 'extract into separate "
+                "module', 'simplify control flow')",
             ),
         ],
         agents=["refactorer", "coder", "tester"],

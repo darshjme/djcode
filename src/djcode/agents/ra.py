@@ -68,7 +68,10 @@ class CodeSnippet:
     relevance: str  # why this snippet is relevant
 
     def __str__(self) -> str:
-        return f"--- {self.file_path}:{self.line_start}-{self.line_end} ({self.relevance}) ---\n{self.content}"
+        return (
+            f"--- {self.file_path}:{self.line_start}-{self.line_end} ({self.relevance}) "
+            f"---\n{self.content}"
+        )
 
 
 @dataclass(frozen=True)

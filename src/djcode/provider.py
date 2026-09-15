@@ -26,6 +26,7 @@ from typing import Any
 
 import httpx
 
+from djcode.capabilities import CAPABILITY_TOOLS
 from djcode.config import load_config
 
 
@@ -90,11 +91,13 @@ class ProviderConfig:
                 ) from exc
             if not 1 <= context_window <= 1_048_576:
                 raise ValueError(
-                    "DJCODE_COLIBRI_CONTEXT must be between 1 and 1048576 and match the served --ctx"
+                    "DJCODE_COLIBRI_CONTEXT must be between 1 and 1048576 and match the served "
+                    "--ctx"
                 )
             if not 1 <= max_tokens < context_window:
                 raise ValueError(
-                    "DJCODE_COLIBRI_MAX_TOKENS must be positive and smaller than DJCODE_COLIBRI_CONTEXT"
+                    "DJCODE_COLIBRI_MAX_TOKENS must be positive and smaller than "
+                    "DJCODE_COLIBRI_CONTEXT"
                 )
 
         # 1. URL-as-provider: treat http(s) URLs as custom OpenAI-compatible endpoints
@@ -228,7 +231,9 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "file_edit",
-            "description": "Make a surgical edit to a file by replacing old_string with new_string.",
+            "description": (
+                "Make a surgical edit to a file by replacing old_string with new_string."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -305,7 +310,8 @@ TOOL_DEFINITIONS = [
                 "properties": {
                     "subcommand": {
                         "type": "string",
-                        "description": "Git subcommand to run (e.g. 'status', 'diff', 'log --oneline -10').",
+                        "description": "Git subcommand to run (e.g. 'status', 'diff', 'log "
+                        "--oneline -10').",
                     },
                 },
                 "required": ["subcommand"],
@@ -316,7 +322,8 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "web_fetch",
-            "description": "Fetch content from a URL and return its text. Useful for reading docs, APIs, or web pages.",
+            "description": "Fetch content from a URL and return its text. Useful for reading docs, "
+            "APIs, or web pages.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -337,7 +344,9 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web using DuckDuckGo or Brave Search. Returns title, URL, and snippet for top results. Useful for looking up docs, finding solutions, researching libraries.",
+            "description": "Search the web using DuckDuckGo or Brave Search. Returns title, URL, "
+            "and snippet for top results. Useful for looking up docs, finding "
+            "solutions, researching libraries.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -358,7 +367,8 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "task_create",
-            "description": "Create a new task for tracking work items. Tasks persist across the session in SQLite.",
+            "description": "Create a new task for tracking work items. Tasks persist across the "
+            "session in SQLite.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -372,7 +382,8 @@ TOOL_DEFINITIONS = [
                     },
                     "priority": {
                         "type": "string",
-                        "description": "Priority level: low, medium, high, critical (default: medium).",
+                        "description": "Priority level: low, medium, high, critical (default: "
+                        "medium).",
                     },
                     "depends_on": {
                         "type": "string",
@@ -395,7 +406,8 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "task_update",
-            "description": "Update an existing task's status, subject, description, priority, dependencies, or tags.",
+            "description": "Update an existing task's status, subject, description, priority, "
+            "dependencies, or tags.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -405,7 +417,8 @@ TOOL_DEFINITIONS = [
                     },
                     "status": {
                         "type": "string",
-                        "description": "New status: pending, in_progress, completed, blocked, cancelled.",
+                        "description": "New status: pending, in_progress, completed, blocked, "
+                        "cancelled.",
                     },
                     "subject": {
                         "type": "string",
@@ -436,13 +449,15 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "task_list",
-            "description": "List tasks with optional filtering by status, session, or tag. Shows progress summary.",
+            "description": "List tasks with optional filtering by status, session, or tag. Shows "
+            "progress summary.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "status": {
                         "type": "string",
-                        "description": "Filter by status: pending, in_progress, completed, blocked, cancelled.",
+                        "description": "Filter by status: pending, in_progress, completed, "
+                        "blocked, cancelled.",
                     },
                     "session_id": {
                         "type": "string",
@@ -465,7 +480,8 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "notebook_read",
-            "description": "Read a Jupyter notebook (.ipynb) and display cells with their source code and outputs.",
+            "description": "Read a Jupyter notebook (.ipynb) and display cells with their source "
+            "code and outputs.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -494,7 +510,8 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "notebook_edit",
-            "description": "Edit a Jupyter notebook cell: replace source, change type, insert new cells, or delete cells.",
+            "description": "Edit a Jupyter notebook cell: replace source, change type, insert new "
+            "cells, or delete cells.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -516,7 +533,8 @@ TOOL_DEFINITIONS = [
                     },
                     "insert_before": {
                         "type": "boolean",
-                        "description": "If true, insert a new cell before cell_index instead of editing.",
+                        "description": "If true, insert a new cell before cell_index instead of "
+                        "editing.",
                     },
                     "delete": {
                         "type": "boolean",
@@ -531,13 +549,17 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "spawn_agent",
-            "description": "Spawn a specialist sub-agent (debugger, tester, reviewer, coder, etc.) to handle a specific task. The agent runs with its own context and tool access policies.",
+            "description": "Spawn a specialist sub-agent (debugger, tester, reviewer, coder, etc.) "
+            "to handle a specific task. The agent runs with its own context and "
+            "tool access policies.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "role": {
                         "type": "string",
-                        "description": "Agent role: coder, debugger, tester, reviewer, architect, scout, refactorer, devops, docs, security_compliance, data_scientist, sre.",
+                        "description": "Agent role: coder, debugger, tester, reviewer, architect, "
+                        "scout, refactorer, devops, docs, security_compliance, "
+                        "data_scientist, sre.",
                     },
                     "task": {
                         "type": "string",
@@ -545,7 +567,8 @@ TOOL_DEFINITIONS = [
                     },
                     "background": {
                         "type": "boolean",
-                        "description": "If true, run agent in background and return tracking ID (default: false).",
+                        "description": "If true, run agent in background and return tracking ID "
+                        "(default: false).",
                     },
                     "max_tool_rounds": {
                         "type": "integer",
@@ -631,8 +654,8 @@ def format_model_size(size_bytes: int) -> str:
     return f"{mb:.0f} MB"
 
 
-from djcode.capabilities import CAPABILITY_TOOLS
-
+# CAPABILITY_TOOLS is appended rather than inlined in the literal above so that
+# djcode.capabilities stays the single owner of the capability tool schemas.
 TOOL_DEFINITIONS.extend(CAPABILITY_TOOLS)
 
 
@@ -742,18 +765,22 @@ class Provider:
                 if self.config.model not in models:
                     return (
                         False,
-                        f"Colibri model '{self.config.model}' is not served. Available: {', '.join(models[:10]) or '(none)'}. Set --model to the server's --model-id.",
+                        f"Colibri model '{self.config.model}' is not served. Available: "
+                        f"{', '.join(models[:10]) or '(none)'}. Set --model to the server's "
+                        "--model-id.",
                     )
                 return True, ""
             except httpx.HTTPStatusError as exc:
                 return (
                     False,
-                    f"Colibri model discovery failed (HTTP {exc.response.status_code}); check the server and COLI_API_KEY.",
+                    f"Colibri model discovery failed (HTTP {exc.response.status_code}); check the "
+                    "server and COLI_API_KEY.",
                 )
             except (httpx.HTTPError, ValueError, AttributeError):
                 return (
                     False,
-                    "Cannot discover Colibri models within the connection timeout. Start your existing Colibri server and check its URL.",
+                    "Cannot discover Colibri models within the connection timeout. Start your "
+                    "existing Colibri server and check its URL.",
                 )
         if self.config.name != "ollama":
             return True, ""
@@ -920,14 +947,16 @@ class Provider:
         context = self.config.context_window or 8192
         if not 1 <= self.config.max_tokens < context <= 1_048_576:
             raise ValueError(
-                "Invalid Colibri context/output budget; set DJCODE_COLIBRI_CONTEXT to served --ctx and a smaller positive DJCODE_COLIBRI_MAX_TOKENS"
+                "Invalid Colibri context/output budget; set DJCODE_COLIBRI_CONTEXT to served --ctx "
+                "and a smaller positive DJCODE_COLIBRI_MAX_TOKENS"
             )
         prompt_estimate = _total_tokens(messages) + _count_tokens(json.dumps(TOOL_DEFINITIONS))
         # Reserve 10% plus framing headroom because local tokenizers differ.
         estimated_budget = (prompt_estimate * 11 + 9) // 10 + 128 + self.config.max_tokens
         if estimated_budget > context:
             raise ValueError(
-                f"Colibri approximate token budget {estimated_budget} exceeds configured context {context} "
+                f"Colibri approximate token budget {estimated_budget} exceeds configured context "
+                f"{context} "
                 "(messages + tools + output + estimation headroom). Shorten the conversation, "
                 "reduce DJCODE_COLIBRI_MAX_TOKENS, or explicitly serve a larger --ctx and match "
                 "DJCODE_COLIBRI_CONTEXT. No request was sent; token estimates are approximate."

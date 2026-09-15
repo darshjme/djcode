@@ -313,7 +313,10 @@ class VoiceInput:
         try:
             text = await backend.transcribe(wav_path)
             if not text:
-                return "[voice] Transcription returned empty. Try speaking louder or closer to the mic."
+                return (
+                    "[voice] Transcription returned empty. Try speaking louder or closer to the "
+                    "mic."
+                )
             return text
         except Exception as exc:
             return f"[voice] Transcription error: {exc}"

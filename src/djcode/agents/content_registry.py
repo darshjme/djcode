@@ -13,7 +13,7 @@ import enum
 from djcode.agents.registry import AgentSpec
 
 
-class ContentRole(str, enum.Enum):
+class ContentRole(enum.StrEnum):
     """The 12 content specialist roles."""
 
     CAMPAIGN_DIRECTOR = "campaign_director"
@@ -372,7 +372,7 @@ CONTENT_REGISTRY: dict[str, AgentSpec] = {spec.role.value: spec for spec in CONT
 
 def get_content_agent_for_intent(intent: str) -> list[ContentRole]:
     """Map content intent to the best agent(s)."""
-    INTENT_MAP: dict[str, list[ContentRole]] = {
+    intent_map: dict[str, list[ContentRole]] = {
         "campaign": [
             ContentRole.CAMPAIGN_DIRECTOR,
             ContentRole.SCRIPT_WRITER,
@@ -401,7 +401,7 @@ def get_content_agent_for_intent(intent: str) -> list[ContentRole]:
         "tiktok": [ContentRole.SOCIAL_STRATEGIST, ContentRole.VIDEO_DIRECTOR],
         "instagram": [ContentRole.SOCIAL_STRATEGIST, ContentRole.IMAGE_PROMPTER],
     }
-    return INTENT_MAP.get(intent, [ContentRole.SCRIPT_WRITER])
+    return intent_map.get(intent, [ContentRole.SCRIPT_WRITER])
 
 
 def get_content_spec(role: ContentRole | str) -> AgentSpec:

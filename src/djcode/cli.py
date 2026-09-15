@@ -214,7 +214,8 @@ def main(
         for pack in list_packs():
             console.print(f"{pack['id']}: {pack['title']} · {pack['summary']}", markup=False)
         console.print(
-            "Use --design-pack ID to read, or --design-pack ID 'your task' to apply. No design-service account required.",
+            "Use --design-pack ID to read, or --design-pack ID 'your task' to apply. No "
+            "design-service account required.",
             markup=False,
         )
         return

@@ -122,7 +122,8 @@ def run(command: list[str], *, timeout=180, env=None) -> str:
         # Package commands can emit URLs containing credentials. Do not include
         # captured output in the user-visible error or the persistent receipt.
         raise RuntimeError(
-            f"Staged validation/install failed ({Path(command[0]).name}, exit {completed.returncode})"
+            f"Staged validation/install failed ({Path(command[0]).name}, exit "
+            f"{completed.returncode})"
         )
     return completed.stdout.strip()
 
@@ -196,7 +197,8 @@ def perform_update(force=False) -> dict:
     if not managed or os.name != "posix":
         return result(
             "manual_required",
-            "Developer/unmanaged installation preserved. Use the managed installer for automatic updates.",
+            "Developer/unmanaged installation preserved. Use the managed installer for automatic "
+            "updates.",
         )
     prefix, info = managed
     lock = None
@@ -214,14 +216,16 @@ def perform_update(force=False) -> dict:
             if not current.is_symlink():
                 return result(
                     "manual_required",
-                    "This older install needs one managed-installer update before automatic switching is available.",
+                    "This older install needs one managed-installer update before automatic "
+                    "switching is available.",
                 )
             old = current.resolve()
             current_info = read_receipt(old, prefix)
             if manifest["commit"] == current_info.get("commit"):
                 return result(
                     "current",
-                    f"DJcode {current_info.get('version', '')} is current ({manifest['commit'][:8]}).",
+                    f"DJcode {current_info.get('version', '')} is current "
+                    f"({manifest['commit'][:8]}).",
                 )
             release = stage_build(prefix, current_info, manifest, client)
             atomic_link(old, prefix / "previous")
@@ -238,7 +242,8 @@ def perform_update(force=False) -> dict:
                 raise
         return result(
             "updated",
-            f"Installed DJcode {manifest['version']} ({manifest['commit'][:8]}). Previous build retained.",
+            f"Installed DJcode {manifest['version']} ({manifest['commit'][:8]}). Previous build "
+            "retained.",
             updated=True,
             version=manifest["version"],
             commit=manifest["commit"],

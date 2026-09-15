@@ -260,7 +260,8 @@ class ProjectPanel(Vertical):
             ext = path.suffix.lower()
             icon = FILE_ICONS.get(ext, ">>")
             info_label.update(
-                f" [{SUCCESS}]{icon}[/] [{TEXT}]{path.name}[/]  [{DIM}]|[/]  [{TEXT}]{self._format_size(size)}[/]"
+                f" [{SUCCESS}]{icon}[/] [{TEXT}]{path.name}[/]  [{DIM}]|[/]  "
+                f"[{TEXT}]{self._format_size(size)}[/]"
             )
         except OSError:
             info_label.update(f" [{TEXT}]{path.name}[/]")

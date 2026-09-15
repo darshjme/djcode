@@ -178,12 +178,14 @@ class SessionDB:
                 END;
 
                 CREATE TRIGGER IF NOT EXISTS conversations_ad AFTER DELETE ON conversations BEGIN
-                    INSERT INTO conversations_fts(conversations_fts, rowid, content, session_id, role)
+                    INSERT INTO conversations_fts(conversations_fts, rowid, content, \
+session_id, role)
                     VALUES ('delete', old.id, old.content, old.session_id, old.role);
                 END;
 
                 CREATE TRIGGER IF NOT EXISTS conversations_au AFTER UPDATE ON conversations BEGIN
-                    INSERT INTO conversations_fts(conversations_fts, rowid, content, session_id, role)
+                    INSERT INTO conversations_fts(conversations_fts, rowid, content, \
+session_id, role)
                     VALUES ('delete', old.id, old.content, old.session_id, old.role);
                     INSERT INTO conversations_fts(rowid, content, session_id, role)
                     VALUES (new.id, new.content, new.session_id, new.role);
@@ -400,7 +402,8 @@ class SessionDB:
             now = datetime.now().isoformat()
             tc_json = json.dumps(tool_calls) if tool_calls else ""
             conn.execute(
-                """INSERT INTO conversations (session_id, role, content, timestamp, tool_calls_json, tool_call_id, name)
+                """INSERT INTO conversations (session_id, role, content, timestamp, \
+tool_calls_json, tool_call_id, name)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (session_id, role, content, now, tc_json, tool_call_id, name),
             )
@@ -442,7 +445,8 @@ class SessionDB:
                 )
                 tc_json = json.dumps(tc) if tc else ""
                 conn.execute(
-                    """INSERT INTO conversations (session_id, role, content, timestamp, tool_calls_json, tool_call_id, name, images_json)
+                    """INSERT INTO conversations (session_id, role, content, timestamp, \
+tool_calls_json, tool_call_id, name, images_json)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         session_id,
@@ -656,9 +660,7 @@ class SessionDB:
 
         Returns number of sessions imported.
         """
-        from djcode.config import CONFIG_DIR as _cd
-
-        json_path = json_path or (_cd / "stats.json")
+        json_path = json_path or (CONFIG_DIR / "stats.json")
         if not json_path.exists():
             return 0
 

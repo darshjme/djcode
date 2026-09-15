@@ -70,7 +70,7 @@ GOLD = "#FFD700"
 # -- Complexity & Strategy Enums -----------------------------------------------
 
 
-class TaskComplexity(str, enum.Enum):
+class TaskComplexity(enum.StrEnum):
     """Task complexity classification."""
 
     SIMPLE = "simple"  # 1 agent
@@ -79,7 +79,7 @@ class TaskComplexity(str, enum.Enum):
     CRITICAL = "critical"  # full army with blocking gates
 
 
-class ExecutionStrategy(str, enum.Enum):
+class ExecutionStrategy(enum.StrEnum):
     """How to run the selected agents."""
 
     SINGLE = "single"

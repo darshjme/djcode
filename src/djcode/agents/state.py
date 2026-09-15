@@ -32,7 +32,7 @@ __all__ = [
 # -- Valid state transitions --------------------------------------------------
 
 
-class AgentState(str, enum.Enum):
+class AgentState(enum.StrEnum):
     """Lifecycle states for an agent execution."""
 
     IDLE = "idle"
@@ -61,7 +61,7 @@ _TRANSITIONS: dict[AgentState, frozenset[AgentState]] = {
 # -- Events -------------------------------------------------------------------
 
 
-class AgentEventType(str, enum.Enum):
+class AgentEventType(enum.StrEnum):
     """Types of events emitted by the state machine."""
 
     STATE_CHANGE = "state_change"

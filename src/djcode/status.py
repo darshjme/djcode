@@ -73,7 +73,8 @@ class StatusBar:
     def render(self) -> HTML:
         """Render the bottom toolbar as prompt_toolkit HTML.
 
-        Clean single line: ⏺ DJcode · ACT · gemma4 · ollama · ↓ 2.4k tokens · ~/project · Ctrl+? help
+        Clean single line:
+        ⏺ DJcode · ACT · gemma4 · ollama · ↓ 2.4k tokens · ~/project · Ctrl+? help
         """
         name = "DJcode"
         cwd = escape(_shorten_cwd())

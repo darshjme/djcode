@@ -135,7 +135,8 @@ def probe(config: dict, provider: str | None = None, model: str | None = None) -
                 return outcome("missing", "Select an explicit model ID.")
             return outcome(
                 "unverified",
-                "This endpoint does not expose model discovery; the explicit model will be checked during use.",
+                "This endpoint does not expose model discovery; the explicit model will be checked "
+                "during use.",
             )
         response.raise_for_status()
         payload = response.json()
@@ -290,7 +291,8 @@ def prepare(provider=None, model=None, *, force_setup=False) -> tuple[str | None
         if not interactive:
             raise click.ClickException(
                 checked["message"]
-                + " Run djcode --setup in an interactive terminal, or supply valid provider/model credentials."
+                + " Run djcode --setup in an interactive terminal, or supply valid provider/model "
+                "credentials."
             )
         configured = setup(config)
         return configured["provider"], configured["model"]

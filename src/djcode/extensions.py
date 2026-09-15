@@ -358,7 +358,7 @@ class ExtensionManager:
                 continue
 
             try:
-                conn = await self._ensure_connection(name)
+                await self._ensure_connection(name)
                 tools = self._tools_cache.get(name, [])
 
                 for tool in tools:

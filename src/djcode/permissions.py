@@ -107,7 +107,8 @@ class PermissionManager:
             lines.append(f"[{GOLD}]Folder access: [bold]{cwd_display}[/]")
             if is_writable:
                 lines.append(
-                    "DJcode can [green]read[/], [yellow]write[/], and [red]execute[/] in this directory."
+                    "DJcode can [green]read[/], [yellow]write[/], and [red]execute[/] in this "
+                    "directory."
                 )
             else:
                 lines.append("DJcode can [green]read[/] this directory (write access denied).")

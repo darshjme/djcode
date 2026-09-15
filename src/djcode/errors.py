@@ -128,7 +128,8 @@ _ERROR_PATTERNS: list[tuple[re.Pattern[str], str, str, str, bool, str | None]] =
     ),
     (
         re.compile(
-            r"(no such file|enoent|FileNotFoundError|does not exist|not found.*file|not found.*dir)",
+            r"(no such file|enoent|FileNotFoundError|does not exist"
+            r"|not found.*file|not found.*dir)",
             re.I,
         ),
         "tool",

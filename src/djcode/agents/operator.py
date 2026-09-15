@@ -174,7 +174,9 @@ class Operator:
                                         role="tool",
                                         tool_call_id=call.get("id"),
                                         name=call.get("function", {}).get("name"),
-                                        content="Error: Execution cancelled before a result was available. Inspect state before retrying; effects may have occurred.",
+                                        content="Error: Execution cancelled before a result was "
+                                        "available. Inspect state before retrying; effects "
+                                        "may have occurred.",
                                     )
                                 )
                         break
@@ -385,7 +387,8 @@ class Operator:
             return await self.approval_callback(name, args)
         if not sys.stdin.isatty():
             raise PermissionError(
-                "Tool execution needs approval; use --auto-accept for an authorized unattended task."
+                "Tool execution needs approval; use --auto-accept for an authorized unattended "
+                "task."
             )
         console.print(
             Panel(f"Tool: {name}\n{json.dumps(args, indent=2)[:1000]}", title="Approve tool")

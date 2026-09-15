@@ -23,7 +23,8 @@ def launcher_command(launcher: str | None) -> list[str]:
     selected = launcher or os.environ.get("DJCODE_COLIBRI_LAUNCHER") or shutil.which("coli")
     if not selected:
         raise click.ClickException(
-            f"Colibri is not installed. Obtain it separately from {UPSTREAM}; no download was started."
+            f"Colibri is not installed. Obtain it separately from {UPSTREAM}; no download was "
+            "started."
         )
     path = Path(selected).expanduser().resolve()
     if not path.is_file():
@@ -50,7 +51,8 @@ def runtime_args(model_dir: Path, ram_gb: int, vram_gb: float, context: int, gpu
         )
     if not (model_dir / "config.json").is_file():
         raise click.ClickException(
-            "The existing model directory must contain config.json. No conversion or download was started."
+            "The existing model directory must contain config.json. No conversion or download was "
+            "started."
         )
     return [
         "--model",
@@ -246,7 +248,8 @@ def serve(launcher, model_dir, ram_gb, vram_gb, context, gpu, port, max_tokens, 
         return
     if not supports_tools:
         raise click.ClickException(
-            "Colibri doctor does not advertise native tool support for this family. DJcode coding mode requires it; use upstream coli chat for chat-only models."
+            "Colibri doctor does not advertise native tool support for this family. DJcode coding "
+            "mode requires it; use upstream coli chat for chat-only models."
         )
     if doctor_exit:
         failures = [
@@ -258,11 +261,13 @@ def serve(launcher, model_dir, ram_gb, vram_gb, context, gpu, port, max_tokens, 
             "Colibri preflight failed; no server started: " + "; ".join(failures[:5])
         )
     click.echo(
-        f"Starting Colibri on 127.0.0.1:{port}. RAM budget is an engine setting, not an OS memory limit.",
+        f"Starting Colibri on 127.0.0.1:{port}. RAM budget is an engine setting, not an OS memory "
+        "limit.",
         err=True,
     )
     click.echo(
-        f"Connect: DJCODE_BASE_URL=http://127.0.0.1:{port}/v1 DJCODE_COLIBRI_CONTEXT={context} DJCODE_COLIBRI_MAX_TOKENS={max_tokens} djcode --provider colibri --model {model_id}",
+        f"Connect: DJCODE_BASE_URL=http://127.0.0.1:{port}/v1 DJCODE_COLIBRI_CONTEXT={context} "
+        f"DJCODE_COLIBRI_MAX_TOKENS={max_tokens} djcode --provider colibri --model {model_id}",
         err=True,
     )
     # Replace only this explicitly invoked helper, not the DJcode client or any

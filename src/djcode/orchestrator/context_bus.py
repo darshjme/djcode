@@ -20,7 +20,7 @@ import logging
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # -- Entry Types and Priorities ------------------------------------------------
 
 
-class EntryType(str, Enum):
+class EntryType(StrEnum):
     """Typed categories for bus entries."""
 
     CODE = "code"
@@ -48,7 +48,7 @@ class EntryType(str, Enum):
     GENERAL = "general"
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     """Priority levels for bus entries. Higher priority = shown first in summaries."""
 
     CRITICAL = "critical"

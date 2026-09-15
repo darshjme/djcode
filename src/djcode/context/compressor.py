@@ -14,14 +14,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from djcode.provider import Message, Provider
 
 
-class CompressionStrategy(str, Enum):
+class CompressionStrategy(StrEnum):
     """Available compression strategies, ordered by aggressiveness."""
 
     TRIM = "trim"
@@ -418,7 +418,6 @@ class ConversationCompressor:
                 chat_msgs.append(msg)
 
         # First, drop all old chat
-        kept = system + pinned + tool_msgs + recent
         removed = len(chat_msgs)
 
         # If still over budget, trim old tool messages from the front

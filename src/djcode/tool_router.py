@@ -895,7 +895,8 @@ class ToolExtractionRouter:
                         action=action,
                         path=resolved,
                         content=content,
-                        description=f"{'Overwrite' if exists else 'Create'} {resolved} ({line_count} lines)",
+                        description=f"{'Overwrite' if exists else 'Create'} {resolved} "
+                        f"({line_count} lines)",
                         confidence=0.65,
                     )
                 )
@@ -1156,7 +1157,8 @@ class ToolExtractionRouter:
         self._display_intents_summary(intents)
 
         console.print(
-            "  [bold]Execute all?[/] [dim]([/][bold]Y[/][dim])es / ([/][bold]n[/][dim])o / ([/][bold]s[/][dim])elect[/]"
+            "  [bold]Execute all?[/] [dim]([/][bold]Y[/][dim])es / ([/][bold]n[/][dim])o / "
+            "([/][bold]s[/][dim])elect[/]"
         )
 
         with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -1257,7 +1259,8 @@ class ToolExtractionRouter:
                     return ToolResult(
                         intent=intent,
                         success=False,
-                        output="Edit detected but old/new strings not fully extracted. Manual edit needed.",
+                        output="Edit detected but old/new strings not fully extracted. Manual edit "
+                        "needed.",
                     )
                 return ToolResult(
                     intent=intent,

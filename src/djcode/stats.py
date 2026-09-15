@@ -270,13 +270,9 @@ def render_stats(console: Console, period: str = "all") -> None:
     if period == "7d":
         cutoff = now - timedelta(days=7)
         sessions = [s for s in sessions if datetime.fromisoformat(s["start"]) >= cutoff]
-        period_label = "Last 7 days"
     elif period == "30d":
         cutoff = now - timedelta(days=30)
         sessions = [s for s in sessions if datetime.fromisoformat(s["start"]) >= cutoff]
-        period_label = "Last 30 days"
-    else:
-        period_label = "All time"
 
     # Compute stats
     total_tokens = sum(s.get("tokens", 0) for s in sessions)
@@ -346,8 +342,6 @@ def render_stats(console: Console, period: str = "all") -> None:
 
     # ── Render ─────────────────────────────────────────────────────────
 
-    output = Text()
-
     # Period selector
     periods = [("All time", "all"), ("Last 7 days", "7d"), ("Last 30 days", "30d")]
     period_line = Text()
@@ -416,7 +410,8 @@ def render_stats(console: Console, period: str = "all") -> None:
         book_multiple = total_tokens / 22000
         if book_multiple >= 1:
             console.print(
-                f"  [{GOLD}]You've used ~{int(book_multiple)}x more tokens than The Little Prince[/]"
+                f"  [{GOLD}]You've used ~{int(book_multiple)}x more tokens than The Little "
+                "Prince[/]"
             )
         console.print()
 

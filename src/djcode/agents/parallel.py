@@ -117,7 +117,8 @@ class CoordinatorResult:
         for result in self.results:
             if not result.succeeded:
                 parts.append(
-                    f"## {result.agent_name} ({result.agent_role.value})\nFailed: {result.error or result.response}"
+                    f"## {result.agent_name} ({result.agent_role.value})\nFailed: "
+                    f"{result.error or result.response}"
                 )
             elif result.response.strip():
                 header = f"## {result.agent_name} ({result.agent_role.value})"
@@ -285,7 +286,10 @@ class ParallelCoordinator:
                             or (result.agent_role in BLOCKING_AGENTS and not result.succeeded)
                         ):
                             halted = True
-                            halt_reason = f"Blocking agent {result.agent_name} failed or flagged CRITICAL findings"
+                            halt_reason = (
+                                f"Blocking agent {result.agent_name} failed or flagged "
+                                "CRITICAL findings"
+                            )
                     if halted:
                         break
         except TimeoutError:
