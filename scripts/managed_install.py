@@ -1,7 +1,7 @@
 """Standalone stdlib bootstrap for verified DJcode releases; embedded in install.sh."""
 from __future__ import annotations
 
-import fcntl
+import contextlib
 import hashlib
 import json
 import os
@@ -16,6 +16,47 @@ from pathlib import Path
 
 REPOSITORY = "darshjme/djcode"
 MANIFEST_URL = f"https://github.com/{REPOSITORY}/releases/download/updates-main/update.json"
+
+
+@contextlib.contextmanager
+def exclusive_lock(path):
+    """Hold a non-blocking exclusive lock on path for the life of the block.
+
+    fcntl is POSIX-only and importing it at module scope made this file
+    unimportable on Windows, which broke collection of the release gate's own
+    `pytest -q` before a single test ran. The import now lives in the branch
+    that uses it, and Windows gets a real lock via msvcrt byte-range locking
+    rather than no lock at all.
+
+    Raises BlockingIOError when another process already holds the lock.
+    """
+    handle = path.open("a+")
+    locked = False
+    try:
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            try:
+                # Lock one byte at offset 0; both sides must agree on the range.
+                # LK_NBLCK returns immediately instead of blocking.
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as error:
+                raise BlockingIOError(str(error)) from None
+        else:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        locked = True
+        yield handle
+    finally:
+        if locked and os.name == "nt":
+            import msvcrt
+
+            with contextlib.suppress(OSError):
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        handle.close()
 
 
 def download(url, maximum, timeout=30):
@@ -122,8 +163,7 @@ def install(prefix, bin_dir, *, source=None, ref="main"):
     prefix, bin_dir = prefix.expanduser().resolve(), bin_dir.expanduser().resolve()
     prefix.mkdir(parents=True, exist_ok=True)
     bin_dir.mkdir(parents=True, exist_ok=True)
-    with (prefix / ".update.lock").open("a+") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    with exclusive_lock(prefix / ".update.lock"):
         old = preflight(prefix, bin_dir)
         manifest = None
         if source is None:
