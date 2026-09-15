@@ -398,7 +398,6 @@ djcode> /model gemini-flash
 | `--model, -m` | Model name (fuzzy matched) | `gemma4` |
 | `--provider, -p` | Provider | `ollama` |
 | `--bypass-rlhf` | Unrestricted expert mode | off |
-| `--raw` | No Rich formatting (pipe-friendly) | off |
 | `--auto-accept` | Skip tool confirmation prompts | off |
 | `--version` | Print version and exit | -- |
 
@@ -425,7 +424,6 @@ djcode> /model gemini-flash
 | `/save` | Save conversation to disk |
 | `/config` | Show current configuration |
 | `/set k=v` | Set a config value |
-| `/raw` | Toggle raw output mode |
 | `/exit` | Exit DJcode |
 
 ---

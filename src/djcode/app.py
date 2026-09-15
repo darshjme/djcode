@@ -1514,12 +1514,6 @@ class DJcodeApp(App):
         elif cmd == "/uncensored":
             self._show_uncensored_info()
 
-        elif cmd == "/raw":
-            if self._operator:
-                self._operator.raw = not self._operator.raw
-                state = "ON" if self._operator.raw else "OFF"
-                chat.write(f"[dim]Raw mode: {state}[/]")
-
         elif cmd == "/extension":
             await self._handle_extension(arg)
 

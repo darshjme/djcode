@@ -70,7 +70,6 @@ COMMANDS = (
     Command("/history", "Browse past sessions", "Session"),
     Command("/resume", "Resume a past session by ID", "Session"),
     Command("/uncensored", "Show uncensored model info", "Models & setup"),
-    Command("/raw", "Toggle raw output mode", "Session"),
     Command("/shortcuts", "Show keyboard shortcuts", "Session"),
     Command("/todo", "Manage session todos (add/done/rm/list)", "Context & tools", repl=False),
     Command("/cost", "Show token cost estimates", "Context & tools", repl=False),

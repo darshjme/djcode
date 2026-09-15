@@ -622,11 +622,6 @@ async def handle_slash_command(
             period = "all"
         render_stats(console, period=period)
 
-    elif command == "/raw":
-        operator.raw = not operator.raw
-        state = "on" if operator.raw else "off"
-        console.print(f"[green]Raw mode:[/] {state}")
-
     elif command in ("/exit", "/quit", "/q"):
         console.print("[dim]Goodbye.[/]")
         return False
