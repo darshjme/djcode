@@ -202,13 +202,9 @@ If a blocking agent (Kavach, Varuna, Mitra, Indra) flags CRITICAL, remaining age
 
 Cyberpunk terminal dashboard built on Textual. Not a gimmick -- it's how you monitor 19 agents running in parallel.
 
-- **MatrixRain** -- animated falling green characters
 - **AgentStatusBar** -- all 19 agents with live state indicators (IDLE/ASSIGNED/RESEARCHING/EXECUTING/REVIEWING/DONE/ERROR)
 - **HackerHeader** -- military HUD top bar with system telemetry
-- **TokenBurnRate** -- real-time ASCII sparkline of token consumption
 - **ContextBar** -- context window utilization meter
-- **ThreatPanel** -- blocking agent alerts from Kavach, Varuna, Mitra, Indra
-- **ArmyView** -- bird's eye grid of all agents, color-coded by tier
 
 ### Agent State Machine with Event Streaming
 
@@ -551,7 +547,7 @@ src/djcode/
 ├── status.py               # Fixed bottom toolbar
 ├── updater.py              # Auto-update checker
 ├── tui.py                  # Main Textual TUI app
-├── tui_hacker.py           # Cyberpunk widgets (MatrixRain, AgentHUD, ThreatPanel)
+├── tui_hacker.py           # Cyberpunk widgets (AgentStatusBar, HackerHeader, ProgressHUD, ContextBar)
 ├── tui_panels.py           # Panel components for dashboard
 ├── tui_theme.py            # Color system (gold, matrix green, tier colors)
 ├── context_engine.py       # Context window management
