@@ -92,7 +92,8 @@ def redact_config(value, name=""):
     default=None,
     help="Run a task with wave execution strategy then exit",
 )
-@click.option("--repl", "use_repl", is_flag=True, help="Use the line-oriented REPL instead of the full-screen TUI.")
+@click.option("--repl", "use_repl", is_flag=True, help="(default) Use the line-oriented REPL.")
+@click.option("--tui", "use_tui", is_flag=True, help="Use the experimental full-screen Textual TUI instead of the REPL.")
 @click.option("--design-packs", is_flag=True, help="List seven bundled original design references (offline).")
 @click.option("--design-pack", type=str, help="Print a design reference, or add it to the supplied prompt.")
 @click.option("--design-export", type=click.Path(path_type=Path), help="Export the selected design reference and original SVG to a new directory.")
@@ -124,6 +125,7 @@ def main(
     army: bool,
     wave: str | None,
     use_repl: bool,
+    use_tui: bool,
     setup: bool,
     scheduler: bool,
     revision: bool,
@@ -257,7 +259,7 @@ def main(
             if changed.get("updated") and changed.get("entrypoint"):
                 env = {**os.environ, "DJCODE_UPDATE_REEXEC": changed["commit"]}
                 os.execve(changed["entrypoint"], [changed["entrypoint"], *sys.argv[1:]], env)
-        if setup or wave or prompt or use_repl or not sys.stdin.isatty():
+        if setup or wave or prompt or not use_tui or not sys.stdin.isatty():
             provider, model = prepare(provider, model, force_setup=setup)
         if setup:
             return
@@ -316,12 +318,8 @@ def main(
                     auto_accept=auto_accept,
                 )
             )
-        elif use_repl:
-            from djcode.repl import run_repl
-            asyncio.run(run_repl(provider=provider, model=model, bypass_rlhf=bypass_rlhf,
-                                 auto_accept=auto_accept, show_thinking=thinking))
-        else:
-            # Default: Textual TUI
+        elif use_tui:
+            # Opt-in experimental Textual TUI
             from djcode.app import run_tui
 
             run_tui(
@@ -332,6 +330,11 @@ def main(
                 show_thinking=thinking,
                 army=army,
             )
+        else:
+            # Default: line-oriented REPL
+            from djcode.repl import run_repl
+            asyncio.run(run_repl(provider=provider, model=model, bypass_rlhf=bypass_rlhf,
+                                 auto_accept=auto_accept, show_thinking=thinking))
     except KeyboardInterrupt:
         console.print("\n[dim]Goodbye.[/]")
         sys.exit(130)
