@@ -1,12 +1,27 @@
 """Updater acceptance with real release directories and atomic symlinks, no installs."""
 import hashlib
 import json
+import os
 import subprocess
 
 import httpx
 import pytest
 from djcode import managed_update as updater
 from djcode import config
+
+# Managed releases are a POSIX-only distribution channel and the product says so
+# in code: perform_update() and rollback() both return "manual_required" when
+# os.name != "posix" (managed_update.py), because the channel is install.sh, the
+# release layout is venv/bin/*, and activation swaps a directory symlink with
+# os.replace -- which on Windows raises WinError 5 for directories, and needs
+# SeCreateSymbolicLinkPrivilege to create one in the first place. The tests below
+# drive that POSIX flow end to end. Skipping them on nt is the honest outcome;
+# the nt contract itself is asserted by the two non_posix tests at the bottom of
+# this file, so the behaviour is covered on every platform, not silently dropped.
+posix_channel = pytest.mark.skipif(
+    os.name != 'posix',
+    reason='Managed release channel is POSIX-only (install.sh, venv/bin, directory symlinks)',
+)
 
 
 @pytest.fixture
@@ -21,8 +36,11 @@ def managed(monkeypatch, tmp_path):
         return directory
     old = release('old', 'a' * 40)
     previous = release('previous', 'b' * 40)
-    (prefix / 'current').symlink_to(old)
-    (prefix / 'previous').symlink_to(previous)
+    try:
+        (prefix / 'current').symlink_to(old)
+        (prefix / 'previous').symlink_to(previous)
+    except OSError as error:  # Windows without SeCreateSymbolicLinkPrivilege.
+        pytest.skip(f'symlink creation unavailable on this host: {error}')
     monkeypatch.setattr(updater.sys, 'prefix', str(old / 'venv'))
     monkeypatch.setattr(config, 'load_config', lambda: {'update_mode': 'auto'})
     monkeypatch.delenv('DJCODE_NO_UPDATE_CHECK', raising=False)
@@ -36,6 +54,7 @@ def manifest():
     return {'schema': 1, 'repository': updater.REPOSITORY, 'branch': 'main', 'commit': commit, 'version': '4.2.0', 'run_id': 17, 'sha256': hashlib.sha256(b'wheel').hexdigest(), 'wheel_url': f'https://github.com/{updater.REPOSITORY}/releases/download/build-{commit[:12]}/djcode-4.2.0-py3-none-any.whl'}
 
 
+@posix_channel
 def test_update_and_stale_process_is_current(managed, monkeypatch):
     prefix, old, previous, release, _ = managed
     new = release('new', 'c' * 40)
@@ -51,6 +70,7 @@ def test_update_and_stale_process_is_current(managed, monkeypatch):
     assert staged == [True]
 
 
+@posix_channel
 def test_update_staging_failure_keeps_links_and_sanitizes_error(managed, monkeypatch):
     prefix, old, previous, _, _ = managed
     monkeypatch.setattr(updater, 'verified_manifest', lambda client: manifest())
@@ -63,6 +83,7 @@ def test_update_staging_failure_keeps_links_and_sanitizes_error(managed, monkeyp
     assert (prefix / 'previous').resolve() == previous
 
 
+@posix_channel
 def test_update_activation_failure_restores_current(managed, monkeypatch):
     prefix, old, _, release, _ = managed
     new = release('new', 'c' * 40)
@@ -75,6 +96,7 @@ def test_update_activation_failure_restores_current(managed, monkeypatch):
     assert (prefix / 'current').resolve() == old
 
 
+@posix_channel
 def test_rollback_and_partial_failure(managed, monkeypatch):
     prefix, old, previous, _, modes = managed
     link = updater.atomic_link
@@ -93,6 +115,7 @@ def test_rollback_and_partial_failure(managed, monkeypatch):
     assert modes[-1] == ('update_mode', 'manual')
 
 
+@posix_channel
 def test_both_operations_respect_lock(managed):
     import fcntl
     prefix, old, previous, _, _ = managed
@@ -104,6 +127,7 @@ def test_both_operations_respect_lock(managed):
     assert (prefix / 'previous').resolve() == previous
 
 
+@posix_channel
 def test_unmanaged_and_offline_preserve_install(managed, monkeypatch):
     prefix, old, previous, _, _ = managed
     def offline(*args):
@@ -148,6 +172,7 @@ def test_malformed_receipt_is_unmanaged(managed):
     assert updater.installation() is None
 
 
+@posix_channel
 @pytest.mark.parametrize('payload', [[], {'prefix': '/unrelated', 'repository': updater.REPOSITORY}])
 def test_bad_current_receipt_preserves_links(managed, monkeypatch, payload):
     prefix, old, previous, _, _ = managed
@@ -162,6 +187,7 @@ def test_bad_current_receipt_preserves_links(managed, monkeypatch, payload):
     assert (prefix / 'previous').resolve() == previous
 
 
+@posix_channel
 def test_rollback_rejects_outside_target(managed, tmp_path):
     prefix, old, _, _, _ = managed
     outside = tmp_path / 'release.outside'
@@ -208,3 +234,14 @@ def test_rollback_non_posix_returns_without_lock_import(managed, monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr(updater, 'os', SimpleNamespace(name='nt'))
     assert updater.rollback()['status'] == 'manual_required'
+
+
+def test_update_non_posix_returns_without_lock_import(managed, monkeypatch):
+    """The other half of the nt contract: no fcntl, no symlink swap, no update."""
+    from types import SimpleNamespace
+    monkeypatch.setattr(updater, 'os', SimpleNamespace(name='nt', environ={}))
+    def unreachable(client):
+        raise AssertionError('non-POSIX update must refuse before any network call')
+    monkeypatch.setattr(updater, 'verified_manifest', unreachable)
+    answer = updater.perform_update()
+    assert answer['status'] == 'manual_required' and not answer['updated']
