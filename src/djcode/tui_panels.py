@@ -1,14 +1,12 @@
 """Textual TUI side-panel widgets for DJcode v4.0 -- Hacker Command Center.
 
-Provides a tabbed side panel with eight views:
+Provides a tabbed side panel with six views:
   - ProjectPanel  -- directory tree file browser
   - AgentPanel    -- live agent status dashboard with RA integration
   - StatsPanel    -- session statistics
   - MCPPanel      -- MCP extension status
   - TodoPanel     -- per-session todo list
   - CostPanel     -- token usage with cost estimates
-  - ArmyTabPanel  -- bird's eye view of all 18 agents
-  - IntelPanel    -- context utilization + threat monitor
   - SidePanel     -- tabbed container that hosts them all
 
 Uses Textual 8.x API with reactive() properties and message passing.
@@ -55,14 +53,12 @@ from djcode.tui_theme import (
     SUCCESS,
     ERROR,
     WARNING,
-    INFO,
     THINKING,
     TIER_4_CONTROL,
     TIER_3_ENTERPRISE,
     TIER_2_ARCHITECTURE,
     TIER_1_EXECUTION,
     MATRIX_GREEN,
-    HUD_BORDER,
 )
 
 
@@ -1328,324 +1324,7 @@ class CostPanel(Vertical):
 
 
 # ---------------------------------------------------------------------------
-# 7. ArmyTabPanel -- Bird's eye view of all 18 agents (NEW)
-# ---------------------------------------------------------------------------
-
-class ArmyTabPanel(Vertical):
-    """Compact army overview panel for the sidebar tab.
-
-    Shows all 18 agents in a grid with state indicators and tier badges.
-    Wraps the ArmyView widget from tui_hacker with panel chrome.
-    """
-
-    DEFAULT_CSS = """
-    ArmyTabPanel {
-        width: 100%;
-        height: 100%;
-        background: #0A0A0A;
-        padding: 1;
-    }
-
-    ArmyTabPanel .army-header {
-        height: 3;
-        background: #0A0A0A;
-        color: #FFD700;
-        text-align: center;
-        padding: 1;
-        text-style: bold;
-        border-bottom: double #1E1E1E;
-    }
-
-    ArmyTabPanel .army-summary {
-        height: 1;
-        color: #555555;
-        padding: 0 1;
-    }
-
-    ArmyTabPanel .army-grid-area {
-        height: 1fr;
-        background: #0A0A0A;
-        overflow-y: auto;
-        padding: 0 1;
-    }
-    """
-
-    active_count: reactive[int] = reactive(0)
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self._agent_states: dict[str, str] = {}
-        self._agent_tasks: dict[str, str] = {}
-        # Import roster from hacker module
-        from djcode.tui_hacker import AGENT_ROSTER as ROSTER, AGENT_STATES as STATES, TIER_COLORS
-        self._roster = ROSTER
-        self._state_map = STATES
-        self._tier_colors = TIER_COLORS
-        for name, _, _ in self._roster:
-            self._agent_states[name] = "idle"
-            self._agent_tasks[name] = ""
-
-    def compose(self) -> ComposeResult:
-        yield Label(f"  [{GOLD}]ARMY[/] // OPERATIVE GRID", classes="army-header")
-        yield Static(
-            f"  [{DIM}]{len(self._roster)} operatives[/] [{TEXT}]| 0 active[/]",
-            id="army-summary-display",
-            classes="army-summary",
-        )
-        yield Rule()
-        yield ScrollableContainer(
-            Static(self._build_grid(), id="army-grid-text"),
-            id="army-grid-scroll",
-            classes="army-grid-area",
-        )
-
-    def _build_grid(self) -> str:
-        """Build text-based agent grid: 2 columns for sidebar width."""
-        lines: list[str] = []
-        cols = 2
-        rows_needed = (len(self._roster) + cols - 1) // cols
-
-        for row_idx in range(rows_needed):
-            row_parts: list[str] = []
-            for col_idx in range(cols):
-                idx = row_idx * cols + col_idx
-                if idx < len(self._roster):
-                    name, title, tier = self._roster[idx]
-                    state = self._agent_states.get(name, "idle")
-                    icon, color = self._state_map.get(state, ("--", TEXT_DIM))
-                    tier_color = self._tier_colors.get(tier, TEXT_DIM)
-                    task = self._agent_tasks.get(name, "")
-                    task_snip = task[:10] + ".." if len(task) > 12 else (task or ".." * 5)
-
-                    if state == "idle":
-                        cell = f"[{DIM}]{icon} {name:<10}[/] [{DIM}]{task_snip}[/]"
-                    else:
-                        cell = f"[{color}]{icon}[/] [{tier_color}]{name:<10}[/] [{TEXT}]{task_snip}[/]"
-                    row_parts.append(cell)
-                else:
-                    row_parts.append(" " * 24)
-
-            lines.append("  " + f" [{HUD_BORDER}]|[/] ".join(row_parts))
-            if row_idx < rows_needed - 1:
-                lines.append(f"  [{HUD_BORDER}]{'-' * 52}[/]")
-
-        return "\n".join(lines)
-
-    def set_agent_state(self, name: str, state: str, task: str = "") -> None:
-        if name in self._agent_states:
-            self._agent_states[name] = state
-            if task:
-                self._agent_tasks[name] = task
-            self.active_count = sum(
-                1 for s in self._agent_states.values() if s not in ("idle", "ready")
-            )
-            self._refresh()
-
-    def _refresh(self) -> None:
-        try:
-            self.query_one("#army-summary-display", Static).update(
-                f"  [{DIM}]{len(self._roster)} operatives[/]"
-                f" [{TEXT}]| [{SUCCESS}]{self.active_count}[/] active[/]"
-            )
-            self.query_one("#army-grid-text", Static).update(self._build_grid())
-        except Exception:
-            pass
-
-
-# ---------------------------------------------------------------------------
-# 8. IntelPanel -- Context utilization + Threat monitor (NEW)
-# ---------------------------------------------------------------------------
-
-class IntelPanel(Vertical):
-    """Intelligence panel: context utilization and threat alerts.
-
-    Combines:
-    - Context window utilization bar (how much of the LLM context is used)
-    - Threat monitor from sentinel agents (Kavach, Varuna, Mitra, Indra)
-    """
-
-    DEFAULT_CSS = """
-    IntelPanel {
-        width: 100%;
-        height: 100%;
-        background: #0A0A0A;
-        padding: 1;
-    }
-
-    IntelPanel .intel-header {
-        height: 3;
-        background: #0A0A0A;
-        color: #FFD700;
-        text-align: center;
-        padding: 1;
-        text-style: bold;
-        border-bottom: double #1E1E1E;
-    }
-
-    IntelPanel .intel-section {
-        color: #00FF41;
-        text-style: bold;
-        padding: 1 0 0 0;
-    }
-
-    IntelPanel .context-display {
-        padding: 0 1;
-        height: 3;
-    }
-
-    IntelPanel .threat-area {
-        height: 1fr;
-        background: #0A0A0A;
-        overflow-y: auto;
-    }
-    """
-
-    context_used: reactive[int] = reactive(0)
-    context_max: reactive[int] = reactive(1_000_000)
-    alert_count: reactive[int] = reactive(0)
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self._alerts: list[dict[str, str]] = []
-        self._sentinel_colors = {
-            "Kavach": "#FF1744",
-            "Varuna": "#FF6D00",
-            "Mitra": "#FF8C00",
-            "Indra": "#D50000",
-        }
-
-    def compose(self) -> ComposeResult:
-        yield Label(f"  [{GOLD}]INTEL[/] // SYSTEM INTELLIGENCE", classes="intel-header")
-        yield Rule()
-
-        # Context section
-        yield Label("CONTEXT WINDOW", classes="intel-section")
-        yield Static(self._build_context_bar(), id="intel-context-bar", classes="context-display")
-        yield Rule()
-
-        # Sentinel status
-        yield Label("SENTINEL STATUS", classes="intel-section")
-        yield Static(self._build_sentinel_line(), id="intel-sentinel-line")
-        yield Rule()
-
-        # Threat alerts
-        yield Label("THREAT ALERTS", classes="intel-section")
-        yield Static(
-            f"  [{DIM}]({self.alert_count} alerts)[/]",
-            id="intel-alert-count",
-        )
-        yield ScrollableContainer(id="intel-threat-scroll", classes="threat-area")
-
-    def _build_context_bar(self) -> str:
-        pct = int((self.context_used / self.context_max) * 100) if self.context_max > 0 else 0
-        pct = min(100, max(0, pct))
-
-        if pct < 50:
-            color = SUCCESS
-        elif pct < 75:
-            color = GOLD
-        elif pct < 90:
-            color = WARNING
-        else:
-            color = ERROR
-
-        bar_width = 28
-        filled = int(pct / 100 * bar_width)
-        empty = bar_width - filled
-
-        used_str = self._fmt(self.context_used)
-        max_str = self._fmt(self.context_max)
-
-        return (
-            f"  [{color}]{'#' * filled}[/][{DIM}]{'-' * empty}[/]"
-            f" [{color}]{pct}%[/]\n"
-            f"  [{DIM}]{used_str} / {max_str} tokens[/]"
-        )
-
-    def _build_sentinel_line(self) -> str:
-        parts: list[str] = []
-        for name, color in self._sentinel_colors.items():
-            parts.append(f"[{color}]{name}[/]")
-        return "  " + f" [{DIM}]|[/] ".join(parts) + f" [{DIM}]-- monitoring[/]"
-
-    def update_context(self, used: int, maximum: int) -> None:
-        self.context_used = used
-        self.context_max = maximum
-        try:
-            self.query_one("#intel-context-bar", Static).update(
-                self._build_context_bar()
-            )
-        except Exception:
-            pass
-
-    def add_threat(self, agent: str, severity: str, message: str) -> None:
-        """Add a threat alert from a sentinel agent."""
-        self._alerts.insert(0, {
-            "agent": agent,
-            "severity": severity,
-            "message": message,
-            "time": time.strftime("%H:%M:%S"),
-        })
-        if len(self._alerts) > 50:
-            self._alerts = self._alerts[:50]
-        self.alert_count = len(self._alerts)
-        self._refresh_threats()
-
-    def clear_threats(self) -> None:
-        self._alerts.clear()
-        self.alert_count = 0
-        self._refresh_threats()
-
-    def _refresh_threats(self) -> None:
-        try:
-            self.query_one("#intel-alert-count", Static).update(
-                f"  [{DIM}]({self.alert_count} alerts)[/]"
-            )
-
-            container = self.query_one("#intel-threat-scroll", ScrollableContainer)
-            container.remove_children()
-
-            if not self._alerts:
-                container.mount(
-                    Static(f"  [{DIM}]All clear. No active threats.[/]")
-                )
-                return
-
-            for alert in self._alerts[:20]:
-                sev_color = {
-                    "critical": ERROR,
-                    "warning": WARNING,
-                    "info": INFO,
-                }.get(alert["severity"], TEXT)
-
-                agent_color = self._sentinel_colors.get(alert["agent"], TEXT)
-                sev_icon = {
-                    "critical": "!!!",
-                    "warning": "! !",
-                    "info": " i ",
-                }.get(alert["severity"], " ? ")
-
-                container.mount(Static(
-                    f"  [{sev_color}][{sev_icon}][/]"
-                    f" [{DIM}]{alert['time']}[/]"
-                    f" [{agent_color}]{alert['agent']}[/]"
-                    f" [{TEXT}]{alert['message']}[/]"
-                ))
-
-        except Exception:
-            pass
-
-    @staticmethod
-    def _fmt(count: int) -> str:
-        if count >= 1_000_000:
-            return f"{count / 1_000_000:.1f}M"
-        if count >= 1_000:
-            return f"{count / 1_000:.0f}K"
-        return str(count)
-
-
-# ---------------------------------------------------------------------------
-# 9. SidePanel -- Tabbed container for all panels (8 tabs now)
+# 9. SidePanel -- Tabbed container for all panels
 # ---------------------------------------------------------------------------
 
 class SidePanel(Vertical):
@@ -1726,10 +1405,6 @@ class SidePanel(Vertical):
                 yield TodoPanel()
             with TabPane("Cost", id="cost-tab"):
                 yield CostPanel()
-            with TabPane("Army", id="army-tab"):
-                yield ArmyTabPanel()
-            with TabPane("Intel", id="intel-tab"):
-                yield IntelPanel()
 
     # -- Convenience accessors for the parent app --
 
@@ -1757,14 +1432,6 @@ class SidePanel(Vertical):
     def cost_panel(self) -> CostPanel:
         return self.query_one(CostPanel)
 
-    @property
-    def army_panel(self) -> ArmyTabPanel:
-        return self.query_one(ArmyTabPanel)
-
-    @property
-    def intel_panel(self) -> IntelPanel:
-        return self.query_one(IntelPanel)
-
 
 # ---------------------------------------------------------------------------
 # Exports
@@ -1779,8 +1446,6 @@ __all__ = [
     "MCPPanel",
     "TodoPanel",
     "CostPanel",
-    "ArmyTabPanel",
-    "IntelPanel",
     "SidePanel",
     "FilteredDirectoryTree",
 ]
