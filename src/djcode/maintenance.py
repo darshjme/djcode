@@ -14,7 +14,7 @@ def run_checks() -> dict:
     try:
         files = list(package.rglob("*.py"))
         for path in files:
-            ast.parse(path.read_text(), filename=str(path))
+            ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         checks.append({"name": "Python syntax", "status": "passed", "detail": f"{len(files)} modules"})
     except (SyntaxError, OSError, UnicodeError) as error:
         checks.append({"name": "Python syntax", "status": "failed", "detail": str(error)})

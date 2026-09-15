@@ -169,7 +169,7 @@ def install(prefix, bin_dir, *, source=None, ref="main"):
             if manifest:
                 receipt.update({key: manifest[key] for key in ("commit", "version")})
                 receipt["run_id"] = manifest.get("run_id", 0)
-            (release / ".djcode-install.json").write_text(json.dumps(receipt, indent=2))
+            (release / ".djcode-install.json").write_text(json.dumps(receipt, indent=2), encoding="utf-8")
             if old:
                 atomic_link(old, prefix / "previous")
             atomic_link(release, prefix / "current")

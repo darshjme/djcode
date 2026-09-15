@@ -32,7 +32,7 @@ def _load_last_check() -> dict[str, Any]:
     """Load last update check info."""
     try:
         if UPDATE_CHECK_FILE.exists():
-            return json.loads(UPDATE_CHECK_FILE.read_text())
+            return json.loads(UPDATE_CHECK_FILE.read_text(encoding="utf-8"))
     except Exception:
         pass
     return {}
@@ -42,7 +42,7 @@ def _save_last_check(data: dict[str, Any]) -> None:
     """Save update check info."""
     try:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        UPDATE_CHECK_FILE.write_text(json.dumps(data, indent=2))
+        UPDATE_CHECK_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception:
         pass
 

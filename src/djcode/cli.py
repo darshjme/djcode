@@ -182,9 +182,9 @@ def main(
                 example = get_example(design_pack)
                 license_text = get_license()
                 design_export.mkdir(parents=True, exist_ok=False)
-                (design_export / f"{design_pack}.md").write_text(reference)
-                (design_export / f"{design_pack}.svg").write_text(example)
-                (design_export / "LICENSE").write_text(license_text)
+                (design_export / f"{design_pack}.md").write_text(reference, encoding="utf-8")
+                (design_export / f"{design_pack}.svg").write_text(example, encoding="utf-8")
+                (design_export / "LICENSE").write_text(license_text, encoding="utf-8")
                 console.print(f"Exported original design reference to {design_export.resolve()}", markup=False)
                 return
         except (ValueError, OSError) as error:

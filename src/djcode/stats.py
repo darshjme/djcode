@@ -32,7 +32,7 @@ def _load_stats() -> dict[str, Any]:
     """Load stats from disk."""
     if STATS_FILE.exists():
         try:
-            return json.loads(STATS_FILE.read_text())
+            return json.loads(STATS_FILE.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
     return {"sessions": [], "version": 1}
@@ -41,7 +41,7 @@ def _load_stats() -> dict[str, Any]:
 def _save_stats(data: dict[str, Any]) -> None:
     """Save stats to disk."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    STATS_FILE.write_text(json.dumps(data, indent=2))
+    STATS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def record_session_start(model: str, provider: str) -> str:

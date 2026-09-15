@@ -264,7 +264,7 @@ class RecipeManager:
             path = RECIPES_DIR / f"{recipe.name}.recipe.json"
             if not path.exists():
                 try:
-                    path.write_text(json.dumps(recipe.to_dict(), indent=2))
+                    path.write_text(json.dumps(recipe.to_dict(), indent=2), encoding="utf-8")
                 except OSError as e:
                     logger.warning("Failed to write built-in recipe %s: %s", recipe.name, e)
 
@@ -290,7 +290,7 @@ class RecipeManager:
                 )
 
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
             return Recipe.from_dict(data)
         except (json.JSONDecodeError, OSError) as e:
             raise ValueError(f"Failed to parse recipe '{name}': {e}")
@@ -298,7 +298,7 @@ class RecipeManager:
     def save(self, recipe: Recipe) -> Path:
         """Save a recipe to disk. Returns the file path."""
         path = RECIPES_DIR / f"{recipe.name}.recipe.json"
-        path.write_text(json.dumps(recipe.to_dict(), indent=2))
+        path.write_text(json.dumps(recipe.to_dict(), indent=2), encoding="utf-8")
         return path
 
     def list_recipes(self) -> list[Recipe]:
@@ -306,7 +306,7 @@ class RecipeManager:
         recipes: list[Recipe] = []
         for path in sorted(RECIPES_DIR.glob("*.recipe.json")):
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 recipes.append(Recipe.from_dict(data))
             except (json.JSONDecodeError, OSError, KeyError) as e:
                 logger.warning("Skipping malformed recipe %s: %s", path.name, e)

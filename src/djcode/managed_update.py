@@ -25,7 +25,7 @@ def result(status: str, message: str, *, ok=True, updated=False, **extra):
 def read_receipt(release: Path, prefix: Path) -> dict:
     if release.parent != prefix or not release.name.startswith("release."):
         raise ValueError("Release is outside the managed directory")
-    info = json.loads((release / ".djcode-install.json").read_text())
+    info = json.loads((release / ".djcode-install.json").read_text(encoding="utf-8"))
     if (not isinstance(info, dict) or info.get("repository") != REPOSITORY
             or not isinstance(info.get("prefix"), str) or Path(info["prefix"]).resolve() != prefix):
         raise ValueError("Invalid managed installation receipt")
@@ -36,7 +36,7 @@ def installation() -> tuple[Path, dict] | None:
     release = Path(sys.prefix).resolve().parent
     receipt = release / ".djcode-install.json"
     try:
-        info = json.loads(receipt.read_text())
+        info = json.loads(receipt.read_text(encoding="utf-8"))
         prefix = Path(info["prefix"]).resolve()
         if Path(sys.prefix).name != "venv":
             return None
@@ -140,7 +140,7 @@ def stage_build(prefix: Path, info: dict, manifest: dict, client: httpx.Client) 
             raise ValueError("Staged package version differs from its manifest")
         bounded_run([str(venv / "bin/djcode"), "--check"], limit=60, env=env)
         receipt = {**info, "commit": manifest["commit"], "version": manifest["version"], "run_id": manifest.get("run_id", 0)}
-        (release / ".djcode-install.json").write_text(json.dumps(receipt, indent=2))
+        (release / ".djcode-install.json").write_text(json.dumps(receipt, indent=2), encoding="utf-8")
         return release
     except BaseException:
         shutil.rmtree(release)  # Only this newly created, never activated build.

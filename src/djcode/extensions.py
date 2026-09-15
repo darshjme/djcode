@@ -207,7 +207,7 @@ class ExtensionManager:
         """Load extensions from config file."""
         if EXTENSIONS_FILE.exists():
             try:
-                data = json.loads(EXTENSIONS_FILE.read_text())
+                data = json.loads(EXTENSIONS_FILE.read_text(encoding="utf-8"))
                 for ext_data in data.get("extensions", []):
                     ext = Extension.from_dict(ext_data)
                     self.extensions[ext.name] = ext
@@ -221,7 +221,7 @@ class ExtensionManager:
             "extensions": [ext.to_dict() for ext in self.extensions.values()],
             "version": 1,
         }
-        EXTENSIONS_FILE.write_text(json.dumps(data, indent=2))
+        EXTENSIONS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def add(
         self,

@@ -654,7 +654,7 @@ class SessionDB:
             return 0
 
         try:
-            data = json.loads(json_path.read_text())
+            data = json.loads(json_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return 0
 
