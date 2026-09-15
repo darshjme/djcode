@@ -10,6 +10,7 @@ Supports foreground (blocking) and background (async) execution.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 import uuid
@@ -27,14 +28,101 @@ _background_tasks: dict[str, dict[str, Any]] = {}
 _parent_context: ContextVar[tuple[Any, bool, Any] | None] = ContextVar("agent_parent", default=None)
 _spawn_depth: ContextVar[int] = ContextVar("agent_depth", default=0)
 
+# Name of the subagent whose tool call is currently awaiting approval, so a UI
+# that cannot take an extra argument can still title the prompt
+# "Approve file_write - via Prometheus" (DESIGN-CLI.md 5.3).
+_approval_agent: ContextVar[str | None] = ContextVar("agent_approval_agent", default=None)
+
+
+def current_approval_agent() -> str | None:
+    """The subagent this approval request belongs to, or None for the operator.
+
+    Read this from an approval callback to label the prompt. It is only set
+    while a child agent's request is being presented.
+    """
+    return _approval_agent.get()
+
 
 @contextmanager
 def agent_context(provider: Any, auto_accept: bool = False, approval_callback=None):
+    """Publish the caller's provider and consent state to a spawned agent.
+
+    The tuple is what a child *sees*, not what a child *gets*: SSOT P1-12 says
+    consent does not descend, so `_spawn_foreground` re-derives the child's
+    approval path from this tuple through `_child_approval`. `auto_accept` is
+    kept in the tuple because the executor re-publishes its own state through
+    this same context manager for its own nested dispatches.
+    """
     token = _parent_context.set((provider, auto_accept, approval_callback))
     try:
         yield
     finally:
         _parent_context.reset(token)
+
+
+def _child_approval(agent_name: str, auto_accept: bool, approval_callback):
+    """Build the approval callback a spawned agent runs under.
+
+    SSOT P1-12 / GAP B10: a subagent must not inherit the parent's
+    auto-accept. The parent's callback is wrapped so every non-read tool call
+    the child makes is presented, carrying the agent's name, no matter what
+    mode the parent is in.
+
+    The one case the blueprint does not cover is a parent with auto-accept and
+    *no* callback at all -- headless `djcode --wave ... --yes`
+    (`cli.py:349` builds an Orchestrator with `auto_accept` and no callback).
+    There is no human on the other end of that process to present anything to,
+    and the operator granted the whole run on the command line, so the child
+    runs under an explicit standing grant that logs each tool it covers,
+    rather than being silently denied every write.
+    """
+    if approval_callback is None:
+        if not auto_accept:
+            return None  # The executor denies and says why; nothing to wrap.
+
+        async def standing_grant(name: str, arguments: dict) -> bool:
+            logger.info(
+                "Subagent %s: %s auto-approved by the session's standing grant "
+                "(no approval channel is attached to this process)",
+                agent_name,
+                name,
+            )
+            return True
+
+        return standing_grant
+
+    passes_agent_name = _accepts_agent_name(approval_callback)
+
+    async def presented(name: str, arguments: dict) -> bool:
+        # Wrappers nest (a subagent may spawn its own), and the outermost call
+        # is the one closest to the tool. Whoever claims the name first is the
+        # agent that actually asked; inner wrappers relay it unchanged.
+        token = _approval_agent.set(agent_name) if _approval_agent.get() is None else None
+        try:
+            requester = _approval_agent.get() or agent_name
+            if passes_agent_name:
+                decision = approval_callback(name, arguments, agent_name=requester)
+            else:
+                decision = approval_callback(name, arguments)
+            if inspect.isawaitable(decision):
+                decision = await decision
+            return bool(decision)
+        finally:
+            if token is not None:
+                _approval_agent.reset(token)
+
+    return presented
+
+
+def _accepts_agent_name(callback) -> bool:
+    """True when `callback` can take the agent name as a keyword argument."""
+    try:
+        parameters = inspect.signature(callback).parameters
+    except (TypeError, ValueError):
+        return False
+    if "agent_name" in parameters:
+        return parameters["agent_name"].kind is not inspect.Parameter.POSITIONAL_ONLY
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
 
 
 async def cancel_background_agents() -> None:
@@ -129,17 +217,21 @@ async def _spawn_foreground(spec: Any, task: str, max_rounds: int | None) -> str
         parent = _parent_context.get()
         if parent is None:
             provider = Provider(ProviderConfig.from_config())
-            auto_accept = False
-            approval_callback = None
+            parent_auto_accept = False
+            parent_callback = None
             owns_provider = True
         else:
-            provider, auto_accept, approval_callback = parent
+            provider, parent_auto_accept, parent_callback = parent
+        # SSOT P1-12: the child never inherits `auto_accept`. Every non-read
+        # tool it calls goes through `_child_approval`, which presents the
+        # request under this agent's name.
+        approval_callback = _child_approval(spec.name, parent_auto_accept, parent_callback)
         if max_rounds is not None:
             spec = replace(spec, max_tool_rounds=max_rounds)
         bus = ContextBus()
         bus.set_task(task, spec.role.value)
         runner = AgentRunner(
-            provider, spec, bus, auto_accept=auto_accept, approval_callback=approval_callback
+            provider, spec, bus, auto_accept=False, approval_callback=approval_callback
         )
         start = time.monotonic()
         result = await runner.run(task)
@@ -240,7 +332,10 @@ async def execute_agent_status(agent_id: str = "") -> str:
         if info["status"] == "completed" and info["result"]:
             result = info["result"]
             if len(result) > 5000:
-                result = result[:5000] + "\n... (truncated, full result available)"
+                # W3 spills the full text to a file and links it from here.
+                # Until then the message states what happened to the tail.
+                dropped = len(result) - 5000
+                result = result[:5000] + f"\n... (truncated; {dropped} chars dropped)"
             lines.append(f"\nResult:\n{result}")
         elif info["status"] == "failed" and info["error"]:
             lines.append(f"\nError: {info['error']}")

@@ -37,6 +37,82 @@ __all__ = [
 
 _RA_TOOLS: frozenset[str] = frozenset({"file_read", "grep", "glob", "git"})
 
+# -- Source-tree sampling (GAP B14: the RA used to search only *.py) ----------
+
+#: Directories that hold dependencies, build output or VCS internals. Counting
+#: their extensions would describe the toolchain, not the project.
+_SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        "__pycache__",
+        "node_modules",
+        "site-packages",
+        "vendor",
+        "venv",
+        "env",
+        "dist",
+        "build",
+        "target",
+        "out",
+        "bin",
+        "obj",
+        "coverage",
+        "htmlcov",
+        "migrations",
+    }
+)
+
+#: Extensions that are data or artefacts rather than source worth grepping.
+_SKIP_EXTS: frozenset[str] = frozenset(
+    {
+        ".pyc",
+        ".pyo",
+        ".pyd",
+        ".so",
+        ".dll",
+        ".dylib",
+        ".exe",
+        ".o",
+        ".a",
+        ".lib",
+        ".class",
+        ".jar",
+        ".zip",
+        ".gz",
+        ".tar",
+        ".whl",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".ico",
+        ".svg",
+        ".webp",
+        ".pdf",
+        ".mp4",
+        ".mp3",
+        ".wav",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".lock",
+        ".log",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+        ".bin",
+        ".dat",
+        ".pack",
+        ".idx",
+    }
+)
+
+#: How many extensions the derived glob may name, and how much of the tree the
+#: scan is allowed to look at before it answers from what it has seen.
+_MAX_GLOB_EXTENSIONS = 3
+_SCAN_FILE_BUDGET = 8000
+_SCAN_DIR_BUDGET = 1500
+
 # Git subcommands the RA is allowed to run (read-only operations)
 _GIT_READONLY_COMMANDS: frozenset[str] = frozenset(
     {
@@ -155,6 +231,63 @@ class ResearchAssistant:
         self.cwd = cwd or os.getcwd()
         self.bus = context_bus
         self.timeout_s = timeout_s
+        self._extensions: list[str] | None = None
+
+    # -- What this tree is actually written in ---------------------------------
+
+    def tree_extensions(self) -> list[str]:
+        """The most common source extensions under `cwd`, most common first.
+
+        GAP B14: the RA hardcoded `*.py`, so on a Rust, TypeScript or Go
+        project every keyword search returned nothing and the briefing was
+        empty. The answer is cheap -- one bounded `os.scandir` walk, memoised
+        for the life of this RA -- and it is the difference between a briefing
+        and a blank page.
+
+        Returns at most `_MAX_GLOB_EXTENSIONS` extensions, each including the
+        leading dot. An empty list means "no idea", and callers widen to `*`.
+        """
+        if self._extensions is not None:
+            return self._extensions
+
+        counts: dict[str, int] = {}
+        files = 0
+        directories = 0
+        queue = [self.cwd]
+        while queue and files < _SCAN_FILE_BUDGET and directories < _SCAN_DIR_BUDGET:
+            current = queue.pop(0)
+            directories += 1
+            try:
+                with os.scandir(current) as entries:
+                    for entry in entries:
+                        try:
+                            if entry.is_dir(follow_symlinks=False):
+                                if entry.name.startswith(".") or entry.name in _SKIP_DIRS:
+                                    continue
+                                queue.append(entry.path)
+                            elif entry.is_file(follow_symlinks=False):
+                                files += 1
+                                ext = os.path.splitext(entry.name)[1].lower()
+                                if ext and len(ext) <= 8 and ext not in _SKIP_EXTS:
+                                    counts[ext] = counts.get(ext, 0) + 1
+                        except OSError:
+                            continue
+            except OSError:
+                continue
+
+        # Count first, then name, so the result is stable for equal counts.
+        ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        self._extensions = [ext for ext, _ in ranked[:_MAX_GLOB_EXTENSIONS]]
+        return self._extensions
+
+    def _search_glob(self) -> str:
+        """The `include` glob for grep, derived from the tree, `*` if unknown."""
+        extensions = self.tree_extensions()
+        if not extensions:
+            return "*"
+        if len(extensions) == 1:
+            return f"*{extensions[0]}"
+        return "*.{" + ",".join(ext.lstrip(".") for ext in extensions) + "}"
 
     # -- Main entry point ------------------------------------------------------
 
@@ -258,14 +391,25 @@ class ResearchAssistant:
         """Grep for a keyword and return matching code snippets."""
         snippets: list[CodeSnippet] = []
         try:
+            include = self._search_glob()
             result = await dispatch_tool(
                 "grep",
                 {
                     "pattern": keyword,
                     "path": self.cwd,
-                    "include": "*.py",
+                    "include": include,
                 },
             )
+            # A brace glob is ripgrep syntax; the plain-grep fallback in
+            # tools/grep.py passes `--include` to fnmatch, which has no
+            # braces. Rather than guess which binary answered, widen once
+            # when the filtered pass found nothing -- that also picks up a
+            # keyword living in a file type the tree scan never ranked.
+            if include != "*" and (not result or result.startswith("No matches found")):
+                result = await dispatch_tool(
+                    "grep",
+                    {"pattern": keyword, "path": self.cwd, "include": "*"},
+                )
             if not result or result.startswith("Error"):
                 return snippets
 
@@ -334,21 +478,43 @@ class ResearchAssistant:
     async def _gather_directory_context(self, file_patterns: list[str]) -> str:
         """Get relevant directory structure for context."""
         try:
-            result = await dispatch_tool(
-                "glob",
-                {
-                    "pattern": "**/*.py",
-                    "path": self.cwd,
-                },
+            # Same defect as B14 one function up: the pattern was `**/*.py`, so
+            # a non-Python project got an empty directory section. `glob` uses
+            # `Path.glob`, which has no brace syntax, so ask once per extension.
+            patterns = [f"**/*{ext}" for ext in self.tree_extensions()] or ["**/*"]
+            gathered = await asyncio.gather(
+                *(
+                    dispatch_tool("glob", {"pattern": pattern, "path": self.cwd})
+                    for pattern in patterns
+                ),
+                return_exceptions=True,
             )
-            if not result or result.startswith("Error"):
+
+            files: list[str] = []
+            seen: set[str] = set()
+            for result in gathered:
+                if not isinstance(result, str) or not result or result.startswith("Error"):
+                    continue
+                if result.startswith("No files matching"):
+                    continue
+                for line in result.split("\n"):
+                    entry = line.strip()
+                    # The glob tool appends its own "... (N total matches...)"
+                    # footer; it is not a path and must not be counted as one.
+                    if not entry or entry.startswith("...") or entry in seen:
+                        continue
+                    seen.add(entry)
+                    files.append(entry)
+
+            if not files:
                 return ""
 
-            files = [f.strip() for f in result.split("\n") if f.strip()]
-            # Trim to manageable size
-            if len(files) > 50:
+            # GAP B15: count before trimming. The old code sliced to 50 and
+            # then computed `len(files) - 50`, which is always 0.
+            total = len(files)
+            if total > 50:
                 files = files[:50]
-                files.append(f"... and {len(files) - 50} more files")
+                files.append(f"... and {total - 50} more files")
 
             return "\n".join(files)
         except Exception as e:

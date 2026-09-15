@@ -2,6 +2,13 @@
 
 Renders comprehensive docs in the terminal using Rich.
 Access via /docs command in the REPL.
+
+Every version string, agent count and tool count rendered by this module is
+**derived** from the running package at import time -- ``__version__``, the two
+agent registries and ``TOOL_DEFINITIONS``. Nothing here may hard-code a number
+the code already knows: in-product help that drifts from the product is worse
+than no help at all, which is exactly how this file came to advertise
+"DJcode v2.0.1" and "22 specialist agents" from a 4.3.0 package (GAP B25).
 """
 
 from __future__ import annotations
@@ -9,16 +16,45 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markdown import Markdown
 
+from djcode import __version__
+from djcode.agents.content_registry import list_content_agents
+from djcode.agents.registry import AGENT_SPECS, AgentSpec
+from djcode.provider import TOOL_DEFINITIONS
+
 GOLD = "#FFD700"
 
+# Sources of truth, resolved once at import.
+#
+# NOTE: there is no ``registry.list_agents()`` in this package -- ``AGENT_SPECS``
+# is the dev-agent registry itself, and ``registry.list_content_agents()`` is
+# only a compatibility shim that forwards to ``content_registry``. We read both
+# originals directly so the counts cannot drift behind a shim.
+DEV_AGENTS: list[AgentSpec] = list(AGENT_SPECS.values())
+CONTENT_AGENTS: list[AgentSpec] = list(list_content_agents())
+DEV_AGENT_COUNT = len(DEV_AGENTS)
+CONTENT_AGENT_COUNT = len(CONTENT_AGENTS)
+AGENT_COUNT = DEV_AGENT_COUNT + CONTENT_AGENT_COUNT
+TOOL_COUNT = len(TOOL_DEFINITIONS)
+
+
+def _agent_table(specs: list[AgentSpec]) -> str:
+    """Render a markdown table straight from the agent specs themselves."""
+    rows = ["| Name | Role | Temp | Tools |", "|------|------|------|-------|"]
+    for spec in specs:
+        tools = "Read-only" if spec.read_only else f"{len(spec.tools_allowed)} tools"
+        rows.append(f"| {spec.name} | {spec.title} | {spec.temperature} | {tools} |")
+    return "\n".join(rows)
+
+
 DOCS_SECTIONS = {
-    "overview": """
-# DJcode v2.0.1
+    "overview": f"""
+# DJcode v{__version__}
 
 **The last coding CLI you'll ever need.**
 
-Local-first AI coding agent with 22 specialist agents, semantic routing,
-infinite context engine, and tool extraction for any model.
+Local-first AI coding agent with {DEV_AGENT_COUNT} engineering profiles,
+{CONTENT_AGENT_COUNT} content profiles and {TOOL_COUNT} model-callable tools,
+semantic routing, an infinite context engine, and tool extraction for any model.
 
 Built by Darshankumar Joshi · github.com/darshjme/djcode · cli.darshj.ai
 
@@ -29,13 +65,15 @@ curl -fsSL https://cli.darshj.ai/install.sh | bash
 
 ## Quick Start
 ```
-djcode                          # Interactive REPL
-djcode "write a REST API"      # One-shot mode
+djcode                          # Interactive REPL (the default surface)
+djcode "write a REST API"       # One-shot mode
 djcode --model gemma4           # Specific model
 djcode --auto-accept            # Skip tool confirmations
+djcode --tui                    # Experimental full-screen Textual TUI
+djcode --setup                  # Provider, sign-in and model setup
 ```
 """,
-    "commands": """
+    "commands": f"""
 # Slash Commands
 
 ## Build & Ship
@@ -77,7 +115,7 @@ djcode --auto-accept            # Skip tool confirmations
 | /auth | Configure API keys |
 | /auto | Toggle auto-accept |
 | /stats [7d|30d] | Usage dashboard with heatmap |
-| /agents | Show all 22 agents |
+| /agents | Show all {AGENT_COUNT} agents |
 | /memory | Memory tier stats |
 | /skill list|add|remove | Manage teachable skills |
 | /shortcuts | Keyboard shortcuts reference |
@@ -100,38 +138,17 @@ djcode --auto-accept            # Skip tool confirmations
 | / | Interactive command picker |
 | Escape | Cancel current input |
 """,
-    "agents": """
-# Agent Registry — 22 Specialists
+    "agents": f"""
+# Agent Registry — {AGENT_COUNT} Specialists
 
-## Dev Agents (10)
-| Name | Role | Temp | Tools |
-|------|------|------|-------|
-| Vyasa | Orchestrator | 0.3 | All |
-| Prometheus | Coder | 0.4 | All |
-| Sherlock | Debugger | 0.2 | All |
-| Vishwakarma | Architect | 0.5 | Read-only |
-| Dharma | Reviewer | 0.3 | Read-only |
-| Agni | Tester | 0.3 | All |
-| Garuda | Scout | 0.3 | Read-only |
-| Vayu | DevOps | 0.3 | All |
-| Saraswati | Docs | 0.6 | All |
-| Shiva | Refactorer | 0.3 | All |
+## Engineering Profiles ({DEV_AGENT_COUNT})
+{_agent_table(DEV_AGENTS)}
 
-## Content Agents (12)
-| Name | Role |
-|------|------|
-| Narada | Campaign Director |
-| Valmiki | Script Writer |
-| Chitragupta | Social Strategist |
-| Maya | Image Prompter |
-| Kubera | Video Director |
-| Tvastar | ComfyUI Expert |
-| Gandharva | Audio Prompter |
-| Brihaspati | SEO Analyst |
-| Saraswati | Brand Voice |
-| Vishvakarma | Thumbnail Designer |
-| Hanuman | Content Repurposer |
-| Garuda | Trend Scout |
+## Content Profiles ({CONTENT_AGENT_COUNT})
+{_agent_table(CONTENT_AGENTS)}
+
+Rendered from the live registries; "Tools" is the size of each profile's
+allowed tool set, or "Read-only" where the profile cannot write.
 """,
     "providers": """
 # Providers
@@ -218,7 +235,7 @@ Recipes are stored at `~/.djcode/recipes/` as JSON files.
     "privacy": """
 # Privacy & Security
 
-- **DO_NOT_TRACK=1** set by default
+- **DO_NOT_TRACK=1** exported at startup unless you set the variable yourself
 - Zero analytics, zero telemetry, zero phone-home
 - No account required, no sign-up, no email
 - All inference runs locally via Ollama/MLX

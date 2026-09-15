@@ -9,11 +9,11 @@
   ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 ```
 
-### 19 engineering profiles. 12 content profiles. 15 model-callable tools.
+### 19 engineering profiles. 12 content profiles. 22 model-callable tools.
 
 A local-first coding agent with explicit provider choice, tool approvals, and recoverable sessions.
 
-[![Version](https://img.shields.io/badge/version-4.0.1-gold?style=flat-square)](https://github.com/darshjme/djcode/releases)
+[![Version](https://img.shields.io/badge/version-4.3.0-gold?style=flat-square)](https://github.com/darshjme/djcode/releases)
 [![Python](https://img.shields.io/badge/python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![macOS](https://img.shields.io/badge/Apple%20Silicon-native-black?style=flat-square&logo=apple&logoColor=white)](#install)
@@ -73,7 +73,7 @@ Illustrative transcript, not a measured benchmark or an actual execution log.
   ██████╔╝╚█████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
   ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
 
-  v4.2.0 · ollama/gemma4 · Apple Silicon · 100% local
+  v4.3.0 · ollama/gemma4 · Apple Silicon · 100% local
 
   djcode> /orchestra build a JWT auth system with refresh rotation
 
@@ -97,6 +97,12 @@ Illustrative transcript, not a measured benchmark or an actual execution log.
 ```
 
 ```bash
+# Interactive REPL — the default surface, no flag needed
+$ djcode
+
+# Experimental full-screen Textual TUI
+$ djcode --tui
+
 # One-shot mode
 $ djcode "binary search in Rust"
 
@@ -139,9 +145,11 @@ Agent confidence is model-reported, not a calibrated accuracy score. Critical bl
 
 See the [full agent roster below](#agents).
 
-### 15 Model-callable Tools and 2 Internal Dispatch Helpers
+### 22 Model-callable Tools and 2 Internal Dispatch Helpers
 
-The provider schema exposes 15 tools to models. The dispatch layer also includes `agent_status` and `parallel_execute` as internal helpers; these two are not advertised in the native model tool schema.
+The provider schema exposes 22 tools to models: 15 core tools plus 7 capability tools. The dispatch layer also includes `agent_status` and `parallel_execute` as internal helpers; these two are not advertised in the native model tool schema.
+
+**Core tools**
 
 | Tool | What it does |
 |------|-------------|
@@ -160,8 +168,25 @@ The provider schema exposes 15 tools to models. The dispatch layer also includes
 | `notebook_read` | Read Jupyter notebook cells and outputs |
 | `notebook_edit` | Edit notebook cells programmatically |
 | `spawn_agent` | Spawn a specialist agent for a sub-task |
-| `agent_status` (internal) | Check status of spawned agents |
-| `parallel_execute` (internal) | Run multiple tool calls concurrently |
+
+**Capability tools**
+
+| Tool | What it does |
+|------|-------------|
+| `schedule` | Create, list and cancel durable shell schedules (needs `djcode --scheduler`) |
+| `process` | Start, read and stop background shell jobs for this session |
+| `skill` | Discover and load user skills from `SKILL.md` files |
+| `mcp` | Discover MCP servers, list their tool schemas, call their tools |
+| `browser` | Drive a session-owned Chromium: open, snapshot, act, screenshot |
+| `computer` | Drive the desktop by screenshot, pointer and keyboard (OS permission required) |
+| `workflow` | Execute an explicit tool dependency graph via DAF/DDAL |
+
+**Internal dispatch helpers** (not in the model tool schema)
+
+| Tool | What it does |
+|------|-------------|
+| `agent_status` | Check status of spawned agents |
+| `parallel_execute` | Run multiple tool calls concurrently |
 
 The model decides which tools to use, chains them together, and loops until the task is done. Full agentic execution with confirmation prompts before anything destructive.
 
@@ -201,6 +226,8 @@ If a blocking agent (Kavach, Varuna, Mitra, Indra) flags CRITICAL, remaining age
 ### Hacker TUI
 
 Cyberpunk terminal dashboard built on Textual. Not a gimmick -- it's how you monitor 19 agents running in parallel.
+
+Opt in with `djcode --tui`. The default surface is the line-oriented REPL; the TUI is experimental and kept for parallel-agent monitoring.
 
 - **AgentStatusBar** -- all 19 agents with live state indicators (IDLE/ASSIGNED/RESEARCHING/EXECUTING/REVIEWING/DONE/ERROR)
 - **HackerHeader** -- military HUD top bar with system telemetry
@@ -393,13 +420,59 @@ djcode> /model gemini-flash
 
 ### CLI Flags
 
+`djcode` with no arguments starts the interactive REPL. `djcode "<prompt>"` runs one shot and exits.
+
+**Session**
+
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--model, -m` | Model name (fuzzy matched) | `gemma4` |
-| `--provider, -p` | Provider | `ollama` |
+| `--provider, -p` | Provider name, or an OpenAI-compatible base URL | `ollama` |
+| `--url, -u` | OpenAI-compatible base URL; shorthand for `--provider <url>` | -- |
 | `--bypass-rlhf` | Unrestricted expert mode | off |
 | `--auto-accept` | Skip tool confirmation prompts | off |
+| `--thinking` / `--no-thinking` | Stream the model's reasoning | `--thinking` |
+| `--repl` | Line-oriented REPL. This is already the default; the flag only states it | default |
+| `--tui` | Experimental full-screen Textual TUI. Wins if combined with `--repl` | off |
+| `--wave "<task>"` | Run one task with the multi-agent wave strategy, then exit | -- |
+| `--vyasa` | Send the prompt to your Vyasa fleet; with no prompt, list employees | off |
+| `--vyasa-employee <id>` | Fleet employee ID or alias (requires `--vyasa`) | -- |
+| `--vyasa-session <name>` | Persistent Vyasa conversation name | `default` |
+
+**Setup and configuration**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--setup` | Choose provider, supported sign-in method and model, then exit | -- |
+| `--config` | Print the current configuration (secrets redacted) and exit | -- |
+
+**Maintenance**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--check` | Installation syntax, registry and fatal-lint checks; non-zero exit on failure | -- |
+| `--lint` | Alias for `--check` | -- |
+| `--revision` | Print the installed version and managed build revision, no network | -- |
+| `--update` | Install the latest verified canonical build into the managed install | -- |
+| `--rollback` | Restore the previous managed build and switch updates to manual | -- |
+| `--update-mode auto\|manual\|disabled` | Set the managed-update policy, then exit | `auto` |
+| `--no-update` | Skip the update check for this invocation only | off |
+| `--scheduler` | Run the durable command scheduler until stopped (workspace host) | -- |
+
+**Design references**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--design-packs` | List the seven bundled original design references (offline) | -- |
+| `--design-pack <id>` | Print a reference, or append it to the supplied prompt | -- |
+| `--design-export <dir>` | Export the selected reference and its SVG to a new directory | -- |
+
+**Meta**
+
+| Flag | Description | Default |
+|------|-------------|---------|
 | `--version` | Print version and exit | -- |
+| `-h, --help` | Show help and exit | -- |
 
 ### REPL Slash Commands
 
@@ -544,11 +617,13 @@ src/djcode/
 ├── auth.py                 # Provider registry + API key management
 ├── status.py               # Fixed bottom toolbar
 ├── updater.py              # Auto-update checker
-├── tui.py                  # Main Textual TUI app
+├── app.py                  # Main Textual TUI app (--tui)
+├── tui.py                  # Keybindings, mode state and the command picker
 ├── tui_hacker.py           # Cyberpunk widgets (AgentStatusBar, HackerHeader, ProgressHUD, ContextBar)
 ├── tui_panels.py           # Panel components for dashboard
 ├── tui_theme.py            # Color system (gold, matrix green, tier colors)
-├── context_engine.py       # Context window management
+├── extensions.py           # MCP extension lifecycle (allowlisted subprocess env)
+├── capabilities.py         # The 7 capability tools (schedule, skill, mcp, ...)
 ├── tools/
 │   ├── bash.py             # Shell execution with timeout
 │   ├── file_read.py        # Read with line numbers
@@ -590,8 +665,7 @@ src/djcode/
     ├── base.py             # Provider base class
     ├── anthropic.py        # Anthropic (Claude) with prompt caching support
     ├── openai.py           # OpenAI-compatible
-    ├── google.py           # Google AI (Gemini)
-    └── router.py           # Provider selection and fallback
+    └── google.py           # Google AI (Gemini)
 ```
 
 ---

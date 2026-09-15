@@ -105,7 +105,9 @@ class ConnectScreen(ModalScreen[dict | None]):
         if self.stage == "provider":
             self._providers(event.value)
         elif self.stage == "model":
-            self._options([(m, m) for m in self.models if event.value.lower() in m.lower()][:100])
+            query = event.value.lower()
+            matched = [m["name"] for m in self.models if query in m["name"].lower()]
+            self._options([(name, name) for name in matched[:100]])
 
     @on(OptionList.OptionSelected)
     async def choose(self, event):
@@ -229,7 +231,7 @@ class ConnectScreen(ModalScreen[dict | None]):
             f"Choose a model from {self.provider}, or enter its exact ID.\n{found['message']}",
             "Search or enter model ID",
         )
-        self._options([(m, m) for m in self.models[:100]])
+        self._options([(m["name"], m["name"]) for m in self.models[:100]])
 
     async def _finish(self):
         self.busy = True

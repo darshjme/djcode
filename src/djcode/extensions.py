@@ -12,9 +12,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from djcode import __version__
 from djcode.config import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,72 @@ MCP_JSONRPC_VERSION = "2.0"
 MCP_INITIALIZE = "initialize"
 MCP_TOOLS_LIST = "tools/list"
 MCP_TOOLS_CALL = "tools/call"
+
+# ---------------------------------------------------------------------------
+# Subprocess environment allowlist (GAP B11)
+# ---------------------------------------------------------------------------
+#
+# An MCP extension is an arbitrary third-party program that DJcode launches on
+# the user's machine. Passing it `os.environ` handed every server every secret
+# the shell happened to be carrying -- ANTHROPIC_API_KEY, OPENAI_API_KEY,
+# AWS_SECRET_ACCESS_KEY, GITHUB_TOKEN, database URLs -- for the lifetime of the
+# session, with no prompt and no record.
+#
+# The replacement is an allowlist, not a denylist, and that direction is the
+# whole point: a denylist leaks every secret-bearing variable nobody has
+# thought of yet, including ones invented after this code was written.
+MCP_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USERPROFILE",
+        "USER",
+        "USERNAME",
+        "LANG",
+        "LC_ALL",
+        "TERM",
+        "SHELL",
+        "COMSPEC",
+        "SYSTEMROOT",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+    }
+)
+
+# XDG_* is allowed wholesale: it is the POSIX base-directory contract (config,
+# data, cache, runtime dir) that well-behaved servers read to find their own
+# files, and it is specified to carry paths, never credentials.
+MCP_ENV_ALLOWED_PREFIXES = ("XDG_",)
+
+
+def build_mcp_env(
+    declared: Mapping[str, str] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Build the environment for an MCP subprocess from a strict allowlist.
+
+    Inherited from the parent process: exactly the names in
+    ``MCP_ENV_ALLOWLIST`` plus anything matching ``MCP_ENV_ALLOWED_PREFIXES``
+    (``XDG_*``). Everything else is dropped, including every API key.
+
+    Added on top: the extension's own declared ``env`` entries. Those are the
+    consent channel -- a user who writes ``{"GITHUB_TOKEN": "ghp_..."}`` into
+    one extension's config has chosen to give that one variable to that one
+    server. A declared entry whose value is the empty string means "pass my
+    current value of this variable through", so a secret can be shared with a
+    server without being copied in plaintext into ``extensions.json``; if the
+    parent does not have it either, the child gets an empty string.
+    """
+    source = os.environ if environ is None else environ
+    env = {
+        key: value
+        for key, value in source.items()
+        if key in MCP_ENV_ALLOWLIST or key.startswith(MCP_ENV_ALLOWED_PREFIXES)
+    }
+    for key, value in (declared or {}).items():
+        env[key] = source.get(key, "") if value == "" else value
+    return env
 
 
 @dataclass
@@ -72,8 +141,6 @@ class MCPConnection:
         self.image_paths = []
 
     async def start(self):
-        import os
-
         try:
             self._process = await asyncio.create_subprocess_exec(
                 self.extension.cmd,
@@ -81,7 +148,7 @@ class MCPConnection:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env={**os.environ, **self.extension.env},
+                env=build_mcp_env(self.extension.env),
                 limit=2**22,
                 start_new_session=os.name != "nt",
             )
@@ -96,7 +163,7 @@ class MCPConnection:
                 {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
-                    "clientInfo": {"name": "djcode", "version": "4.2.1"},
+                    "clientInfo": {"name": "djcode", "version": __version__},
                 },
             )
             await self._write({"jsonrpc": "2.0", "method": "notifications/initialized"})

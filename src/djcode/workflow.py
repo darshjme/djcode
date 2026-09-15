@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sqlite3
@@ -18,8 +19,54 @@ from pathlib import Path
 
 from djcode.config import CONFIG_DIR, load_config
 
+logger = logging.getLogger(__name__)
+
 SOURCE = Path(__file__).with_name("daf_engine")
 _BUILD_LOCK = None
+
+#: Set once the process has told the user that DAF is unavailable, so a session
+#: that runs a hundred tools does not print the same paragraph a hundred times.
+_FALLBACK_ANNOUNCED = False
+
+_ERROR_PREFIXES = ("error", "traceback", "[exit code", "command timed out")
+
+DEPENDENCY_SKIPPED = "Error: dependency failed; tool was not executed"
+
+
+class DAFUnavailableError(RuntimeError):
+    """No Rust toolchain, so the DAF engine cannot be built on this machine.
+
+    A subclass of RuntimeError so that callers written against the old
+    contract keep catching it. `WorkflowEngine.execute` treats it as the
+    signal to fall back to the native scheduler (SSOT non-goal 12).
+    """
+
+
+def _result_ok(result) -> bool:
+    """Mirror the DAF host's success heuristic for a dispatched tool result."""
+    text = result if isinstance(result, str) else str(result)
+    return not text.lower().startswith(_ERROR_PREFIXES)
+
+
+def topological_order(nodes: list[dict]) -> list[dict]:
+    """Return `nodes` ordered so every node follows its dependencies.
+
+    `validate_nodes` has already proven the graph is acyclic and that every
+    dependency names a real node, so a single stable Kahn pass is enough and
+    cannot loop forever. Ties keep the caller's original order.
+    """
+    remaining = list(nodes)
+    done: set[str] = set()
+    ordered: list[dict] = []
+    while remaining:
+        ready = [n for n in remaining if all(dep in done for dep in n.get("dependencies", []))]
+        if not ready:  # pragma: no cover - validate_nodes rejects such graphs
+            raise ValueError("workflow has a cycle or unknown dependency")
+        for node in ready:
+            ordered.append(node)
+            done.add(node["id"])
+        remaining = [n for n in remaining if n["id"] not in done]
+    return ordered
 
 
 async def engine_path() -> Path:
@@ -42,7 +89,7 @@ async def engine_path() -> Path:
         return binary
     cargo = shutil.which("cargo")
     if not cargo:
-        raise RuntimeError(
+        raise DAFUnavailableError(
             "DAF is the default engine. Install Rust/Cargo to build it, or set"
             " DJCODE_DAF_ENGINE to a built DJcode engine. /workflow native "
             "explicitly selects the legacy engine."
@@ -111,23 +158,62 @@ class WorkflowEngine:
         if self.event_callback:
             self.event_callback(event)
 
+    def _fall_back_to_native(self, error: DAFUnavailableError) -> None:
+        """Switch this engine to the native scheduler and say so once.
+
+        SSOT non-goal 12: a machine without a Rust toolchain must keep working.
+        The first tool call of a fresh install is the worst possible place to
+        raise, so the engine degrades instead: same tools, same approvals, one
+        node at a time.
+        """
+        global _FALLBACK_ANNOUNCED
+        self.mode = "native"
+        self._record({"event": "engine_fallback", "engine": "native", "reason": str(error)})
+        if not _FALLBACK_ANNOUNCED:
+            _FALLBACK_ANNOUNCED = True
+            logger.warning(
+                "No Rust toolchain found; running the native workflow engine instead of DAF. "
+                "Tools still run one at a time with the same approvals. "
+                "Install Rust/Cargo or set DJCODE_DAF_ENGINE to restore parallel scheduling."
+            )
+
+    async def _execute_native(self, nodes, dispatch):
+        """Run the graph in-process, one node at a time, in dependency order.
+
+        `validate_nodes` has already proven acyclicity, so a topological walk
+        is well defined. A node whose dependency produced an error is not
+        dispatched -- it records the same message the DAF host uses -- because
+        skipping is what the DAG asked for and running it anyway would execute
+        a side effect against a precondition that never happened.
+        """
+        results = {}
+        for node in topological_order(nodes):
+            ident = node["id"]
+            dependencies = node.get("dependencies", [])
+            if any(not _result_ok(results.get(dep, "")) for dep in dependencies):
+                results[ident] = DEPENDENCY_SKIPPED
+                continue
+            self._record({"event": "tool", "id": ident, "name": node["name"]})
+            results[ident] = await dispatch(node["name"], node["arguments"])
+        return results
+
     async def execute(self, nodes, dispatch, concurrency=1):
         validate_nodes(nodes)
         if not isinstance(concurrency, int) or not 1 <= concurrency <= 4:
             raise ValueError("concurrency must be 1..4")
         self.last_run = uuid.uuid4().hex
         self.last_events = []
-        if self.mode == "native":
-            results = {}
-            for node in nodes:
-                if node.get("dependencies"):
-                    raise ValueError("DAG dependencies require the DAF engine")
-                results[node["id"]] = await dispatch(node["name"], node["arguments"])
-            return results
-        if self.mode != "daf":
+        if self.mode not in {"native", "daf"}:
             raise ValueError(f"Unknown workflow engine: {self.mode}")
-        self._record({"event": "preparing", "engine": "DAF + DDAL"})
-        binary = await engine_path()
+        binary = None
+        if self.mode == "daf":
+            self._record({"event": "preparing", "engine": "DAF + DDAL"})
+            try:
+                binary = await engine_path()
+            except DAFUnavailableError as error:
+                self._fall_back_to_native(error)
+        if self.mode == "native":
+            return await self._execute_native(nodes, dispatch)
         process = await asyncio.create_subprocess_exec(
             str(binary),
             stdin=asyncio.subprocess.PIPE,
@@ -149,9 +235,7 @@ class WorkflowEngine:
             except Exception as error:
                 result = f"Error: {error}"
             results[ident] = result
-            ok = not result.lower().startswith(
-                ("error", "traceback", "[exit code", "command timed out")
-            )
+            ok = _result_ok(result)
             process.stdin.write(
                 (json.dumps({"id": ident, "ok": ok, "result": result}) + "\n").encode()
             )
@@ -190,9 +274,7 @@ class WorkflowEngine:
                 if status or complete is None:
                     raise RuntimeError("DAF engine exited without a verified completion")
                 for node in nodes:
-                    results.setdefault(
-                        node["id"], "Error: dependency failed; tool was not executed"
-                    )
+                    results.setdefault(node["id"], DEPENDENCY_SKIPPED)
             return results
         finally:
             for task in pending:

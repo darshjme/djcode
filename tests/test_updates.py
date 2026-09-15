@@ -109,7 +109,11 @@ def wizard(monkeypatch, answers, saved, discovery):
         status, payload = discovery
         return httpx.Response(status, json=payload, request=httpx.Request('GET', endpoint))
 
+    async def discover_async(endpoint, headers):
+        return discover(endpoint, headers)
+
     monkeypatch.setattr(startup, 'discover', discover)
+    monkeypatch.setattr(startup, 'discover_async', discover_async)
     return endpoints
 
 

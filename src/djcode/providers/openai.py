@@ -139,6 +139,12 @@ class OpenAIProvider(BaseProvider):
             "stream": stream,
         }
 
+        if stream:
+            # Without this the API never sends the trailing usage event that
+            # _stream_response waits for, and every token count -- and so every
+            # cost figure downstream -- stays zero for the life of the session.
+            payload["stream_options"] = {"include_usage": True}
+
         if self._is_reasoning:
             # Reasoning models: use max_completion_tokens, no temperature
             payload["max_completion_tokens"] = max_tokens
@@ -160,7 +166,8 @@ class OpenAIProvider(BaseProvider):
         headers = self._headers()
 
         max_retries = 3
-        for attempt in range(max_retries):
+        attempt = 0
+        while attempt < max_retries:
             try:
                 if stream:
                     async for chunk in self._stream_response(url, payload, headers):
@@ -171,15 +178,26 @@ class OpenAIProvider(BaseProvider):
                 return
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
+                if status == 400 and self._rejected_stream_options(e.response, payload):
+                    # Deliberately does not spend a retry: nothing was streamed
+                    # (the status is raised before the first chunk) and the flag
+                    # is gone from the payload, so this branch cannot loop.
+                    logger.warning(
+                        "Endpoint rejected stream_options; retrying without usage reporting. "
+                        "Token counts stay zero for this request."
+                    )
+                    payload.pop("stream_options", None)
+                    continue
                 if status == 429 or status >= 500:
-                    if attempt < max_retries - 1:
+                    attempt += 1
+                    if attempt < max_retries:
                         logger.warning(
                             "OpenAI rate limit/server error %d, retry %d/%d",
                             status,
-                            attempt + 1,
+                            attempt,
                             max_retries,
                         )
-                        await self._backoff_sleep(attempt)
+                        await self._backoff_sleep(attempt - 1)
                         continue
                 self._raise_connection_error(e)
             except httpx.ConnectError:
@@ -188,10 +206,12 @@ class OpenAIProvider(BaseProvider):
                     "Check your network connection."
                 )
             except httpx.ReadTimeout:
-                if attempt < max_retries - 1:
-                    await self._backoff_sleep(attempt)
+                attempt += 1
+                if attempt < max_retries:
+                    await self._backoff_sleep(attempt - 1)
                     continue
                 raise ConnectionError("OpenAI request timed out after retries.")
+        raise ConnectionError("OpenAI request failed after retries.")
 
     async def _stream_response(
         self,
@@ -203,8 +223,20 @@ class OpenAIProvider(BaseProvider):
         # Track tool calls being built across deltas
         tool_buffers: dict[int, dict[str, str]] = {}  # index -> {id, name, arguments}
         usage = TokenUsage()
+        # The include_usage event is the LAST frame before [DONE], after the
+        # frame carrying finish_reason. Emitting the final chunk the moment the
+        # finish arrives would therefore always report zero tokens, so it is
+        # held back one frame and flushed below with the real numbers.
+        pending_calls: list[ToolCall] = []
+        pending_finish: FinishReason | None = None
 
         async with self._client.stream("POST", url, json=payload, headers=headers) as resp:
+            if resp.status_code >= 400:
+                # A streamed response has no .content until it is read. Without
+                # this, every error handler in chat() that inspects the body --
+                # _raise_connection_error and _rejected_stream_options -- would
+                # raise httpx.ResponseNotRead instead of a useful message.
+                await resp.aread()
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 line = line.strip()
@@ -289,14 +321,25 @@ class OpenAIProvider(BaseProvider):
                     elif finish_reason == "length":
                         fr = FinishReason.MAX_TOKENS
 
-                    usage.calculate_cost(self._model)
-                    self._track_usage(usage)
+                    if pending_finish is not None:
+                        # n=1 Chat Completions never sends two finish frames;
+                        # if one ever does, release the earlier one rather than
+                        # silently dropping its tool calls.
+                        yield ProviderChunk(
+                            tool_calls=pending_calls,
+                            finish_reason=pending_finish,
+                        )
+                    pending_calls = calls
+                    pending_finish = fr
 
-                    yield ProviderChunk(
-                        tool_calls=calls if calls else [],
-                        usage=usage,
-                        finish_reason=fr,
-                    )
+        if pending_finish is not None:
+            usage.calculate_cost(self._model)
+            self._track_usage(usage)
+            yield ProviderChunk(
+                tool_calls=pending_calls,
+                usage=usage,
+                finish_reason=pending_finish,
+            )
 
     async def _sync_response(
         self,
@@ -306,6 +349,10 @@ class OpenAIProvider(BaseProvider):
     ) -> AsyncIterator[ProviderChunk]:
         """Handle non-streaming OpenAI response."""
         payload_copy = {**payload, "stream": False}
+        # stream_options is only legal alongside stream=true; the API rejects
+        # the pair with a 400. chat() only sets it for streaming requests, so
+        # this is belt and braces for a caller that reuses a payload.
+        payload_copy.pop("stream_options", None)
 
         resp = await self._client.post(url, json=payload_copy, headers=headers)
         resp.raise_for_status()
@@ -368,6 +415,23 @@ class OpenAIProvider(BaseProvider):
             pass
         # Heuristic: ~4 chars per token for English
         return max(1, len(text) // 4)
+
+    @staticmethod
+    def _rejected_stream_options(response: httpx.Response, payload: dict[str, Any]) -> bool:
+        """True when a 400 is the endpoint refusing the include_usage flag.
+
+        stream_options is an OpenAI extension. Gateways and self-hosted
+        OpenAI-compatible servers behind a custom base_url may reject unknown
+        body fields outright, so asking for usage reporting must degrade to no
+        usage reporting rather than take the whole request down with it.
+        """
+        if "stream_options" not in payload:
+            return False
+        try:
+            body = response.text.lower()
+        except httpx.ResponseNotRead:  # pragma: no cover - body already closed
+            return False
+        return "stream_options" in body or "stream options" in body
 
     @staticmethod
     def _raise_connection_error(e: httpx.HTTPStatusError) -> None:

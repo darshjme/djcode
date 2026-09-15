@@ -1,8 +1,20 @@
 """Teachable skill system for DJcode.
 
-Users define skills as .skill.md files in ~/.djcode/skills/.
-Skills are loaded at startup and injected into the system prompt
-when relevant tags match the user's intent.
+A skill is a ``<name>.skill.md`` file or a ``<name>/SKILL.md`` directory. Four
+scopes are searched, nearest first::
+
+    ./.djcode/skills      project, DJcode
+    ./.claude/skills      project, Claude-compatible
+    ~/.djcode/skills      user, DJcode
+    ~/.claude/skills      user, Claude-compatible
+
+A name defined in a nearer scope shadows the same name in a farther one.
+
+Skills are disclosed *progressively*. The system prompt only ever receives a
+manifest of ``name: description`` lines — never a skill body. The model pulls a
+body on demand through the ``skill`` tool (``skill load <name>``). A 50 KB skill
+therefore costs tens of characters of prompt instead of 50 KB, and the prompt
+prefix stays stable enough to remain cacheable across turns.
 
 Slash commands:
     /skill list            — show all skills
@@ -14,11 +26,50 @@ Slash commands:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
 from djcode.config import CONFIG_DIR
+
+#: Skill files larger than this are skipped entirely.
+MAX_SKILL_BYTES = 131072
+
+#: Longest description rendered into the manifest, in characters.
+MAX_MANIFEST_DESCRIPTION = 160
+
+MANIFEST_HEADER = "## Available skills"
+MANIFEST_HINT = "Load a skill's full instructions with the `skill` tool before using it."
+
+_WORD_PATTERNS: dict[str, re.Pattern[str]] = {}
+
+
+def _word_pattern(term: str) -> re.Pattern[str] | None:
+    """Compile (and cache) a whole-word matcher for ``term``.
+
+    Lookarounds are used instead of word-boundary anchors: a boundary anchor
+    only fires next to a word character, so a term that begins or ends with a
+    non-word character (``c++``, ``.net``) would never match at all.
+    Returns ``None`` for a blank term, which matches nothing.
+    """
+    term = term.strip().lower()
+    if not term:
+        return None
+    pattern = _WORD_PATTERNS.get(term)
+    if pattern is None:
+        pattern = re.compile(rf"(?<!\w){re.escape(term)}(?!\w)")
+        _WORD_PATTERNS[term] = pattern
+    return pattern
+
+
+def _one_line(text: str, limit: int = MAX_MANIFEST_DESCRIPTION) -> str:
+    """Collapse ``text`` to a single line bounded to ``limit`` characters."""
+    collapsed = " ".join(text.split())
+    if len(collapsed) > limit:
+        collapsed = collapsed[: limit - 1].rstrip() + "…"
+    return collapsed
+
 
 # ---------------------------------------------------------------------------
 # Skill dataclass
@@ -135,29 +186,78 @@ class SkillManager:
     # Core CRUD
     # ------------------------------------------------------------------
 
+    def scope_dirs(self) -> list[Path]:
+        """Skill directories for this session, ordered nearest scope first.
+
+        An explicitly supplied ``skills_dir`` is used on its own: a caller that
+        names a directory means that directory and nothing else.
+        """
+        if self.skills_dir != self.SKILLS_DIR:
+            return [self.skills_dir]
+
+        candidates: list[Path] = []
+        try:
+            cwd: Path | None = Path.cwd()
+        except OSError:  # working directory deleted underneath us
+            cwd = None
+        if cwd is not None:
+            candidates.append(cwd / ".djcode" / "skills")
+            candidates.append(cwd / ".claude" / "skills")
+        candidates.append(self.skills_dir)  # ~/.djcode/skills
+        try:
+            home: Path | None = Path.home()
+        except (OSError, RuntimeError):  # no resolvable home
+            home = None
+        if home is not None:
+            candidates.append(home / ".claude" / "skills")
+
+        ordered: list[Path] = []
+        seen: set[str] = set()
+        for directory in candidates:
+            try:
+                key = str(directory.resolve())
+            except OSError:
+                key = str(directory)
+            if key in seen:  # project run from $HOME: same dir, listed once
+                continue
+            seen.add(key)
+            ordered.append(directory)
+        return ordered
+
+    @staticmethod
+    def _skill_files(directory: Path) -> list[Path]:
+        """Every skill file in one directory, in a deterministic order."""
+        try:
+            return sorted([*directory.glob("*.skill.md"), *directory.glob("*/SKILL.md")])
+        except OSError:
+            return []
+
     def load_skills(self) -> dict[str, Skill]:
-        """Load all .skill.md files from skills directory."""
+        """Load every skill visible from this session.
+
+        Scopes are walked nearest first, so a project skill shadows a user
+        skill of the same name rather than being silently overwritten by it.
+        """
         if self._cache is not None:
             return dict(self._cache)
 
         self._ensure_dir()
         skills: dict[str, Skill] = {}
 
-        paths = [*self.skills_dir.glob("*.skill.md"), *self.skills_dir.glob("*/SKILL.md")]
-        if self.skills_dir == self.SKILLS_DIR:
-            paths += list((Path.cwd() / ".djcode" / "skills").glob("*/SKILL.md"))
-        for path in sorted(paths):
-            try:
-                if path.stat().st_size > 131072:
+        for directory in self.scope_dirs():
+            for path in self._skill_files(directory):
+                try:
+                    if path.stat().st_size > MAX_SKILL_BYTES:
+                        continue
+                    text = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
                     continue
-                text = path.read_text(encoding="utf-8")
                 skill = Skill.from_markdown(
                     text, filename=path.parent.name if path.name == "SKILL.md" else path.name
                 )
-                if skill.name:
+                # Nearest scope wins: a name already claimed is never replaced.
+                if skill.name and skill.name not in skills:
                     skills[skill.name] = skill
-            except (OSError, UnicodeDecodeError):
-                continue
 
         self._cache = skills
         return dict(skills)
@@ -216,51 +316,53 @@ class SkillManager:
     # Prompt injection
     # ------------------------------------------------------------------
 
-    def inject_skills(self, system_prompt: str, user_message: str = "") -> str:
-        """Inject relevant skill instructions into the system prompt.
+    @staticmethod
+    def build_manifest(skills: Iterable[Skill]) -> str:
+        """Render the name + description manifest. Never a skill body."""
+        lines = [MANIFEST_HEADER, MANIFEST_HINT]
+        for skill in sorted(skills, key=lambda s: s.name):
+            description = _one_line(skill.description)
+            lines.append(f"- {skill.name}: {description}" if description else f"- {skill.name}")
+        return "\n".join(lines)
 
-        Skills are matched by checking if any of their tags appear in the
-        user's message. If no user message is provided, all skills are injected.
+    @staticmethod
+    def matches(skill: Skill, message: str) -> bool:
+        """Whole-word match of a skill's name or tags against a message.
+
+        Whole-word, not substring: a ``test`` tag must not fire on "latest",
+        and neither must a skill actually named ``test``.
+        """
+        message = message.lower()
+        terms = [skill.name, skill.name.replace("-", " "), *skill.tags]
+        for term in terms:
+            pattern = _word_pattern(term)
+            if pattern is not None and pattern.search(message):
+                return True
+        return False
+
+    def inject_skills(self, system_prompt: str, user_message: str = "") -> str:
+        """Append a skills manifest - names and descriptions only.
+
+        Progressive disclosure: the prompt advertises what exists, and the model
+        pulls a body with the ``skill`` tool when it decides to use one. Neither
+        ``instructions`` nor ``example`` is ever injected here, so prompt cost is
+        independent of skill size and the prompt prefix stays cacheable.
         """
         skills = self.load_skills()
         if not skills:
             return system_prompt
 
-        matched: list[Skill] = []
         if user_message:
-            msg_lower = user_message.lower()
-            for skill in skills.values():
-                # Match on tags or skill name appearing in message
-                if skill.name.replace("-", " ") in msg_lower:
-                    matched.append(skill)
-                    continue
-                if skill.name in msg_lower:
-                    matched.append(skill)
-                    continue
-                if any(tag.lower() in msg_lower for tag in skill.tags):
-                    matched.append(skill)
-                    continue
+            matched = [skill for skill in skills.values() if self.matches(skill, user_message)]
         else:
-            # No message context — inject all
+            # No message context: advertise everything. Names and descriptions
+            # are cheap; bodies are not, and are never sent from here.
             matched = list(skills.values())
 
         if not matched:
             return system_prompt
 
-        skill_blocks: list[str] = []
-        for skill in matched:
-            block = f"### Skill: {skill.name}\n{skill.description}\n\n{skill.instructions}"
-            if skill.example:
-                block += f"\n\n**Example:**\n{skill.example}"
-            skill_blocks.append(block)
-
-        injection = (
-            "\n\n---\n## User-Defined Skills\n"
-            "The following skills have been taught by the user. "
-            "Follow these instructions when relevant.\n\n" + "\n\n".join(skill_blocks)
-        )
-
-        return system_prompt + injection
+        return f"{system_prompt}\n\n{self.build_manifest(matched)}"
 
     # ------------------------------------------------------------------
     # Search / filter
@@ -338,7 +440,8 @@ def _cmd_list(manager: SkillManager) -> str:
     for s in skills:
         tags = f" [{', '.join(s.tags)}]" if s.tags else ""
         lines.append(f"  {s.name}{tags} — {s.description}")
-    lines.append(f"\n{len(skills)} skill(s) loaded from {manager.skills_dir}")
+    scopes = ", ".join(str(d) for d in manager.scope_dirs())
+    lines.append(f"\n{len(skills)} skill(s) loaded from: {scopes}")
     return "\n".join(lines)
 
 

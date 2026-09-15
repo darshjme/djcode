@@ -23,6 +23,8 @@ DJcode is a local-first AI coding CLI that runs entirely on your machine. No clo
 
 ## 2. Full Development Timeline
 
+> These rows quote past commit subjects. They describe what shipped at the time, not what the product does today. The legacy ASCII Buddy companion in particular has been removed; existing user data is retained.
+
 ### Phase 1: Core CLI (v1.0 - v1.2)
 
 | Date | Hash | Commit | Key Changes |
@@ -30,7 +32,6 @@ DJcode is a local-first AI coding CLI that runs entirely on your machine. No clo
 | 2026-03-20 | `94a1fce` | feat: DJcode Python CLI -- local-first AI coding agent | Initial codebase: CLI, REPL, provider abstraction, 8 tools, memory system, operator agent, config, tests. **29 files, +2,457 lines** |
 | 2026-04-06 | `78622cb` | fix: gemma4 default, tool fallback for incompatible models | Default model set to gemma4, tool fallback for models without function calling. **+28/-18 lines** |
 | 2026-04-07 | `b3dd3c9` | docs: world-class README with mermaid architecture | README rewrite with architecture diagrams, model tables, feature showcase. **+226/-58 lines** |
-| 2026-04-07 | `c85256e` | feat: buddy system (6 dharmic species), update checker, DAF | Buddy companion, update checker, onboarding wizard, provider expansion. **11 files, +1,308/-74 lines** |
 | 2026-04-07 | `83459a1` | fix: default model gemma4, e2e verified | Integration fix: buddy + updater + onboarding wired together. |
 | 2026-04-07 | `ecf61f7` | feat: v1.0.0 -- ASCII splash, onboarding, ChromaDB, status bar | ChromaDB added, uv.lock generated. **+1,557 lines** |
 | 2026-04-07 | `bf4208d` | feat: v1.1.0 -- bottom bar, interactive pickers, uncensored, 9 auth | Auth system (9 providers), interactive model/provider pickers, uncensored mode, status bar polish. **11 files, +771/-201 lines** |
@@ -182,7 +183,7 @@ graph TB
 |---|------|------:|---------|----------------------|
 | 1 | `src/djcode/__init__.py` | 4 | Package root, version | `__version__`, `__author__` |
 | 2 | `src/djcode/__main__.py` | 6 | Entry point | `python -m djcode` |
-| 3 | `src/djcode/cli.py` | 135 | Click CLI interface | `main()`, `--provider`, `--model`, `--raw`, `--auto-accept` |
+| 3 | `src/djcode/cli.py` | 135 | Click CLI interface | `main()`, `--provider`, `--model`, `--tui`, `--auto-accept` |
 | 4 | `src/djcode/repl.py` | 1,070 | Interactive REPL loop | `run_repl()`, `handle_slash_command()`, `print_banner()` |
 | 5 | `src/djcode/tui.py` | 456 | TUI keybindings + modes | `ModeState`, `register_keybindings()`, `show_command_picker()`, `ProgressTracker` |
 | 6 | `src/djcode/status.py` | 150 | Bottom toolbar | `StatusBar` |
@@ -342,11 +343,10 @@ graph TB
 | 28 | `/image <concept>` | Maya | Generate image prompts |
 | 29 | `/video <concept>` | Kubera | Cinematic video prompts |
 | 30 | `/social <topic>` | Chitragupta | Social media content |
-| 31 | `/agents` | repl | Show all 22 agents roster |
+| 31 | `/agents` | repl | Show the full agent roster (19 engineering + 12 content) |
 | 32 | `/stats` | stats | Usage dashboard with activity heatmap |
 | 33 | `/stats 7d` | stats | Last 7 days stats |
 | 34 | `/stats 30d` | stats | Last 30 days stats |
-| 38 | `/raw` | repl | Toggle raw mode (no formatting) |
 | 39 | `/shortcuts` | tui | Show keyboard shortcuts |
 | 40 | `/exit` | repl | Exit DJcode |
 | 41 | `/quit` | repl | Exit DJcode (alias) |
@@ -445,5 +445,3 @@ graph TB
 ---
 
 *Generated 2026-04-07. Source of truth: git log + source code.*
-
-The legacy ASCII Buddy companion has been removed. Historical commit descriptions above describe past releases, not current features. Existing user data is retained.

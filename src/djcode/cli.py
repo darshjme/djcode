@@ -145,7 +145,10 @@ def redact_config(value, name=""):
 @click.option(
     "--vyasa",
     is_flag=True,
-    help="Send the prompt to your Vyasa fleet; list employees when no prompt is given.",
+    help=(
+        "Send the prompt to your Vyasa fleet; list employees when no prompt is given. "
+        "The roster comes from your fleet server; this CLI ships no persona list of its own."
+    ),
 )
 @click.option("--vyasa-employee", help="Vyasa employee ID or alias (requires --vyasa).")
 @click.option("--vyasa-session", default="default", help="Persistent Vyasa conversation name.")

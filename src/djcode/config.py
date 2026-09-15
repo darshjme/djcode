@@ -21,7 +21,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "provider": "ollama",
     "model": "gemma4",
     "ollama_url": "http://localhost:11434",
-    "mlx_url": "http://localhost:8080",
+    # Must stay identical to auth.PROVIDERS["mlx"]["base_url"]. config.py cannot
+    # import auth (auth imports config), so tests/test_config_defaults.py pins them.
+    "mlx_url": "http://localhost:8899",
     "remote_url": "",
     "remote_api_key": "",
     "embedding_model": "nomic-embed-text",
@@ -29,7 +31,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_tokens": 8192,
     "bypass_rlhf": False,
     "telemetry": False,
-    "theme": "dark",
+    "theme": "auto",  # auto | dark | light | ansi16; resolved by theme.detect()
     "workflow_engine": "daf",
     "auto_approve_tools": False,
     "auto_accept": False,

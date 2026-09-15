@@ -75,12 +75,15 @@ class TokenUsage:
 
 
 def _match_pricing_key(model: str) -> str | None:
-    """Find the best matching pricing key for a model string."""
+    """Find the best matching pricing key for a model string.
+
+    Longest match wins. Insertion order must not decide this: several keys are
+    substrings of others ("o3" of "o3-mini", "gpt-4o" of "gpt-4o-mini",
+    "gpt-4.1" of "gpt-4.1-mini" and "gpt-4.1-nano"), so a first-hit scan priced
+    o3-mini at o3's rate -- nine times the real input price.
+    """
     model_lower = model.lower()
-    for key in MODEL_PRICING:
-        if key in model_lower:
-            return key
-    return None
+    return max((key for key in MODEL_PRICING if key in model_lower), key=len, default=None)
 
 
 @dataclass(slots=True)

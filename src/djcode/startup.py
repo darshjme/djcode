@@ -1,4 +1,20 @@
-"""Bounded provider discovery and an explicit, configuration-preserving setup flow."""
+"""Bounded provider discovery and an explicit, configuration-preserving setup flow.
+
+Async contract (W1-7)
+---------------------
+Every network-touching entry point exists twice: a coroutine holding the real
+implementation (``discover_async``, ``probe_async``, ``prepare_async``) and a
+synchronous wrapper under the bare name. The wrapper drives the coroutine with
+:func:`asyncio.run` and **refuses**, with a message naming its ``_async`` twin,
+when a loop is already running in the calling thread.
+
+The refusal is deliberate and must not be softened into a silent
+``asyncio.to_thread`` hop: a sync function that secretly moves work onto a
+worker thread hides a thread-safety contract from its caller, which is exactly
+how "questionary driven from a worker thread while prompt_toolkit owns stdin"
+got written. Callers already inside a loop either await the ``_async`` form, or
+hop to a thread themselves where that is what they actually mean.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +33,25 @@ from djcode.config import CONFIG_FILE, load_config, save_config
 
 console = Console(stderr=True)
 DISCOVERY_DEADLINE = 5.0
+DISCOVERY_SIZE_BUDGET = 2 * 1024 * 1024
+
+# DJcode ships no telemetry, and says so to every library and child process that
+# honours the convention. `setdefault`, never assignment: a user who deliberately
+# exported DO_NOT_TRACK=0 for some downstream tool keeps their choice.
+os.environ.setdefault("DO_NOT_TRACK", "1")
+
+
+def _refuse_inside_loop(sync_name: str, async_name: str) -> None:
+    """Return if this thread may block; otherwise raise, naming the coroutine to await."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError(
+        f"startup.{sync_name}() is blocking and cannot run inside an event loop. "
+        f"Use 'await startup.{async_name}(...)' or "
+        f"'await asyncio.to_thread(startup.{sync_name}, ...)'."
+    )
 
 
 def connection(config: dict, provider: str | None = None, model: str | None = None) -> dict:
@@ -61,33 +96,64 @@ def connection(config: dict, provider: str | None = None, model: str | None = No
     }
 
 
-def discover(endpoint: str, headers: dict) -> httpx.Response:
-    """Bound the whole discovery request, including headers and slow response bodies."""
+async def _request(endpoint: str, headers: dict) -> httpx.Response:
+    """Stream the discovery response under a hard body-size budget."""
+    chunks = []
+    size = 0
+    async with httpx.AsyncClient(timeout=2.0, follow_redirects=False) as client:
+        async with client.stream("GET", endpoint, headers=headers) as response:
+            async for chunk in response.aiter_bytes():
+                size += len(chunk)
+                if size > DISCOVERY_SIZE_BUDGET:
+                    raise ValueError("Provider discovery exceeded its size budget")
+                chunks.append(chunk)
+            return httpx.Response(
+                response.status_code, content=b"".join(chunks), request=response.request
+            )
 
-    async def request() -> httpx.Response:
-        chunks = []
-        size = 0
-        async with httpx.AsyncClient(timeout=2.0, follow_redirects=False) as client:
-            async with client.stream("GET", endpoint, headers=headers) as response:
-                async for chunk in response.aiter_bytes():
-                    size += len(chunk)
-                    if size > 2 * 1024 * 1024:
-                        raise ValueError("Provider discovery exceeded its size budget")
-                    chunks.append(chunk)
-                return httpx.Response(
-                    response.status_code, content=b"".join(chunks), request=response.request
-                )
 
-    async def bounded() -> httpx.Response:
-        return await asyncio.wait_for(request(), timeout=DISCOVERY_DEADLINE)
-
+async def discover_async(endpoint: str, headers: dict) -> httpx.Response:
+    """The real implementation: bounded, cancellable, loop-native."""
     try:
-        return asyncio.run(bounded())
+        return await asyncio.wait_for(_request(endpoint, headers), timeout=DISCOVERY_DEADLINE)
     except TimeoutError:
         raise ValueError("Provider discovery exceeded its time budget") from None
 
 
-def probe(config: dict, provider: str | None = None, model: str | None = None) -> dict:
+def discover(endpoint: str, headers: dict) -> httpx.Response:
+    """Blocking wrapper around discover_async; refuses inside a running loop."""
+    _refuse_inside_loop("discover", "discover_async")
+    return asyncio.run(discover_async(endpoint, headers))
+
+
+def _catalogue(name: str, payload: dict) -> list[dict]:
+    """Normalise a provider's model listing to ``[{"name": str, "size": int}, ...]``.
+
+    ``size`` is Ollama's on-disk byte count, and ``0`` wherever the provider does
+    not report one. Discarding it here forced every consumer that wants a model
+    table to re-query the provider.
+    """
+    items = payload.get("models" if name in {"ollama", "google"} else "data", [])
+    if not isinstance(items, list):
+        return []
+    key = "name" if name in {"ollama", "google"} else "id"
+    sizes: dict[str, int] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        value = item.get(key, "")
+        if not isinstance(value, str) or not value:
+            continue
+        if name == "google":
+            value = value.removeprefix("models/")
+        raw = item.get("size", 0)
+        size = int(raw) if isinstance(raw, int | float) and not isinstance(raw, bool) else 0
+        sizes[value] = max(sizes.get(value, 0), max(size, 0))
+    return [{"name": value, "size": sizes[value]} for value in sorted(sizes)]
+
+
+async def probe_async(config: dict, provider: str | None = None, model: str | None = None) -> dict:
+    """Check the configured provider/model and return the discovered model catalogue."""
     details = connection(config, provider, model)
     name, base, key = details["provider"], details["base"], details["key"]
 
@@ -106,7 +172,9 @@ def probe(config: dict, provider: str | None = None, model: str | None = None) -
         if not has_account(name):
             return outcome("missing", "Account sign-in is required.")
         try:
-            key = get_account_token(name)
+            # get_account_token refreshes the token over the network and blocks;
+            # the hop is explicit because this coroutine may own the only loop.
+            key = await asyncio.to_thread(get_account_token, name)
         except AccountAuthError:
             if not details["model"]:
                 return outcome("missing", "Select an explicit model ID.")
@@ -125,7 +193,7 @@ def probe(config: dict, provider: str | None = None, model: str | None = None) -
     else:
         endpoint = base + ("/models" if base.endswith("/v1") else "/v1/models")
     try:
-        response = discover(endpoint, headers)
+        response = await discover_async(endpoint, headers)
         if response.status_code in {401, 403}:
             return outcome(
                 "missing", "The provider rejected authentication; choose or reconnect an account."
@@ -139,22 +207,10 @@ def probe(config: dict, provider: str | None = None, model: str | None = None) -
                 "during use.",
             )
         response.raise_for_status()
-        payload = response.json()
-        items = payload.get("models" if name in {"ollama", "google"} else "data", [])
-        models = [
-            item.get("name" if name in {"ollama", "google"} else "id", "")
-            for item in items
-            if isinstance(item, dict)
-        ]
-        models = sorted(
-            {
-                value.removeprefix("models/") if name == "google" else value
-                for value in models
-                if isinstance(value, str) and value
-            }
-        )
+        models = _catalogue(name, response.json())
+        available = {item["name"] for item in models}
         selected = details["model"]
-        matched = selected in models or (name == "ollama" and selected + ":latest" in models)
+        matched = selected in available or (name == "ollama" and selected + ":latest" in available)
         if not selected or not matched:
             return outcome("missing", "Select a model available at this provider.", models)
         return outcome("ready", f"Connected to {name} · {selected}", models)
@@ -164,6 +220,12 @@ def probe(config: dict, provider: str | None = None, model: str | None = None) -
         return outcome("offline", "Provider check unavailable; existing configuration retained.")
 
 
+def probe(config: dict, provider: str | None = None, model: str | None = None) -> dict:
+    """Blocking wrapper around probe_async; refuses inside a running loop."""
+    _refuse_inside_loop("probe", "probe_async")
+    return asyncio.run(probe_async(config, provider, model))
+
+
 def answer(value):
     if value is None:
         raise KeyboardInterrupt("Setup cancelled; existing configuration retained")
@@ -171,7 +233,12 @@ def answer(value):
 
 
 def setup(existing: dict | None = None) -> dict:
-    """Commit only after selection/validation; cancellation preserves old config."""
+    """Commit only after selection/validation; cancellation preserves old config.
+
+    Synchronous and questionary-driven until W8 replaces the state machine with
+    ``core/onboarding_flow.py``. Callers inside a loop reach it through
+    ``asyncio.to_thread``, which is what ``prepare_async`` does.
+    """
     from djcode.account_auth import auth_methods, authenticate_account, has_account
 
     config = deepcopy(existing or load_config())
@@ -244,13 +311,13 @@ def setup(existing: dict | None = None) -> dict:
         config[f"{selected}_auth_method"] = "api_key"
     discovered = probe(config)
     default = config.get("model", "")
-    models = discovered["models"]
-    if models:
-        if default not in models:
-            default = models[0]
+    names = [item["name"] for item in discovered["models"]]
+    if names:
+        if default not in names:
+            default = names[0]
         selected_model = answer(
             questionary.autocomplete(
-                "Model", choices=models, default=default, ignore_case=True, match_middle=True
+                "Model", choices=names, default=default, ignore_case=True, match_middle=True
             ).ask()
         ).strip()
     else:
@@ -276,14 +343,17 @@ def setup(existing: dict | None = None) -> dict:
     return config
 
 
-def prepare(provider=None, model=None, *, force_setup=False) -> tuple[str | None, str | None]:
+async def prepare_async(
+    provider=None, model=None, *, force_setup=False
+) -> tuple[str | None, str | None]:
+    """Resolve provider/model for this run, repairing setup only when it is broken."""
     if os.environ.get("DJCODE_SKIP_STARTUP_CHECK") == "1" and not force_setup:
         return provider, model
     config = load_config()
     interactive = sys.stdin.isatty()
     first_run = not CONFIG_FILE.exists() and not provider
     checked = (
-        probe(config, provider, model)
+        await probe_async(config, provider, model)
         if not force_setup and not first_run
         else {"status": "missing", "message": "Configure a provider and model."}
     )
@@ -294,8 +364,16 @@ def prepare(provider=None, model=None, *, force_setup=False) -> tuple[str | None
                 + " Run djcode --setup in an interactive terminal, or supply valid provider/model "
                 "credentials."
             )
-        configured = setup(config)
+        # setup() owns stdin through questionary and blocks; the hop is explicit,
+        # and disappears in W8 when the flow becomes async end to end.
+        configured = await asyncio.to_thread(setup, config)
         return configured["provider"], configured["model"]
     if checked["status"] != "ready":
         console.print(checked["message"], markup=False)
     return provider, model
+
+
+def prepare(provider=None, model=None, *, force_setup=False) -> tuple[str | None, str | None]:
+    """Blocking wrapper around prepare_async; refuses inside a running loop."""
+    _refuse_inside_loop("prepare", "prepare_async")
+    return asyncio.run(prepare_async(provider, model, force_setup=force_setup))

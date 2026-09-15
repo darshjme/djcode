@@ -166,7 +166,11 @@ def test_colibri_setup_never_fetches_ollama_or_installs(monkeypatch):
         endpoints.append(endpoint)
         return httpx.Response(200, json={'data': [{'id': 'served-alias'}]},
                               request=httpx.Request('GET', endpoint))
+    async def discover_async(endpoint, headers):
+        return discover(endpoint, headers)
+
     monkeypatch.setattr(startup, 'discover', discover)
+    monkeypatch.setattr(startup, 'discover_async', discover_async)
     saved = []
     monkeypatch.setattr(startup, 'save_config', lambda cfg: saved.append(dict(cfg)))
     cfg = startup.setup({})

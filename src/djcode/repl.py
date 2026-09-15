@@ -130,7 +130,8 @@ def _handle_models_list(provider: Provider) -> None:
         return
     table = Table(title="Available models", border_style=GOLD)
     table.add_column("Model")
-    for name in found["models"]:
+    for item in found["models"]:
+        name = item["name"]
         table.add_row(name + (" · current" if name == provider.config.model else ""))
     console.print(table)
 
@@ -139,7 +140,10 @@ async def _handle_model_switch_interactive(operator: Operator, status_bar: Statu
     found = await asyncio.to_thread(_discover_current_models, operator.provider)
     if found["models"]:
         selected = await questionary.autocomplete(
-            "Select model:", choices=found["models"], match_middle=True, ignore_case=True
+            "Select model:",
+            choices=[item["name"] for item in found["models"]],
+            match_middle=True,
+            ignore_case=True,
         ).ask_async()
     else:
         console.print(found["message"], markup=False)
@@ -1008,8 +1012,9 @@ async def run_repl(
     )
     llm = Provider(provider_config)
 
-    # Validate model on startup
-    ok, msg = llm.validate_model()
+    # Validate model on startup. validate_model() is a blocking HTTP call; run_repl
+    # is a coroutine, so it must not run on the loop (app.py already does this).
+    ok, msg = await asyncio.to_thread(llm.validate_model)
     if not ok:
         console.print(f"[red]{msg}[/]")
         console.print("[dim]Use /model to switch or /models to list available models.[/]")

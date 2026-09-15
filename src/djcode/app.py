@@ -300,7 +300,7 @@ class ModelPicker(ModalScreen[str | None]):
         if self._base_url:
             cfg["base_url"] = self._base_url
         found = await asyncio.to_thread(probe, cfg, self._provider_name)
-        self._models = [{"name": name} for name in found.get("models", [])]
+        self._models = list(found.get("models", []))
         if not self._models:
             self.query_one("#model-info", Static).update(
                 found["message"] + " Enter an exact model ID."

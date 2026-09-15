@@ -1,6 +1,6 @@
 """Startup should repair missing setup without destroying working offline setup."""
 from copy import deepcopy
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import click
 import httpx
@@ -16,7 +16,14 @@ def cfg():
 
 def reply(monkeypatch, status=200, payload=None):
     response = httpx.Response(status, json=payload or {}, request=httpx.Request("GET", "https://example.com/models"))
+
+    async def _discover_async(*args, **kwargs):
+        return response
+
+    # probe_async() awaits discover_async directly; the blocking discover() wrapper
+    # is no longer on the hot path, so both seams are stubbed.
     monkeypatch.setattr(startup, "discover", lambda *args: response)
+    monkeypatch.setattr(startup, "discover_async", _discover_async)
 
 
 def test_ready_only_when_model_is_listed(monkeypatch, cfg):
@@ -41,7 +48,11 @@ def test_offline_preserves_existing_config(monkeypatch, cfg, tmp_path):
     config_file.write_text("{}")
     monkeypatch.setattr(startup, "CONFIG_FILE", config_file)
     monkeypatch.setattr(startup, "load_config", lambda: cfg)
+    async def _offline(*args, **kwargs):
+        raise httpx.ConnectError("offline")
+
     monkeypatch.setattr(startup, "discover", Mock(side_effect=httpx.ConnectError("offline")))
+    monkeypatch.setattr(startup, "discover_async", _offline)
     monkeypatch.setattr(startup, "setup", Mock(side_effect=AssertionError("must not reset offline setup")))
     assert startup.prepare() == (None, None)
     assert cfg == original
@@ -91,9 +102,12 @@ def test_model_discovery_unsupported_requires_explicit_model(monkeypatch, cfg):
 def test_account_auth_never_forwarded_to_gateway(monkeypatch, cfg):
     cfg.update(provider="xai", xai_auth_method="account", base_url="https://gateway.example/v1")
     discover = Mock(side_effect=AssertionError("must not contact gateway"))
+    discover_async = AsyncMock(side_effect=AssertionError("must not contact gateway"))
     monkeypatch.setattr(startup, "discover", discover)
+    monkeypatch.setattr(startup, "discover_async", discover_async)
     assert startup.probe(cfg)["status"] == "missing"
     discover.assert_not_called()
+    discover_async.assert_not_called()
 
 
 def test_nested_configuration_redacts_secrets():
@@ -151,7 +165,7 @@ def test_empty_model_still_discovers_choices(monkeypatch, cfg):
     reply(monkeypatch, payload={"data": [{"id": "available-model"}]})
     result = startup.probe(cfg)
     assert result["status"] == "missing"
-    assert result["models"] == ["available-model"]
+    assert result["models"] == [{"name": "available-model", "size": 0}]
 
 
 def test_setup_reuses_account_and_defaults_current_method(monkeypatch):
@@ -169,7 +183,9 @@ def test_setup_reuses_account_and_defaults_current_method(monkeypatch):
     monkeypatch.setattr(account_auth, "has_account", lambda provider: True)
     login = Mock(side_effect=AssertionError("connected account must not log in again"))
     monkeypatch.setattr(account_auth, "authenticate_account", login)
-    monkeypatch.setattr(startup, "probe", lambda *a: {"status": "ready", "models": ["grok"]})
+    monkeypatch.setattr(
+        startup, "probe", lambda *a: {"status": "ready", "models": [{"name": "grok", "size": 0}]}
+    )
     saved = Mock()
     monkeypatch.setattr(startup, "save_config", saved)
     result = startup.setup(config)
@@ -186,7 +202,11 @@ def test_cancel_after_new_key_does_not_save_or_mutate(monkeypatch, cfg):
     monkeypatch.setattr(startup.questionary, "select", lambda *a, **kw: Mock(ask=lambda: next(selections)))
     monkeypatch.setattr(startup.questionary, "password", lambda *a, **kw: Mock(ask=lambda: "replacement-key"))
     monkeypatch.setattr(startup.questionary, "autocomplete", lambda *a, **kw: Mock(ask=lambda: None))
-    monkeypatch.setattr(startup, "probe", lambda *a: {"status": "ready", "models": ["chosen-model"]})
+    monkeypatch.setattr(
+        startup,
+        "probe",
+        lambda *a: {"status": "ready", "models": [{"name": "chosen-model", "size": 0}]},
+    )
     saved = Mock()
     monkeypatch.setattr(startup, "save_config", saved)
     with pytest.raises(KeyboardInterrupt):
