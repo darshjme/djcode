@@ -150,25 +150,30 @@ def test_tools_alone_count_against_colibri_context(settings, monkeypatch):
     asyncio.run(run())
 
 
-def test_colibri_onboarding_never_fetches_ollama_or_installs(monkeypatch):
+def test_colibri_setup_never_fetches_ollama_or_installs(monkeypatch):
+    """The setup flow talks only to the configured Colibri endpoint and downloads nothing."""
     from types import SimpleNamespace
-    from djcode import onboarding
-    answer = lambda value: SimpleNamespace(ask=lambda: value)
-    fields = iter(['http://127.0.0.1:9191/v1', 'served-alias'])
-    monkeypatch.setattr(onboarding.questionary, 'select', lambda *a, **kw: answer('colibri'))
-    monkeypatch.setattr(onboarding.questionary, 'text', lambda *a, **kw: answer(next(fields)))
-    monkeypatch.setattr(onboarding.questionary, 'password', lambda *a, **kw: answer(''))
-    monkeypatch.setattr(onboarding.questionary, 'confirm', lambda *a, **kw: answer(False))
-    def unexpected(*args, **kwargs):
-        raise AssertionError('Colibri setup must not probe Ollama')
-    monkeypatch.setattr(onboarding, '_fetch_ollama_models', unexpected)
-    monkeypatch.setattr(onboarding, 'ensure_dirs', lambda: None)
+    from djcode import startup
+    replies = iter(['colibri', 'http://127.0.0.1:9191/v1', 'served-alias'])
+    question = lambda *a, **kw: SimpleNamespace(ask=lambda: next(replies))
+    for name in ('select', 'text', 'password', 'confirm', 'autocomplete'):
+        monkeypatch.setattr(startup.questionary, name, question)
+    monkeypatch.setattr(startup, 'load_config', dict)
+    monkeypatch.setattr(startup.httpx, 'post', lambda *a, **kw: pytest.fail('download/inference requested'))
+    endpoints = []
+    def discover(endpoint, headers):
+        assert '11434' not in endpoint, 'Colibri setup must not probe Ollama'
+        endpoints.append(endpoint)
+        return httpx.Response(200, json={'data': [{'id': 'served-alias'}]},
+                              request=httpx.Request('GET', endpoint))
+    monkeypatch.setattr(startup, 'discover', discover)
     saved = []
-    monkeypatch.setattr(onboarding, 'save_config', lambda cfg: saved.append(dict(cfg)))
-    cfg = onboarding.run_onboarding()
+    monkeypatch.setattr(startup, 'save_config', lambda cfg: saved.append(dict(cfg)))
+    cfg = startup.setup({})
     assert cfg['provider'] == 'colibri'
     assert cfg['model'] == 'served-alias'
     assert cfg['colibri_url'] == 'http://127.0.0.1:9191/v1'
+    assert endpoints == ['http://127.0.0.1:9191/v1/models'] * 2
     assert saved[0]['provider'] == 'colibri'
 
 

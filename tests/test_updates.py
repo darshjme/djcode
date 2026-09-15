@@ -3,9 +3,11 @@ import shlex
 import subprocess
 from types import SimpleNamespace
 
+import click
+import httpx
 import pytest
 
-from djcode import onboarding, updater
+from djcode import startup, updater
 from djcode.installer import SoftwareInstaller
 
 
@@ -82,46 +84,78 @@ def test_debian_fd_alias(monkeypatch):
     assert SoftwareInstaller().is_installed('fd')
 
 
-def wizard(monkeypatch, choices, saved):
-    answers = iter(choices)
+def wizard(monkeypatch, answers, saved, discovery):
+    """Drive startup.setup with scripted answers and a mocked discovery response.
+
+    Any download, install or shell execution fails the test outright.
+    """
+    replies = iter(answers)
+    endpoints = []
+
     def question(*args, **kwargs):
-        return SimpleNamespace(ask=lambda: next(answers))
-    for name in ['select', 'text', 'password', 'confirm']:
-        monkeypatch.setattr(onboarding.questionary, name, question)
-    monkeypatch.setattr(onboarding, 'ensure_dirs', lambda: None)
-    monkeypatch.setattr(onboarding, 'save_config', saved.append)
-    monkeypatch.setattr(onboarding.httpx, 'post', lambda *a, **kw: pytest.fail('download/inference requested'))
+        return SimpleNamespace(ask=lambda: next(replies))
+
+    for name in ['select', 'text', 'password', 'confirm', 'autocomplete']:
+        monkeypatch.setattr(startup.questionary, name, question)
+    monkeypatch.setattr(startup, 'load_config', dict)
+    monkeypatch.setattr(startup, 'save_config', saved.append)
+    monkeypatch.setattr(startup.httpx, 'post', lambda *a, **kw: pytest.fail('download/inference requested'))
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: pytest.fail('process executed'))
+    for variable in ('DJCODE_BASE_URL', 'DJCODE_API_KEY', 'OPENAI_API_KEY', 'FEATHERLESS_API_KEY', 'COLI_API_KEY'):
+        monkeypatch.delenv(variable, raising=False)
+
+    def discover(endpoint, headers):
+        endpoints.append(endpoint)
+        status, payload = discovery
+        return httpx.Response(status, json=payload, request=httpx.Request('GET', endpoint))
+
+    monkeypatch.setattr(startup, 'discover', discover)
+    return endpoints
 
 
-def test_cancelled_onboarding_does_not_create_configuration(monkeypatch):
+def test_cancelled_setup_does_not_create_configuration(monkeypatch):
     saved = []
-    wizard(monkeypatch, [None], saved)
+    wizard(monkeypatch, [None], saved, (200, {}))
     with pytest.raises(KeyboardInterrupt):
-        onboarding.run_onboarding()
+        startup.setup({})
     assert saved == []
 
 
-def test_featherless_onboarding_uses_explicit_model_no_download(monkeypatch):
+def test_featherless_setup_uses_explicit_model_no_download(monkeypatch):
     saved = []
-    wizard(monkeypatch, ['featherless', '', 'account/model', False], saved)
-    result = onboarding.run_onboarding()
+    endpoints = wizard(monkeypatch, ['featherless', 'api_key', 'fl-key', 'account/model'], saved,
+                       (200, {'data': [{'id': 'account/model'}]}))
+    result = startup.setup({})
     assert result['provider'] == 'featherless'
     assert result['model'] == 'account/model'
     assert result['featherless_url'] == 'https://api.featherless.ai/v1'
+    assert endpoints == ['https://api.featherless.ai/v1/models'] * 2
     assert len(saved) == 1
 
 
-def test_custom_onboarding_captures_endpoint(monkeypatch):
+def test_custom_setup_captures_endpoint(monkeypatch):
     saved = []
-    wizard(monkeypatch, ['custom', '', 'https://inference.example/v1', 'my-model', False], saved)
-    result = onboarding.run_onboarding()
-    assert result['base_url'] == 'https://inference.example/v1'
+    endpoints = wizard(monkeypatch, ['custom', 'https://inference.example/v1/', 'api_key', 'key', 'my-model'],
+                       saved, (200, {'data': [{'id': 'my-model'}]}))
+    result = startup.setup({})
+    assert result['custom_url'] == 'https://inference.example/v1'
     assert result['model'] == 'my-model'
+    assert endpoints == ['https://inference.example/v1/models'] * 2
 
 
-def test_empty_ollama_does_not_download_models(monkeypatch):
+def test_ollama_setup_selects_an_already_installed_model(monkeypatch):
     saved = []
-    wizard(monkeypatch, ['ollama', 'already-installed-model', False], saved)
-    monkeypatch.setattr(onboarding, '_fetch_ollama_models', lambda url: [])
-    result = onboarding.run_onboarding()
+    endpoints = wizard(monkeypatch, ['ollama', 'http://localhost:11434', 'already-installed-model'], saved,
+                       (200, {'models': [{'name': 'already-installed-model'}]}))
+    result = startup.setup({})
     assert result['model'] == 'already-installed-model'
+    assert endpoints == ['http://localhost:11434/api/tags'] * 2
+    assert len(saved) == 1
+
+
+def test_empty_ollama_refuses_instead_of_downloading(monkeypatch):
+    saved = []
+    wizard(monkeypatch, ['ollama', 'http://localhost:11434', 'not-installed'], saved, (200, {'models': []}))
+    with pytest.raises(click.ClickException, match='available at this provider'):
+        startup.setup({})
+    assert saved == []

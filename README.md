@@ -549,7 +549,6 @@ src/djcode/
 ├── config.py               # ~/.djcode/config.json management
 ├── auth.py                 # Provider registry + API key management
 ├── status.py               # Fixed bottom toolbar
-├── onboarding.py           # First-run wizard
 ├── updater.py              # Auto-update checker
 ├── tui.py                  # Main Textual TUI app
 ├── tui_hacker.py           # Cyberpunk widgets (MatrixRain, AgentHUD, ThreatPanel)
@@ -605,7 +604,7 @@ src/djcode/
 
 ## Configuration
 
-Config lives at `~/.djcode/config.json`. Created automatically on first run by the onboarding wizard.
+Config lives at `~/.djcode/config.json`. Created by the guided setup flow (`djcode --setup`, and automatically on first run).
 
 ```json
 {

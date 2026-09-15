@@ -134,7 +134,6 @@ graph TB
         INSTALLER["installer.py<br/>Setup Wizard"]
         CONTEXT["context_file.py<br/>djcode.md"]
         PERMS["permissions.py<br/>Tool Permissions"]
-        ONBOARD["onboarding.py<br/>First-Run"]
         UPDATER["updater.py<br/>Auto-Update"]
         STATS["stats.py<br/>Usage Analytics"]
         CONFIG["config.py<br/>Settings"]
@@ -170,7 +169,6 @@ graph TB
     REPL --> VOICE
     REPL --> CONTEXT
     REPL --> PERMS
-    CLI --> ONBOARD
     CLI --> UPDATER
     REPL --> STATS
     CLI --> CONFIG
@@ -222,7 +220,6 @@ graph TB
 | 39 | `src/djcode/installer.py` | 477 | Setup wizard | Interactive installation, dependency checks |
 | 40 | `src/djcode/context_file.py` | 180 | Per-project context | `djcode.md` persistence, auto-load |
 | 41 | `src/djcode/permissions.py` | 192 | Tool permissions | `PermissionManager`, allow/deny/ask rules |
-| 42 | `src/djcode/onboarding.py` | 222 | First-run wizard | `needs_onboarding()`, `run_onboarding()` |
 | 43 | `src/djcode/updater.py` | 139 | Auto-update checker | `get_update_message()`, version comparison |
 | 44 | `src/djcode/stats.py` | 421 | Usage analytics | `record_session_start()`, `render_stats()`, activity heatmaps |
 | 45 | `tests/test_cli.py` | 252 | CLI test suite | pytest tests for CLI, config, tools |
@@ -256,7 +253,7 @@ graph TB
 | Interactive command picker (fuzzy /) | Done | `tui.py` |
 | Verbose thinking toggle | Done | `operator.py`, `tui.py` |
 | Bottom status toolbar | Done | `status.py` |
-| Onboarding wizard | Done | `onboarding.py` |
+| Guided provider/model setup | Done | `startup.py` |
 | Auto-update checker | Done | `updater.py` |
 | Usage stats + activity heatmap | Done | `stats.py` |
 | Uncensored model detection | Done | `auth.py` |
