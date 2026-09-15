@@ -138,7 +138,7 @@ def test_spawn_bounds():
     assert "between 1 and 100" in asyncio.run(agent_spawn.execute_spawn_agent("coder", "test", max_tool_rounds=0))
 
 
-def test_tui_mount_permission_and_immediate_cancel(monkeypatch, tmp_path):
+def test_tui_mount_permission_and_immediate_cancel(monkeypatch, tmp_path, settle):
     from djcode.app import DJcodeApp, ToolApprovalScreen, AgentsScreen
     from djcode.provider import Provider, ProviderConfig
     from types import SimpleNamespace
@@ -195,7 +195,9 @@ def test_tui_mount_permission_and_immediate_cancel(monkeypatch, tmp_path):
             app._provider = spawn_provider
             prompt = app.query_one("#prompt-input", Input)
             app.post_message(Input.Submitted(prompt, "/spawn coder write a file"))
-            await pilot.pause()
+            await settle(pilot, lambda: isinstance(app.screen, ToolApprovalScreen)
+                         and bool(app.screen.query_one("#deny-tool").region.area),
+                         what="spawn approval screen laid out")
             assert isinstance(app.screen, ToolApprovalScreen)
             await pilot.click("#deny-tool")
             for _ in range(50):
@@ -207,11 +209,13 @@ def test_tui_mount_permission_and_immediate_cancel(monkeypatch, tmp_path):
             assert "User denied" in spawn_provider.messages[1][-1].content
             app._provider = original_provider
             app.action_show_agents()
-            await pilot.pause()
+            await settle(pilot, lambda: isinstance(app.screen, AgentsScreen), what="agents screen")
             assert isinstance(app.screen, AgentsScreen)
             await pilot.press("escape")
             pending = asyncio.create_task(app._approve_tool("file_write", {"path": "test.txt"}))
-            await pilot.pause()
+            await settle(pilot, lambda: isinstance(app.screen, ToolApprovalScreen)
+                         and bool(app.screen.query_one("#deny-tool").region.area),
+                         what="direct approval screen laid out")
             assert isinstance(app.screen, ToolApprovalScreen)
             import os
             if os.environ.get("DJCODE_TUI_SCREENSHOT_DIR"):

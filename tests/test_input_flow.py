@@ -1,6 +1,7 @@
 """Exercise real keyboard input, running work, and classic mode state."""
 
 import asyncio
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -239,13 +240,18 @@ def test_status_escapes_workspace_and_provider_text(monkeypatch, tmp_path):
 
     from djcode.status import StatusBar
 
-    folder = tmp_path / "a<b&c>"
+    # The assertion is about prompt_toolkit markup escaping, not filesystem
+    # legality: "<" and ">" are reserved characters on NTFS and mkdir() fails
+    # with WinError 123 there. Use the most hostile *legal* name per platform;
+    # "&" is the character the status bar has to escape on both.
+    hostile = "a&b;c" if os.name == "nt" else "a<b&c>"
+    folder = tmp_path / hostile
     folder.mkdir()
     monkeypatch.chdir(folder)
     status = StatusBar()
     status.update(model="a<b>", provider="custom&local", auto_accept=True)
     text = "".join(fragment[1] for fragment in to_formatted_text(status.render()))
-    assert "a<b>" in text and "custom&local" in text and "a<b&c>" in text
+    assert "a<b>" in text and "custom&local" in text and hostile in text
     assert "Approvals: auto" in text
 
 

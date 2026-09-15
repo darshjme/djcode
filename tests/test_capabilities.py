@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import os
+import shutil
 import sys
 from types import SimpleNamespace
 
@@ -10,15 +12,23 @@ import pytest
 
 from djcode.workflow import WorkflowEngine, validate_nodes
 
+# GAP B8: the DAF engine is a Rust binary. Without a toolchain there is nothing
+# to build and nothing to test; say so instead of failing.
+requires_cargo = pytest.mark.skipif(
+    shutil.which("cargo") is None and not os.environ.get("DJCODE_DAF_ENGINE"),
+    reason="DAF engine needs a Rust toolchain; set DJCODE_DAF_ENGINE for a prebuilt one",
+)
+
 
 def node(ident, name=None, deps=()):
     return {"id": ident, "name": name or ident, "arguments": {}, "dependencies": list(deps)}
 
 
-def test_real_daf_ddal_order_and_failures(monkeypatch, tmp_path):
+@requires_cargo
+def test_real_daf_ddal_order_and_failures(monkeypatch, daf_runtime):
     import djcode.workflow as workflow
 
-    monkeypatch.setattr(workflow, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(workflow, "CONFIG_DIR", daf_runtime)
 
     async def run():
         engine = WorkflowEngine(mode="daf")
@@ -70,10 +80,11 @@ def test_daf_rejects_invalid_graph_before_dispatch():
             validate_nodes(graph)
 
 
-def test_real_daf_cancellation_cancels_python_handler(monkeypatch, tmp_path):
+@requires_cargo
+def test_real_daf_cancellation_cancels_python_handler(monkeypatch, daf_runtime):
     import djcode.workflow as workflow
 
-    monkeypatch.setattr(workflow, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(workflow, "CONFIG_DIR", daf_runtime)
 
     async def run():
         started = asyncio.Event()
@@ -344,13 +355,14 @@ def test_vision_payloads_and_persistence(tmp_path):
     asyncio.run(run())
 
 
-def test_operator_model_tools_reach_capabilities_and_daf(monkeypatch, tmp_path):
+@requires_cargo
+def test_operator_model_tools_reach_capabilities_and_daf(monkeypatch, tmp_path, daf_runtime):
     import djcode.extensions as extensions
     import djcode.workflow as workflow
     from djcode.agents.operator import Operator
     from djcode.provider import Provider, ProviderConfig
 
-    monkeypatch.setattr(workflow, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(workflow, "CONFIG_DIR", daf_runtime)
     monkeypatch.setattr(extensions, "EXTENSIONS_FILE", tmp_path / "extensions.json")
 
     class Fixture(Provider):
@@ -396,13 +408,14 @@ def test_operator_model_tools_reach_capabilities_and_daf(monkeypatch, tmp_path):
     asyncio.run(run())
 
 
-def test_operator_cancel_completes_tool_protocol(monkeypatch, tmp_path):
+@requires_cargo
+def test_operator_cancel_completes_tool_protocol(monkeypatch, daf_runtime):
     import djcode.agents.operator as module
     import djcode.workflow as workflow
     from djcode.agents.operator import Operator
     from djcode.provider import Provider, ProviderConfig
 
-    monkeypatch.setattr(workflow, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(workflow, "CONFIG_DIR", daf_runtime)
 
     class Fixture(Provider):
         calls = 0

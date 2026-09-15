@@ -6,7 +6,7 @@ from djcode.app import DJcodeApp, CommandPalette, ToolApprovalScreen
 
 
 @pytest.mark.parametrize('width', [60, 80, 120])
-def test_responsive_layout_palette_and_approval(monkeypatch, tmp_path, width):
+def test_responsive_layout_palette_and_approval(monkeypatch, tmp_path, width, settle):
     monkeypatch.chdir(tmp_path)
     async def initialize(self):
         pass
@@ -28,19 +28,24 @@ def test_responsive_layout_palette_and_approval(monkeypatch, tmp_path, width):
             await pilot.press('ctrl+b')
             selected = []
             app.push_screen(CommandPalette(), selected.append)
-            await pilot.pause()
+            await settle(pilot, lambda: isinstance(app.screen, CommandPalette)
+                         and app.screen.query_one('#palette-input', Input) is not None,
+                         what='command palette composed')
             palette = app.screen
             palette.query_one('#palette-input', Input).value = '/'
             await pilot.pause()
             await pilot.press('down', 'enter')
-            await pilot.pause()
+            await settle(pilot, lambda: bool(selected), what='palette selection delivered')
             assert selected == ['/workflow']
             pending = asyncio.create_task(app._approve_tool('file_write', {'path': 'sample.py', 'content': '\n'.join(str(i) for i in range(200))}))
-            await pilot.pause()
+            await settle(pilot, lambda: isinstance(app.screen, ToolApprovalScreen)
+                         and bool(app.screen.query_one('#deny-tool').region.area)
+                         and app.focused is app.screen.query_one('#deny-tool'),
+                         what='approval screen laid out and focused')
             assert isinstance(app.screen, ToolApprovalScreen)
             box = app.screen.query_one('#approval-box')
-            assert box.region.x >= 0 and box.region.right <= width
             deny = app.screen.query_one('#deny-tool')
+            assert box.region.x >= 0 and box.region.right <= width
             assert deny.region.bottom <= 28
             assert app.focused is deny
             await pilot.press('escape')
