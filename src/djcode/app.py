@@ -2622,6 +2622,7 @@ class DJcodeApp(App):
                 )
                 restored += 1
 
+            self._sqlite_session_id = target_id
             chat.write(
                 f"[{SUCCESS}]Resumed session {target_id} ({session.model}, {restored} messages)[/]"
             )
@@ -2724,7 +2725,7 @@ class DJcodeApp(App):
 
             self._operator.plan_mode = self._plan_mode
             if self._session_db and self._sqlite_session_id:
-                self._operator.on_checkpoint = lambda messages: self._session_db.save_conversation(
+                self._operator.on_checkpoint = lambda messages: self._session_db.append_messages(
                     self._sqlite_session_id, messages
                 )
             async for token in self._operator.send(actual_input):
@@ -2818,7 +2819,7 @@ class DJcodeApp(App):
             # Session DB tracking
             if self._session_db and self._sqlite_session_id:
                 try:
-                    self._session_db.save_conversation(
+                    self._session_db.append_messages(
                         self._sqlite_session_id, self._operator.messages
                     )
                     self._session_db.update_session(
@@ -3010,7 +3011,7 @@ class DJcodeApp(App):
         if self._session_db and self._sqlite_session_id:
             try:
                 if self._operator:
-                    self._session_db.save_conversation(
+                    self._session_db.append_messages(
                         self._sqlite_session_id,
                         self._operator.messages,
                     )

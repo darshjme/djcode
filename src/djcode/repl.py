@@ -940,6 +940,7 @@ async def handle_slash_command(
                         )
                         restored += 1
 
+                    operator.session_id = target_id
                     console.print(
                         f"[green]Resumed session {target_id}[/] "
                         f"({session.model}, {restored} messages)"
@@ -1065,7 +1066,7 @@ async def run_repl(
     session_db.migrate_from_json()  # One-time migration, no-op if already done
     operator.session_id = session_db.create_session(llm.config.model, llm.config.name)
     operator.session_db = session_db
-    operator.on_checkpoint = lambda messages: session_db.save_conversation(
+    operator.on_checkpoint = lambda messages: session_db.append_messages(
         operator.session_id, messages
     )
     files_touched: list[str] = []
@@ -1227,7 +1228,7 @@ async def run_repl(
                             messages=1,
                         )
                         # Persist conversation for /resume
-                        session_db.save_conversation(operator.session_id, operator.messages)
+                        session_db.append_messages(operator.session_id, operator.messages)
 
                         # Tool extraction router — for models without native tool calling
                         # Censorship detection — warn if aligned model refuses
@@ -1275,7 +1276,7 @@ async def run_repl(
             if await run_interruptible(respond()) is None:
                 sys.stdout.write("\r\033[K")
                 console.print("[yellow]Response cancelled. Ready for another prompt.[/]")
-            session_db.save_conversation(operator.session_id, operator.messages)
+            session_db.append_messages(operator.session_id, operator.messages)
 
     finally:
         try:
@@ -1290,8 +1291,8 @@ async def run_repl(
             console.print("  [dim]Saved djcode.md[/]")
 
             record_session_end(session_id)
+            session_db.append_messages(operator.session_id, operator.messages)
             session_db.end_session(operator.session_id)
-            session_db.save_conversation(operator.session_id, operator.messages)
         finally:
             await ext_manager.shutdown()
             await llm.close()
@@ -1338,7 +1339,7 @@ async def run_oneshot(
             auto_accept=auto_accept,
             event_bus=oneshot_bus,
         )
-        operator.on_checkpoint = lambda messages: session_db.save_conversation(session_id, messages)
+        operator.on_checkpoint = lambda messages: session_db.append_messages(session_id, messages)
         async for token in operator.send(prompt):
             sys.stdout.write(token)
             sys.stdout.flush()
@@ -1351,6 +1352,6 @@ async def run_oneshot(
         raise click.ClickException(str(exc)) from exc
     finally:
         if operator:
-            session_db.save_conversation(session_id, operator.messages)
+            session_db.append_messages(session_id, operator.messages)
         session_db.end_session(session_id)
         await llm.close()

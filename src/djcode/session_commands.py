@@ -46,26 +46,50 @@ async def handle(operator, command, argument=""):
                 f"Session: {current or 'not recorded'}\nWorkspace: {Path.cwd()}\n"
                 f"Messages: {len(operator.messages)}"
             )
+        if command == "/fork":
+            # A fork branches; it does not terminate the parent. The copy and
+            # the lineage columns are one atomic SessionDB call now, and the
+            # parent keeps its end_time NULL.
+            if db and current:
+                db.append_messages(current, operator.messages)
+                forked = db.fork_session(current)
+                if forked:
+                    operator.session_id = forked
+            return f"Forked session: {getattr(operator, 'session_id', None) or 'in memory'}"
         if db and current:
-            db.save_conversation(current, operator.messages)
+            db.append_messages(current, operator.messages)
             db.end_session(current)
-        if command == "/new":
-            operator.reset()
+        operator.reset()
         if db:
             operator.session_id = db.create_session(
                 operator.provider.config.model, operator.provider.config.name, cwd=str(Path.cwd())
             )
-            db.save_conversation(operator.session_id, operator.messages)
-        label = "Forked" if command == "/fork" else "New"
-        return f"{label} session: {getattr(operator, 'session_id', None) or 'in memory'}"
+            db.append_messages(operator.session_id, operator.messages)
+        return f"New session: {getattr(operator, 'session_id', None) or 'in memory'}"
     if command == "/compact":
         manager = operator.context_manager
+        db = getattr(operator, "session_db", None)
+        current = getattr(operator, "session_id", None)
+        # Flush the tail BEFORE compressing: the entries about to leave the
+        # model's view have to be on disk for the compaction marker to point at
+        # a real row, and this is the only chance to persist them.
+        if db and current:
+            db.append_messages(current, operator.messages)
         manager.replace_messages(operator.messages)
-        await manager.auto_compress()
+        result = await manager.auto_compress()
         operator.messages = manager.get_messages()
-        if operator.on_checkpoint:
-            operator.on_checkpoint(operator.messages)
-        return "Context compacted; saved session checkpoint updated"
+        # /compact must NOT fall through to the generic on_checkpoint hook: that
+        # hook appends, and appending the compacted view on top of the full
+        # history would show the model the summary and the originals both.
+        if db and current:
+            db.record_compaction(
+                current,
+                summary=getattr(result, "summary_text", "") or "",
+                kept_messages=operator.messages,
+                strategy=getattr(getattr(result, "strategy_used", None), "value", ""),
+                messages_removed=getattr(result, "messages_removed", 0),
+            )
+        return "Context compacted; the full transcript is preserved in the session log"
     if command in {"/skills", "/skill"}:
         result = await operator.capabilities.skill("load" if argument else "list", argument)
         if argument:

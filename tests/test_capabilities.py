@@ -324,7 +324,7 @@ def test_vision_payloads_and_persistence(tmp_path):
     message = Message("user", "Inspect this", images=[str(image)])
     db = SessionDB(tmp_path / "vision.db")
     sid = db.create_session("fixture", "fixture")
-    db.save_conversation(sid, [message])
+    db.append_messages(sid, [message])
     assert db.load_conversation(sid)[0]["images"] == [str(image)]
     converted = _messages_to_dicts([message])
 

@@ -64,7 +64,7 @@ def test_sqlite_restart_keeps_protocol_and_search(tmp_path):
     path = tmp_path / 'sessions.db'
     db = SessionDB(path)
     sid = db.create_session('test-model', 'test-provider')
-    db.save_conversation(sid, transcript())
+    db.append_messages(sid, transcript())
     restored = SessionDB(path).load_conversation(sid)
     messages = [Message(**{k: v for k, v in row.items() if k != 'timestamp'}) for row in restored]
     assert_complete_tools(messages)

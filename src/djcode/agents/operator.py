@@ -265,8 +265,24 @@ class Operator:
         for _round in range(self.max_tool_rounds):
             self.context_manager.replace_messages(self.messages)
             if self.context_manager.needs_compression():
-                await self.context_manager.auto_compress()
+                # W4-3: auto-compaction fires here, without any user command, so
+                # this path has to record the compaction entry too — otherwise a
+                # resumed session replays the whole transcript instead of the
+                # elided view.
+                _db = getattr(self, "session_db", None)
+                _sid = getattr(self, "session_id", None)
+                if _db is not None and _sid:
+                    _db.append_messages(_sid, self.messages)
+                result = await self.context_manager.auto_compress()
                 self.messages = self.context_manager.get_messages()
+                if _db is not None and _sid:
+                    _db.record_compaction(
+                        _sid,
+                        summary=getattr(result, "summary_text", "") or "",
+                        kept_messages=self.messages,
+                        strategy=getattr(getattr(result, "strategy_used", None), "value", ""),
+                        messages_removed=getattr(result, "messages_removed", 0),
+                    )
             full_response = ""
             tool_calls: list[dict[str, Any]] = []
             thinker = ThinkingStreamProcessor(show_thinking=self.show_thinking)
