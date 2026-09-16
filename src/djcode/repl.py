@@ -45,6 +45,7 @@ from djcode.config import (
 from djcode.context_file import save_context
 from djcode.errors import classify_error, format_error, get_fallback_model
 from djcode.extensions import ExtensionManager
+from djcode.frontends.repl.render import render_session_list
 from djcode.memory.manager import MemoryManager
 from djcode.orchestrator import Orchestrator
 from djcode.prompt_enhancer import describe_enhancement, enhance_prompt
@@ -56,7 +57,7 @@ from djcode.provider import (
 )
 from djcode.recipes import RecipeManager, render_recipe_detail, render_recipe_list
 from djcode.repl_runtime import run_interruptible
-from djcode.sessions import SessionDB, render_session_list
+from djcode.sessions import SessionDB
 from djcode.stats import (
     record_session_end,
     record_session_start,

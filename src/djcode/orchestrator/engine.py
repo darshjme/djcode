@@ -28,15 +28,11 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from rich.console import Console
-
 from djcode.agents.registry import (
     BLOCKING_AGENTS,
     AgentRole,
     AgentSpec,
-    AgentTier,
     get_agent,
-    get_agents_by_tier,
     get_agents_for_intent,
 )
 from djcode.orchestrator.context_bus import ContextBus
@@ -63,7 +59,6 @@ from djcode.prompt_enhancer import detect_intent
 from djcode.provider import Provider
 
 logger = logging.getLogger(__name__)
-console = Console()
 GOLD = "#FFD700"
 
 
@@ -319,7 +314,7 @@ class ShadowOrchestrator:
         # Semantic router (embedding-based agent dispatch)
         from djcode.orchestrator.router import SemanticRouter
 
-        self.router = SemanticRouter(provider)
+        self.router = SemanticRouter(provider, semantic=True)
         self._router_initialized = False
 
         # Vector context store (long-term memory retrieval)
@@ -398,32 +393,23 @@ class ShadowOrchestrator:
 
     # -- Agent Header Display --------------------------------------------------
 
-    def _print_agent_header(self, spec: AgentSpec) -> None:
-        """Print a compact header when an agent starts working."""
-        icon = {
-            "orchestrator": "\U0001f3af",
-            "coder": "\U0001f4bb",
-            "debugger": "\U0001f50e",
-            "architect": "\U0001f4d0",
-            "reviewer": "\u2705",
-            "tester": "\U0001f9ea",
-            "scout": "\U0001f50d",
-            "devops": "\U0001f680",
-            "docs": "\U0001f4dd",
-            "refactorer": "\U0001f504",
-            "product_strategist": "\U0001f4ca",
-            "security_compliance": "\U0001f6e1\ufe0f",
-            "data_scientist": "\U0001f9ec",
-            "sre": "\U0001f6a8",
-            "cost_optimizer": "\U0001f4b0",
-            "integration": "\U0001f517",
-            "ux_workflow": "\U0001f3a8",
-            "legal_intelligence": "\u2696\ufe0f",
-            "risk_engine": "\u26a0\ufe0f",
-        }.get(spec.role.value, "\u26a1")
+    def _emit(self, event) -> None:
+        """Publish an event when a front-end attached a bus; otherwise silent."""
+        bus = getattr(self, "event_bus", None)
+        if bus is not None:
+            bus.emit_nowait(event)
 
-        console.print(f"\n  [{GOLD}]{icon} {spec.name}[/] [dim]({spec.title})[/]")
-        console.print(f"  [dim]{'---' * 17}[/]")
+    def _print_agent_header(self, spec: AgentSpec) -> None:
+        """Announce that an agent is starting.
+
+        Alone among engine.py's print sites this had NO paired event, so simply
+        deleting it would have silently removed the only signal that a specific
+        agent began work. It emits agent_start_event instead. The icon and rule
+        that used to be printed here are presentation and now live in
+        djcode.frontends.repl.render.
+        """
+        task = getattr(self.bus, "task", "") or ""
+        self._emit(agent_start_event(spec.name, spec.role.value, task))
 
     # -- Runner Factory --------------------------------------------------------
 
@@ -616,9 +602,6 @@ class ShadowOrchestrator:
                 result = await runner.run(agent_task)
                 elapsed = time.time() - start
 
-                # Show brief preview of intermediate agent work
-                preview = result.strip().split("\n")[0][:100] if result.strip() else "(no output)"
-                console.print(f"    [dim]{preview}[/]")
 
                 yield agent_complete_event(
                     spec.name,
@@ -659,10 +642,6 @@ class ShadowOrchestrator:
             agent_names = [get_agent(r).name for r in wave_roles]
             yield wave_start_event(wave_num, wave_name, agent_names)
 
-            console.print(
-                f"\n  [bold {GOLD}]Wave {wave_num}: {wave_name}[/] "
-                f"[dim]({', '.join(agent_names)})[/]"
-            )
 
             start = time.time()
 
@@ -715,10 +694,6 @@ class ShadowOrchestrator:
             elapsed = time.time() - start
             yield wave_complete_event(wave_num, wave_name, wave_results, elapsed)
 
-            console.print(
-                f"  [dim]Wave {wave_num} complete ({elapsed:.1f}s, "
-                f"{len(wave_results)}/{len(wave_roles)} agents)[/]"
-            )
 
     # -- Main Entry Point ------------------------------------------------------
 
@@ -769,16 +744,16 @@ class ShadowOrchestrator:
 
         agent_names = [get_agent(r).name for r in roles]
 
-        console.print(
-            f"\n  [bold {GOLD}]Shadow Army Orchestrator[/] "
-            f"[dim]intent={intent}, complexity={complexity.value}, "
-            f"strategy={strategy.value}, agents={agent_names}, "
-            f"router={route_method}"
-            + (f", context={n_injected} docs" if n_injected else "")
-            + "[/]"
-        )
 
-        yield orchestrator_start_event(task, strategy.value, agent_names, complexity.value)
+        yield orchestrator_start_event(
+            task,
+            strategy.value,
+            agent_names,
+            complexity.value,
+            intent=intent,
+            route_method=route_method,
+            context_docs=n_injected,
+        )
 
         # Run blocking gates for CRITICAL tasks
         halted = False
@@ -794,10 +769,6 @@ class ShadowOrchestrator:
                 task,
                 "Halted by blocking gate agent (CRITICAL finding)",
                 agent_names,
-            )
-            console.print(
-                "\n  [bold red]HALTED[/] — Blocking agent issued CRITICAL halt. "
-                "Review findings above before proceeding."
             )
             return
 
@@ -846,13 +817,6 @@ class ShadowOrchestrator:
         total_elapsed = time.time() - orchestration_start
         stored = self.vector_store.count()
 
-        console.print(
-            f"\n  [dim]Orchestration complete. Strategy={strategy.value}, "
-            f"{len(self.bus)} entries on context bus, "
-            f"{len(agents_completed)} agents completed"
-            + (f", {stored} in {self.vector_store.backend} context memory" if stored else "")
-            + f" ({total_elapsed:.1f}s).[/]\n"
-        )
 
         yield orchestrator_complete_event(
             task=task,
@@ -860,6 +824,9 @@ class ShadowOrchestrator:
             total_tokens=0,
             total_duration_s=total_elapsed,
             strategy=strategy.value,
+            bus_entries=len(self.bus),
+            context_stored=stored,
+            context_backend=self.vector_store.backend,
         )
 
     # -- Direct Agent Execution ------------------------------------------------
@@ -890,69 +857,6 @@ class ShadowOrchestrator:
             yield token
 
     # -- Roster Display --------------------------------------------------------
-
-    def render_roster(self) -> None:
-        """Display the full agent roster — all 18 agents with status."""
-        console.print(f"\n  [bold {GOLD}]Shadow Army Roster[/]\n")
-
-        tier_labels = {
-            AgentTier.CONTROL: "TIER 4 -- CONTROL",
-            AgentTier.ENTERPRISE: "TIER 3 -- ENTERPRISE INTELLIGENCE",
-            AgentTier.ARCHITECTURE: "TIER 2 -- ARCHITECTURE",
-            AgentTier.EXECUTION: "TIER 1 -- EXECUTION",
-        }
-
-        for tier in [
-            AgentTier.CONTROL,
-            AgentTier.ENTERPRISE,
-            AgentTier.ARCHITECTURE,
-            AgentTier.EXECUTION,
-        ]:
-            agents = get_agents_by_tier(tier)
-            console.print(f"\n  [bold dim]{tier_labels[tier]}[/]")
-
-            for spec in agents:
-                icon = {
-                    "orchestrator": "\U0001f3af",
-                    "coder": "\U0001f4bb",
-                    "debugger": "\U0001f50e",
-                    "architect": "\U0001f4d0",
-                    "reviewer": "\u2705",
-                    "tester": "\U0001f9ea",
-                    "scout": "\U0001f50d",
-                    "devops": "\U0001f680",
-                    "docs": "\U0001f4dd",
-                    "refactorer": "\U0001f504",
-                    "product_strategist": "\U0001f4ca",
-                    "security_compliance": "\U0001f6e1\ufe0f",
-                    "data_scientist": "\U0001f9ec",
-                    "sre": "\U0001f6a8",
-                    "cost_optimizer": "\U0001f4b0",
-                    "integration": "\U0001f517",
-                    "ux_workflow": "\U0001f3a8",
-                    "legal_intelligence": "\u2696\ufe0f",
-                    "risk_engine": "\u26a0\ufe0f",
-                }.get(spec.role.value, "\u26a1")
-
-                mode = "[dim red]read-only[/]" if spec.read_only else "[dim green]full[/]"
-                blocking = " [bold red]BLOCKING[/]" if spec.role in BLOCKING_AGENTS else ""
-                tools = len(spec.tools_allowed)
-
-                console.print(
-                    f"  {icon} [bold white]{spec.name:<16}[/] "
-                    f"[dim]{spec.title:<38}[/] "
-                    f"{tools} tools  {mode}  [dim]p={spec.priority}[/]{blocking}"
-                )
-
-        console.print("\n  [dim]Use /orchestra <task> for multi-agent execution[/]")
-        console.print(
-            "  [dim]Use /review, /debug, /test, /refactor, /devops, /docs for single-agent[/]\n"
-        )
-
-
-# ==============================================================================
-#  Orchestrator — Backwards-compatible wrapper
-# ==============================================================================
 
 
 class Orchestrator:
@@ -1015,6 +919,3 @@ class Orchestrator:
                 if token:
                     yield token
 
-    def render_roster(self) -> None:
-        """Display the agent roster."""
-        self._shadow.render_roster()

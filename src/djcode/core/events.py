@@ -180,8 +180,17 @@ def orchestrator_start_event(
     strategy: str,
     agents: list[str],
     complexity: str,
+    *,
+    intent: str = "",
+    route_method: str = "",
+    context_docs: int = 0,
 ) -> CoreEvent:
-    """Emitted when orchestration begins."""
+    """Emitted when orchestration begins.
+
+    ``intent``, ``route_method`` and ``context_docs`` existed only inside a
+    ``console.print`` before W2. They are carried here so removing that print
+    loses nothing a front-end could previously show.
+    """
     return CoreEvent(
         event_type=EventType.ORCHESTRATOR_START,
         data={
@@ -189,6 +198,9 @@ def orchestrator_start_event(
             "strategy": strategy,
             "agents": agents,
             "complexity": complexity,
+            "intent": intent,
+            "route_method": route_method,
+            "context_docs": context_docs,
         },
     )
 
@@ -199,8 +211,16 @@ def orchestrator_complete_event(
     total_tokens: int,
     total_duration_s: float,
     strategy: str,
+    *,
+    bus_entries: int = 0,
+    context_stored: int = 0,
+    context_backend: str = "",
 ) -> CoreEvent:
-    """Emitted when orchestration finishes successfully."""
+    """Emitted when orchestration finishes successfully.
+
+    ``bus_entries``, ``context_stored`` and ``context_backend`` were previously
+    only in a ``console.print``; they ride here so the print can go.
+    """
     return CoreEvent(
         event_type=EventType.ORCHESTRATOR_COMPLETE,
         data={
@@ -209,6 +229,9 @@ def orchestrator_complete_event(
             "total_tokens": total_tokens,
             "total_duration_s": round(total_duration_s, 3),
             "strategy": strategy,
+            "bus_entries": bus_entries,
+            "context_stored": context_stored,
+            "context_backend": context_backend,
         },
     )
 

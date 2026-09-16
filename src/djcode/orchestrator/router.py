@@ -10,10 +10,13 @@ you're using gemma4, qwen3, dolphin3, or a remote API.
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any
 
 from djcode.agents.registry import AgentRole, get_agent, get_agents_for_intent
+
+logger = logging.getLogger(__name__)
 
 # Backwards-compatible aliases
 get_agent_for_intent = get_agents_for_intent
@@ -190,8 +193,19 @@ class SemanticRouter:
                     self._exemplar_embeddings[role] = embeddings
 
             self._initialized = bool(self._exemplar_embeddings)
+            if not self._initialized:
+                logger.info(
+                    "Semantic routing unavailable (provider returned no embeddings); "
+                    "falling back to regex intent detection."
+                )
             return self._initialized
-        except Exception:
+        except Exception as exc:
+            # A provider with no embedding endpoint must degrade, not fail: route()
+            # falls through to detect_intent below. Logged once, at startup.
+            logger.info(
+                "Semantic routing unavailable (%s); falling back to regex intent detection.",
+                exc.__class__.__name__,
+            )
             self._initialized = False
             return False
 

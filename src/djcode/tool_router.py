@@ -14,8 +14,6 @@ Works with ANY model output — messy, unstructured, or clean.
 
 from __future__ import annotations
 
-import asyncio
-import concurrent.futures
 import logging
 import os
 import re
@@ -23,14 +21,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import questionary
-from rich.console import Console
-from rich.panel import Panel
-
 from djcode.tools import dispatch_tool
 
 logger = logging.getLogger(__name__)
-console = Console()
 
 # Files that should NEVER be overwritten in the current directory by the tool router.
 # These are the user's existing project files — the model should not clobber them.
@@ -380,64 +373,6 @@ class ToolExtractionRouter:
 
         return intents
 
-    async def extract_and_execute(
-        self,
-        text: str,
-        auto_accept: bool = False,
-    ) -> list[ToolResult]:
-        """Main pipeline: parse text -> extract intents -> confirm -> execute -> return results."""
-
-        intents = self.extract_intents(text)
-        if not intents:
-            return []
-
-        # Filter out protected file overwrites
-        safe_intents: list[ToolIntent] = []
-        for intent in intents:
-            if intent.action == "file_write" and intent.path and _is_protected(intent.path):
-                console.print(
-                    f"  [yellow]⚠ Blocked:[/] [dim]{intent.path} is a protected project file. "
-                    f"Create in a subdirectory instead.[/]"
-                )
-            else:
-                safe_intents.append(intent)
-        intents = safe_intents
-
-        if not intents:
-            return []
-
-        # Show user what we found
-        if not auto_accept:
-            approved = await self._confirm_intents(intents)
-        else:
-            approved = intents
-            self._display_intents_summary(intents, auto=True)
-
-        results: list[ToolResult] = []
-        for intent in intents:
-            if intent not in approved:
-                results.append(
-                    ToolResult(
-                        intent=intent,
-                        success=False,
-                        output="Skipped by user",
-                        skipped=True,
-                    )
-                )
-                continue
-
-            result = await self._execute_intent(intent)
-            results.append(result)
-
-            # Display result inline
-            if not result.skipped:
-                icon = "\u2705" if result.success else "\u274c"
-                style = "green" if result.success else "red"
-                console.print(f"  {icon} [{style}]{intent.description}[/]")
-                if result.output and not result.success:
-                    console.print(f"    [dim red]{result.output[:200]}[/]")
-
-        return results
 
     def format_results_for_context(self, results: list[ToolResult]) -> str:
         """Format tool results as context text to feed back to the model."""
@@ -1114,94 +1049,8 @@ class ToolExtractionRouter:
 
     # ── User confirmation ─────────────────────────────────────────────────
 
-    def _display_intents_summary(self, intents: list[ToolIntent], auto: bool = False) -> None:
-        """Display a Rich panel summarizing extracted intents."""
-        lines: list[str] = []
-        for intent in intents:
-            icon = self._intent_icon(intent)
-            conf = f"[dim](conf: {intent.confidence:.0%})[/]"
 
-            if intent.action == "file_write":
-                lc = intent.content.count("\n") + 1 if intent.content else 0
-                lines.append(f"  {icon} [bold]Create:[/] {intent.path} ({lc} lines) {conf}")
-            elif intent.action == "file_edit":
-                lines.append(f"  {icon} [bold]Edit:[/] {intent.path} {conf}")
-            elif intent.action == "bash":
-                cmd = intent.content or ""
-                if len(cmd) > 60:
-                    cmd = cmd[:57] + "..."
-                lines.append(f"  {icon} [bold]Run:[/] {cmd} {conf}")
-            elif intent.action == "mkdir":
-                lines.append(f"  {icon} [bold]Directory:[/] {intent.path} {conf}")
-            else:
-                lines.append(f"  {icon} [bold]{intent.action}:[/] {intent.description} {conf}")
 
-        body = "\n".join(lines)
-        if auto:
-            body += f"\n\n  [dim]Auto-executing {len(intents)} actions...[/]"
-
-        console.print(
-            Panel(
-                body,
-                title=f"[bold {GOLD}]Tool Extraction[/]",
-                border_style=GOLD,
-                padding=(1, 1),
-            )
-        )
-
-    async def _confirm_intents(self, intents: list[ToolIntent]) -> list[ToolIntent]:
-        """Show intent summary and ask user for confirmation.
-
-        Returns the list of approved intents.
-        """
-        self._display_intents_summary(intents)
-
-        console.print(
-            "  [bold]Execute all?[/] [dim]([/][bold]Y[/][dim])es / ([/][bold]n[/][dim])o / "
-            "([/][bold]s[/][dim])elect[/]"
-        )
-
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            choice = await asyncio.get_event_loop().run_in_executor(
-                pool,
-                lambda: questionary.text(
-                    "",
-                    default="y",
-                ).ask(),
-            )
-
-        if choice is None:
-            return []
-
-        choice = (choice or "y").strip().lower()
-
-        if choice in ("y", "yes", ""):
-            return intents
-        elif choice in ("n", "no"):
-            return []
-        elif choice in ("s", "select"):
-            return await self._select_intents(intents)
-        else:
-            return intents  # Default to yes
-
-    async def _select_intents(self, intents: list[ToolIntent]) -> list[ToolIntent]:
-        """Interactive picker to select which intents to execute."""
-        choices = []
-        for intent in intents:
-            icon = self._intent_icon(intent)
-            label = f"{icon} {intent.description}"
-            choices.append(questionary.Choice(label, value=intent, checked=True))
-
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            selected = await asyncio.get_event_loop().run_in_executor(
-                pool,
-                lambda: questionary.checkbox(
-                    "Select actions to execute:",
-                    choices=choices,
-                ).ask(),
-            )
-
-        return selected or []
 
     def _intent_icon(self, intent: ToolIntent) -> str:
         """Get an icon for an intent type."""

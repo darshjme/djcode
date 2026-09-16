@@ -587,38 +587,3 @@ def list_content_agents():
         return _list()
     except ImportError:
         return []
-
-
-def print_registry_summary() -> None:
-    """Print formatted summary of all registered agents."""
-    print("\n" + "=" * 70)
-    print("  DJcode Enterprise Agent Registry")
-    print("=" * 70)
-    tier_labels = {
-        AgentTier.CONTROL: "TIER 4 — CONTROL",
-        AgentTier.ENTERPRISE: "TIER 3 — ENTERPRISE INTELLIGENCE",
-        AgentTier.ARCHITECTURE: "TIER 2 — ARCHITECTURE",
-        AgentTier.EXECUTION: "TIER 1 — EXECUTION",
-    }
-    for tier in [
-        AgentTier.CONTROL,
-        AgentTier.ENTERPRISE,
-        AgentTier.ARCHITECTURE,
-        AgentTier.EXECUTION,
-    ]:
-        agents = get_agents_by_tier(tier)
-        print(f"\n  {tier_labels[tier]}")
-        print("  " + "-" * 60)
-        for a in agents:
-            ro = "  [READ-ONLY]" if a.read_only else ""
-            bl = "  [BLOCKING]" if a.role in BLOCKING_AGENTS else ""
-            print(f"  {a.name:<16} {a.title:<38} p={a.priority}{ro}{bl}")
-    print("\n" + "=" * 70)
-    print(f"  Total agents  : {len(AGENT_SPECS)}")
-    print(f"  Intent routes : {len(INTENT_ROUTING)}")
-    print(f"  Blocking agents: {len(BLOCKING_AGENTS)}")
-    print("=" * 70 + "\n")
-
-
-if __name__ == "__main__":
-    print_registry_summary()
