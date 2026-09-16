@@ -1,724 +1,91 @@
-<div align="center">
+# DJcode
 
-```
-  ██████╗      ██╗ ██████╗ ██████╗ ██████╗ ███████╗
-  ██╔══██╗     ██║██╔════╝██╔═══██╗██╔══██╗██╔════╝
-  ██║  ██║     ██║██║     ██║   ██║██║  ██║█████╗
-  ██║  ██║██   ██║██║     ██║   ██║██║  ██║██╔══╝
-  ██████╔╝╚█████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
-  ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
-```
+Local-first coding agent for the terminal. Version **4.3.0**. Python 3.12+. MIT.
 
-### 19 engineering profiles. 12 content profiles. 15 model-callable tools.
+DJcode runs a model you choose — Ollama, MLX, or a hosted OpenAI-compatible provider — against your working tree. It can read and edit files, run shell and Git commands, call specialist profiles, and keep sessions on disk. Tool auto-accept starts off. The installer does not download model weights.
 
-A local-first coding agent with explicit provider choice, tool approvals, and recoverable sessions.
-
-[![Version](https://img.shields.io/badge/version-4.0.1-gold?style=flat-square)](https://github.com/darshjme/djcode/releases)
-[![Python](https://img.shields.io/badge/python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![macOS](https://img.shields.io/badge/Apple%20Silicon-native-black?style=flat-square&logo=apple&logoColor=white)](#install)
-[![Linux](https://img.shields.io/badge/Linux-supported-FCC624?style=flat-square&logo=linux&logoColor=black)](#install)
-[![Telemetry](https://img.shields.io/badge/telemetry-zero-critical?style=flat-square)](#privacy)
-[![Website](https://img.shields.io/badge/cli.darshj.ai-FFD700?style=flat-square)](https://cli.darshj.ai)
-
-[Install](#install) · [Why](#why) · [Features](#features) · [Demo](#demo) · [Agents](#agents) · [Tools](#tools) · [Models](#models) · [Architecture](#architecture) · [Website](https://cli.darshj.ai)
-
-</div>
-
----
+Website: [cli.darshj.ai](https://cli.darshj.ai) · Source: [github.com/darshjme/djcode](https://github.com/darshjme/djcode)
 
 ## Install
 
-Install into an isolated Python environment. Requires git and Python 3.12+ (or an existing uv-managed Python).
-
-```bash
-curl -fsSL https://cli.darshj.ai/install.sh | bash
-```
-
-Version 4.2 installs a canonical CI-validated build into a managed environment, keeps previous releases for rollback, and downloads no models. Managed installations check for and apply validated updates at startup by default; use `djcode --update-mode manual` or `disabled` to change this. Select an existing local model or configure a hosted provider. See [installation and recovery](docs/INSTALLATION-AND-RECOVERY.md).
-
-<details>
-<summary><b>Manual install (from source)</b></summary>
-
-```bash
-git clone https://github.com/darshjme/djcode
-cd djcode
-uv sync
-uv run python -m djcode
-```
-
-**Requires:** Python 3.12+. Inference requires either an existing Ollama/MLX model server or a configured hosted provider account. The installer does not acquire model weights.
-
-</details>
-
----
-
-## Why
-
-DJcode connects local or hosted models to file, shell, Git and specialist-agent workflows. It keeps sessions and memory on disk, exposes tool approvals, and supports bounded parallel and wave execution. Local inference requires an existing model server; hosted inference uses your configured provider.
-
-project by Darshan Kumar Joshi
-
----
-
-## Demo
-
-Illustrative transcript, not a measured benchmark or an actual execution log.
-
-```
-  ██████╗      ██╗ ██████╗ ██████╗ ██████╗ ███████╗
-  ██╔══██╗     ██║██╔════╝██╔═══██╗██╔══██╗██╔════╝
-  ██║  ██║     ██║██║     ██║   ██║██║  ██║█████╗
-  ██║  ██║██   ██║██║     ██║   ██║██║  ██║██╔══╝
-  ██████╔╝╚█████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
-  ╚═════╝  ╚════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
-
-  v4.2.0 · ollama/gemma4 · Apple Silicon · 100% local
-
-  djcode> /orchestra build a JWT auth system with refresh rotation
-
-  [Vyasa] routing to: Kavach → Prometheus → Agni (wave execution)
-
-  ┌─ Wave 1 ─────────────────────────────────────────┐
-  │ Kavach (Security)  ✓  0.94 confidence   2.1s     │
-  │ Varuna (Risk)      ✓  0.91 confidence   1.8s     │
-  └──────────────────────────────────────────────────┘
-
-  ┌─ Wave 2 ─────────────────────────────────────────┐
-  │ Prometheus (Coder) ✓  0.88 confidence   12.3s    │
-  │ Agni (Tester)      ✓  0.92 confidence   8.7s     │
-  └──────────────────────────────────────────────────┘
-
-  ┌─ Wave 3 ─────────────────────────────────────────┐
-  │ Dharma (Reviewer)  ✓  0.90 confidence   4.2s     │
-  └──────────────────────────────────────────────────┘
-
-  5 agents · 29.1s · 0 critical findings · auth.py + tests written
-```
-
-```bash
-# One-shot mode
-$ djcode "binary search in Rust"
-
-# Pick your model
-$ djcode --model qwen2.5-coder:7b "optimize this SQL query"
-
-# Uncensored mode (Dolphin 3)
-$ djcode --model dolphin3 --bypass-rlhf "reverse engineer this binary"
-
-# Cloud provider when you want it
-$ djcode --provider anthropic --model claude-sonnet-4-20250514 "review my PR"
-
-# Multi-agent orchestration
-$ djcode --wave "review this service and propose improvements"
-```
-
----
-
-## Original design references
-
-Seven bundled packs cover dashboards, settings, command palettes, onboarding, data tables, usage/billing, and empty/error states. Each includes an original SVG example and responsive, keyboard, accessibility and state guidance. No design-service account is needed.
+Requires git and Python 3.12+ (or a uv-managed Python).
 
 ```sh
-djcode --design-packs
-djcode --design-pack dashboard "Build a project status page"
-djcode --design-pack dashboard --design-export ./dashboard-reference
+curl -fsSL https://cli.darshj.ai/install.sh | bash
+djcode --check
+djcode --setup
 ```
 
-In either terminal interface, `/design dashboard` selects guidance for the current conversation and `/design off` clears it. [Pack documentation and provenance](docs/DESIGN-PACKS.md).
+`--setup` picks provider, authentication, and model. Ollama discovery uses `/api/tags`; it never pulls weights. Hosted providers need their documented API key in the environment.
 
-## Features
+From source:
 
-### 19 Engineering Profiles + 12 Content Agents
-
-Not chatbots. Specialists. Each agent has a strict system prompt, scoped tool access (least-privilege), a mandatory confidence score, and a dharmic name. They run in parallel, pipeline, or wave execution patterns. Four blocking agents (Kavach, Varuna, Mitra, Indra) can halt the entire pipeline on critical findings.
-
-Every specialist gets a **Research Assistant** that pre-fetches codebase context, searches the ContextBus, and builds a structured briefing *before* the agent starts. No wasted tool rounds on reconnaissance.
-
-Agent confidence is model-reported, not a calibrated accuracy score. Critical blocking findings can stop orchestration; operational errors, cancellation, deadlines and exhausted tool budgets report failure rather than completion.
-
-See the [full agent roster below](#agents).
-
-### 15 Model-callable Tools and 2 Internal Dispatch Helpers
-
-The provider schema exposes 15 tools to models. The dispatch layer also includes `agent_status` and `parallel_execute` as internal helpers; these two are not advertised in the native model tool schema.
-
-| Tool | What it does |
-|------|-------------|
-| `bash` | Execute shell commands with timeout and safety guards |
-| `file_read` | Read files with line numbers (like `cat -n`) |
-| `file_write` | Create or overwrite files |
-| `file_edit` | Surgical string replacement in existing files |
-| `grep` | Regex search across your codebase |
-| `glob` | Find files by pattern |
-| `git` | Git operations with built-in safety rails |
-| `web_fetch` | Fetch content from URLs |
-| `web_search` | Search the web for documentation, APIs, solutions |
-| `task_create` | Create tracked tasks for multi-step work |
-| `task_update` | Update task status, notes, completion |
-| `task_list` | List and filter active tasks |
-| `notebook_read` | Read Jupyter notebook cells and outputs |
-| `notebook_edit` | Edit notebook cells programmatically |
-| `spawn_agent` | Spawn a specialist agent for a sub-task |
-| `agent_status` (internal) | Check status of spawned agents |
-| `parallel_execute` (internal) | Run multiple tool calls concurrently |
-
-The model decides which tools to use, chains them together, and loops until the task is done. Full agentic execution with confirmation prompts before anything destructive.
-
-### 1M Context Window with Smart Compression
-
-DJcode manages context windows up to 1M tokens (Claude Opus, Gemini Pro) with four compression strategies that activate automatically when you're running out of room:
-
-| Strategy | How it works | LLM needed? |
-|----------|-------------|:-----------:|
-| **TRIM** | Drop oldest messages, keep system + recent N | No |
-| **SELECTIVE** | Keep tool call/result messages, drop plain chat | No |
-| **SUMMARY** | Replace old messages with LLM-generated summary | Yes |
-| **HYBRID** | Summarize old chat, keep all tool interactions verbatim | Yes |
-
-Plus: `tiktoken`-based token counting (with fallback estimation), extractive summarization without any LLM call, and pinned messages that survive all compression.
-
-### 33-Model Registry with Cost Tracking
-
-Every model in the registry carries: context size, tool support, vision support, thinking mode, provider, input/output cost per 1K tokens, and aliases for fuzzy matching. Type `opus` and it finds `claude-opus-4-6`. Type `gpt4o` and it finds `gpt-4o`.
-
-Models from Anthropic, OpenAI, Google, Meta, Qwen, DeepSeek, Mistral, Microsoft, Cohere, xAI, NVIDIA. Local (Ollama/MLX) and cloud. Cost estimation built in: know what a request costs before you send it.
-
-### Parallel Agent Execution
-
-Five execution patterns, all with error isolation and blocking-agent gates:
-
-| Pattern | How it works |
-|---------|-------------|
-| **SINGLE** | One agent, one task |
-| **PARALLEL** | All agents run independently via `asyncio.gather` |
-| **PIPELINE** | Sequential chain: output of A feeds into B |
-| **WAVE** | Wave 1 runs in parallel, results feed Wave 2, repeat |
-| **FULL_ARMY** | Vyasa orchestrates all 19 agents across waves |
-
-If a blocking agent (Kavach, Varuna, Mitra, Indra) flags CRITICAL, remaining agents are cancelled. No code ships past security.
-
-### Hacker TUI
-
-Cyberpunk terminal dashboard built on Textual. Not a gimmick -- it's how you monitor 19 agents running in parallel.
-
-- **MatrixRain** -- animated falling green characters
-- **AgentStatusBar** -- all 19 agents with live state indicators (IDLE/ASSIGNED/RESEARCHING/EXECUTING/REVIEWING/DONE/ERROR)
-- **HackerHeader** -- military HUD top bar with system telemetry
-- **TokenBurnRate** -- real-time ASCII sparkline of token consumption
-- **ContextBar** -- context window utilization meter
-- **ThreatPanel** -- blocking agent alerts from Kavach, Varuna, Mitra, Indra
-- **ArmyView** -- bird's eye grid of all agents, color-coded by tier
-
-### Agent State Machine with Event Streaming
-
-Every agent execution follows a strict lifecycle:
-
-```
-IDLE → ASSIGNED → RESEARCHING → EXECUTING → REVIEWING → DONE
-                                                    ↘ ERROR
-```
-
-Each state transition emits an `AgentEvent` via async callbacks. The TUI, logging, and any custom integration can subscribe. Events: `STATE_CHANGE`, `TOKEN`, `TOOL_CALL`, `TOOL_RESULT`, `RA_BRIEFING`, `QUALITY_SCORE`, `ERROR`, `COMPLETE`.
-
-### ContextBus v2
-
-Thread-safe shared state for multi-agent execution. When agents run in parallel, they share findings through the bus:
-
-- Typed entries (code, plan, review, security_audit, risk_assessment...)
-- Priority levels for prompt injection ordering
-- Agent attribution and timestamps
-- Conflict detection (two agents writing the same key)
-- Versioned history (all writes retained)
-- Event emission on write (TUI updates live)
-- asyncio.Lock for thread-safety under parallel execution
-
-### EventBus for Real-Time Updates
-
-Full orchestrator event system: `OrchestratorStartEvent`, `AgentStartEvent`, `AgentTokenEvent`, `AgentToolCallEvent`, `AgentCompleteEvent`, `BlockingGateEvent`, `SynthesisEvent`, `OrchestratorCompleteEvent`. Every event typed, timestamped, and subscribable via async callbacks.
-
-### 9 Providers
-
-Use whatever you want. Local or cloud. Switch on the fly.
-
-| Provider | Type | Models |
-|----------|------|--------|
-| **Ollama** | Local | Gemma 4, Qwen 3, DeepSeek R1, Llama 4, Dolphin 3, any Ollama model |
-| **MLX** | Local | Apple Silicon native via MLX framework |
-| **OpenAI** | Cloud | GPT-4o, o3, o4-mini |
-| **Anthropic** | Cloud | Claude Opus 4, Sonnet 4, Haiku 3.5 |
-| **NVIDIA NIM** | Cloud | Nemotron Ultra, DeepSeek, Kimik2, GLM |
-| **Google AI** | Cloud | Gemini 2.5 Pro, Gemini 2.5 Flash |
-| **Groq** | Cloud | Ultra-fast inference |
-| **Together AI** | Cloud | Open-weight models at scale |
-| **OpenRouter** | Cloud | Unified API, any model |
-
-Local is the default. Cloud is opt-in. Your choice.
-
-### 3-Tier Memory
-
-DJcode remembers. Across sessions. Without a cloud database.
-
-```
-Tier 1: Session Memory
-       In-process conversation context. Fast. Ephemeral.
-
-Tier 2: Persistent Facts
-       Key-value store at ~/.djcode/memory/facts.json
-       Survives restarts. You control what's stored.
-       /remember, /recall, /forget
-
-Tier 3: Semantic Search
-       ChromaDB embeddings stored locally.
-       Semantic search requires explicitly supplied embeddings.
-       Offline lexical retrieval remains available without any model download.
-```
-
-### Smart Prompt Enhancer
-
-You type `fix the login bug`. DJcode sees:
-
-| What it detects | What it injects |
-|----------------|-----------------|
-| Intent: **debug** | Structured debugging approach instructions |
-| Working directory: `~/projects/myapp` | Full cwd path for file resolution |
-| Git branch: `feature/auth` | Branch name + dirty/clean status |
-| Project type: FastAPI + React | Framework-aware context |
-
-The model gets a richer prompt. You get a better answer. Eight intent modes: debug, build, test, refactor, explain, review, deploy, git.
-
-### Uncensored Mode
-
-```bash
-djcode --model dolphin3 --bypass-rlhf
-```
-
-For security research, pentesting, CTF challenges, reverse engineering. Uses uncensored models (Dolphin 3) that don't refuse valid technical requests. The `--bypass-rlhf` flag adjusts the system prompt to remove alignment restrictions.
-
-This is a tool for professionals. Use it like one.
-
----
-
-<h2 id="agents">Agents</h2>
-
-### The 19 Engineering Profiles (4-Tier Architecture)
-
-```
-TIER 4 — CONTROL
-  Vyasa          Chief Orchestrator         [ALL TOOLS]  [BLOCKING]
-
-TIER 3 — ENTERPRISE INTELLIGENCE
-  Kavach         Security & Compliance          [ALL TOOLS]  [BLOCKING]
-  Varuna         Risk Engine Specialist          [ALL TOOLS]  [BLOCKING]
-  Indra          Site Reliability Engineer       [ALL TOOLS]  [BLOCKING]
-  Mitra          Legal & Contract Intelligence   [READ-ONLY]  [BLOCKING]
-  Chanakya       Product Strategist              [READ-ONLY]
-  Aryabhata      Data & AI Scientist             [ALL TOOLS]
-  Kubera         Cloud Cost Optimizer            [READ + BASH]
-  Hermes         Integration Specialist          [ALL TOOLS]
-  Kamadeva       UX & Workflow Designer          [READ-ONLY]
-
-TIER 2 — ARCHITECTURE
-  Vishwakarma    Systems Architect               [READ-ONLY]
-  Shiva          Refactoring Specialist          [ALL TOOLS]
-  Garuda         Recon Agent                     [READ-ONLY]
-  Saraswati      Technical Writer                [ALL TOOLS]
-
-TIER 1 — EXECUTION
-  Prometheus     Senior Full-Stack Engineer      [ALL TOOLS]
-  Sherlock       Root Cause Analyst              [ALL TOOLS]
-  Agni           QA Engineer                     [ALL TOOLS]
-  Vayu           DevOps Engineer                 [ALL TOOLS]
-  Dharma         Code Reviewer                   [READ-ONLY]
-```
-
-Four **blocking agents** (Kavach, Varuna, Mitra, Indra) can halt any pipeline if they flag CRITICAL findings. Security > Compliance > Correctness > Performance > Style.
-
-### The 12 Content Agents
-
-Built-in content generation army for marketing, social, video, and distribution:
-
-```
-  Narada         Campaign Director
-  Valmiki        Script Writer
-  Chitragupta    Social Media Strategist
-  Maya           Image Prompter (Midjourney/DALL-E/Flux/SD)
-  Kubera         Video Director (Runway/Kling/Sora)
-  Tvastar        ComfyUI Workflow Architect
-  Gandharva      Audio/Music Prompter (Suno/Udio)
-  Brihaspati     SEO Analyst
-  Saraswati      Brand Voice Writer
-  Vishvakarma    Thumbnail Designer
-  Hanuman        Content Repurposer
-  Garuda         Trend Scout
-```
-
----
-
-## Models
-
-DJcode ships with a 33-model registry spanning every major provider. Fuzzy matching built in.
-
-### Local Models (Ollama)
-
-| Model | Context | Best For | Tool Calling | Thinking |
-|-------|---------|----------|:------------:|:--------:|
-| `gemma4` | 32K | General coding (default) | Yes | Yes |
-| `qwen3` | 128K | Reasoning + code | Yes | Yes |
-| `qwen2.5-coder:7b` | 32K | Fast coding tasks | Yes | No |
-| `deepseek-r1` | 128K | Deep reasoning | Yes | Yes |
-| `llama4` | 10M | Massive context | Yes | No |
-| `dolphin3` | 4K | No refusals, pentesting | No | No |
-
-### Cloud Models
-
-| Model | Context | Provider | Cost (in/out per 1K) |
-|-------|---------|----------|---------------------|
-| `claude-opus-4-6` | 1M | Anthropic | $0.015 / $0.075 |
-| `claude-sonnet-4-6` | 1M | Anthropic | $0.003 / $0.015 |
-| `gpt-4o` | 128K | OpenAI | $0.0025 / $0.01 |
-| `o3` | 200K | OpenAI | $0.01 / $0.04 |
-| `gemini-2.5-pro` | 1M | Google | $0.00125 / $0.01 |
-| `grok-3` | 131K | xAI | $0.003 / $0.015 |
-
-```bash
-# Pull local defaults
-ollama pull gemma4
-ollama pull qwen2.5-coder:7b
-
-# Switch models mid-session
-djcode> /model opus
-djcode> /model gemini-flash
-```
-
----
-
-## Commands
-
-### CLI Flags
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--model, -m` | Model name (fuzzy matched) | `gemma4` |
-| `--provider, -p` | Provider | `ollama` |
-| `--bypass-rlhf` | Unrestricted expert mode | off |
-| `--raw` | No Rich formatting (pipe-friendly) | off |
-| `--auto-accept` | Skip tool confirmation prompts | off |
-| `--version` | Print version and exit | -- |
-
-### REPL Slash Commands
-
-| Command | What it does |
-|---------|-------------|
-| `/help` | Show all available commands |
-| `/model` | Interactive model picker (fuzzy match) |
-| `/model <name>` | Switch model directly |
-| `/models` | List all 33 models with context sizes and costs |
-| `/provider` | Interactive provider picker |
-| `/auth` | Configure provider API keys |
-| `/auto` | Toggle auto-accept for tool calls |
-| `/scout <query>` | Read-only codebase exploration (Garuda) |
-| `/architect <task>` | Generate an implementation plan (Vishwakarma) |
-| `/orchestra <task>` | Multi-agent orchestrated execution (Vyasa) |
-| `/uncensored` | Show uncensored model info |
-| `/memory` | Show memory stats (all 3 tiers) |
-| `/remember k=v` | Store a persistent fact |
-| `/recall <key>` | Recall a stored fact |
-| `/forget <key>` | Remove a stored fact |
-| `/clear` | Clear conversation history |
-| `/save` | Save conversation to disk |
-| `/config` | Show current configuration |
-| `/set k=v` | Set a config value |
-| `/raw` | Toggle raw output mode |
-| `/exit` | Exit DJcode |
-
----
-
-## Architecture
-
-```mermaid
-graph TB
-    subgraph Input
-        CLI["djcode CLI<br/><small>Click</small>"]
-        REPL["Interactive REPL<br/><small>prompt-toolkit + Rich</small>"]
-        TUI["Hacker TUI<br/><small>Textual + cyberpunk widgets</small>"]
-    end
-
-    subgraph "Orchestrator (Vyasa)"
-        ORCH["Engine<br/><small>intent routing + wave planning</small>"]
-        EBUS["EventBus<br/><small>typed events + async callbacks</small>"]
-        CBUS["ContextBus v2<br/><small>thread-safe shared state</small>"]
-    end
-
-    subgraph "Agent Army (19 engineering + 12 content)"
-        T4["Tier 4: Vyasa<br/><small>orchestrator</small>"]
-        T3["Tier 3: Kavach, Varuna, Indra, Mitra...<br/><small>enterprise intel (10 agents)</small>"]
-        T2["Tier 2: Vishwakarma, Shiva, Garuda, Saraswati<br/><small>architecture (4 agents)</small>"]
-        T1["Tier 1: Prometheus, Sherlock, Agni, Vayu, Dharma<br/><small>execution (5 agents)</small>"]
-        RA["Research Assistants<br/><small>pre-fetch context per agent</small>"]
-        SM["State Machines<br/><small>IDLE→ASSIGNED→RESEARCHING→EXECUTING→DONE</small>"]
-        CONTENT["Content Agents (12)<br/><small>Narada, Valmiki, Maya, Kubera...</small>"]
-    end
-
-    subgraph "Parallel Coordinator"
-        PAR["asyncio.gather<br/><small>PARALLEL / PIPELINE / WAVE</small>"]
-        GATE["Blocking Gates<br/><small>Kavach, Varuna, Mitra, Indra</small>"]
-    end
-
-    subgraph "17 Tools"
-        FILES["file_read, file_write, file_edit"]
-        SEARCH["grep, glob, web_search"]
-        EXEC["bash, git, parallel_execute"]
-        AGENT["spawn_agent, agent_status"]
-        TASK["task_create, task_update, task_list"]
-        NB["notebook_read, notebook_edit"]
-        NET["web_fetch"]
-    end
-
-    subgraph Intelligence
-        PE["Prompt Enhancer<br/><small>8 intent modes + context injection</small>"]
-        MEM["3-Tier Memory<br/><small>session + facts + ChromaDB vectors</small>"]
-        COMP["Context Compressor<br/><small>4 strategies (TRIM/SELECTIVE/SUMMARY/HYBRID)</small>"]
-        MREG["33-Model Registry<br/><small>fuzzy match + cost tracking</small>"]
-    end
-
-    subgraph Providers
-        OL["Ollama<br/><small>localhost:11434</small>"]
-        MLX["MLX<br/><small>Apple Silicon native</small>"]
-        CLOUD["Cloud APIs<br/><small>OpenAI, Anthropic, NVIDIA,<br/>Google, Groq, Together, OpenRouter</small>"]
-    end
-
-    CLI --> REPL
-    CLI --> TUI
-    REPL --> ORCH
-    TUI --> ORCH
-
-    ORCH --> T4
-    T4 --> PAR
-    PAR --> T3
-    PAR --> T2
-    PAR --> T1
-    RA -.->|briefs| T1
-    RA -.->|briefs| T2
-    RA -.->|briefs| T3
-    SM -.->|tracks| T1
-    SM -.->|tracks| T2
-    SM -.->|tracks| T3
-    GATE -.->|halts on CRITICAL| PAR
-
-    T1 --> Tools
-    T2 --> Tools
-    T3 --> Tools
-
-    ORCH --> EBUS
-    EBUS -.->|live events| TUI
-
-    T1 --> CBUS
-    T2 --> CBUS
-    T3 --> CBUS
-
-    ORCH --> Providers
-    ORCH --> COMP
-    ORCH --> MREG
-    ORCH --> MEM
-    ORCH --> PE
-
-
-    style CLI fill:#FFD700,stroke:#333,color:#000
-    style ORCH fill:#FFD700,stroke:#333,color:#000
-    style T4 fill:#ff4444,stroke:#333,color:#fff
-    style T3 fill:#ff8800,stroke:#333,color:#000
-    style T2 fill:#4488ff,stroke:#333,color:#fff
-    style T1 fill:#44cc44,stroke:#333,color:#000
-    style GATE fill:#ff4444,stroke:#333,color:#fff
-    style COMP fill:#FFD700,stroke:#333,color:#000
-    style TUI fill:#00ff00,stroke:#333,color:#000
-```
-
----
-
-## Project Structure
-
-```
-src/djcode/
-├── cli.py                  # Click entry point
-├── repl.py                 # Interactive REPL (prompt-toolkit + Rich)
-├── provider.py             # 9 providers, auto-fallback, fuzzy model matching
-├── prompt.py               # Expert system prompt with tool definitions
-├── prompt_enhancer.py      # Intent detection (8 modes) + context injection
-├── config.py               # ~/.djcode/config.json management
-├── auth.py                 # Provider registry + API key management
-├── status.py               # Fixed bottom toolbar
-├── onboarding.py           # First-run wizard
-├── updater.py              # Auto-update checker
-├── tui.py                  # Main Textual TUI app
-├── tui_hacker.py           # Cyberpunk widgets (MatrixRain, AgentHUD, ThreatPanel)
-├── tui_panels.py           # Panel components for dashboard
-├── tui_theme.py            # Color system (gold, matrix green, tier colors)
-├── context_engine.py       # Context window management
-├── tools/
-│   ├── bash.py             # Shell execution with timeout
-│   ├── file_read.py        # Read with line numbers
-│   ├── file_write.py       # Create/overwrite files
-│   ├── file_edit.py        # Surgical string replacement
-│   ├── grep.py             # Regex search across codebase
-│   ├── glob.py             # File pattern matching
-│   ├── git.py              # Git operations with safety guards
-│   ├── web_fetch.py        # URL content fetching
-│   ├── web_search.py       # Web search for docs and solutions
-│   ├── task_tracker.py     # Task creation, update, listing
-│   ├── notebook.py         # Jupyter notebook read/edit
-│   ├── agent_spawn.py      # Spawn specialist sub-agents
-│   └── parallel_exec.py    # Concurrent tool execution
-├── agents/
-│   ├── registry.py         # 19 specialist specs (4-tier, dharmic names)
-│   ├── content_registry.py # 12 content specialist agents
-│   ├── executor.py         # Agent execution engine
-│   ├── parallel.py         # ParallelCoordinator (gather/pipeline/wave)
-│   ├── state.py            # Agent state machine + event streaming
-│   ├── ra.py               # Research Assistant framework
-│   ├── operator.py         # General-purpose agent with tool-calling loop
-│   ├── scout.py            # Read-only exploration agent
-│   └── architect.py        # Planning and design agent
-├── orchestrator/
-│   ├── engine.py           # Vyasa orchestration engine
-│   ├── router.py           # Intent → agent routing
-│   ├── context_bus.py      # ContextBus v2 (thread-safe, typed, versioned)
-│   ├── events.py           # Typed event system for TUI integration
-│   └── vector_context.py   # Vector-based context retrieval
-├── context/
-│   ├── manager.py          # Context window manager
-│   ├── compressor.py       # 4 compression strategies
-│   └── models.py           # 33-model registry with fuzzy matching
-├── memory/
-│   ├── manager.py          # 3-tier memory (session + persistent + semantic)
-│   └── embedder.py         # ChromaDB vectors + cosine similarity
-└── providers/
-    ├── base.py             # Provider base class
-    ├── anthropic.py        # Anthropic (Claude) with prompt caching support
-    ├── openai.py           # OpenAI-compatible
-    ├── google.py           # Google AI (Gemini)
-    └── router.py           # Provider selection and fallback
-```
-
----
-
-## Configuration
-
-Config lives at `~/.djcode/config.json`. Created automatically on first run by the onboarding wizard.
-
-```json
-{
-  "provider": "ollama",
-  "model": "gemma4",
-  "ollama_url": "http://localhost:11434",
-  "temperature": 0.7,
-  "max_tokens": 8192,
-  "telemetry": false
-}
-```
-
-Override anything with CLI flags or `/set` in the REPL.
-
----
-
-<h2 id="privacy">Privacy</h2>
-
-- `DO_NOT_TRACK=1` by default
-- No product analytics collection. Local session history and estimated activity statistics are stored on disk.
-- Automatic GitHub release checks can be disabled with `DJCODE_NO_UPDATE_CHECK=1`.
-- All memory stored at `~/.djcode/` on your filesystem
-- ChromaDB vectors stored locally, never uploaded
-- Cloud providers are opt-in and explicit
-- Local model use needs no DJcode account. Hosted providers require their own account and terms.
-
----
-
-## How We Stack Up
-
-DJcode focuses on local/provider choice, 19 engineering and 12 content profiles, explicit tool approval, persistent sessions and 15 model-callable tools plus 2 internal dispatch helpers. Evaluate it on your repository and model; no speed, quality or feature-parity advantage over another coding agent has been established.
-
-The repair drew on public engineering patterns from Hermes, Pi and Codex. See [source references and acceptance coverage](docs/RELEASE-VALIDATION.md) for exact commits, licenses, tested paths and remaining limits. Claude Code documentation informed the loop review; its published repository was not treated as permissively licensed engine source.
-
----
-
-## Development
-
-```bash
-git clone https://github.com/darshjme/djcode
+```sh
+git clone https://github.com/darshjme/djcode.git
 cd djcode
 uv sync
-
-# Run
-uv run python -m djcode
-
-# Test
-uv run pytest tests/ -v
-
-# Lint + format
-uv run ruff check src/ && uv run ruff format src/
+uv run python -m djcode --check
 ```
 
----
+Managed installs live under `~/.local/share/djcode/` with `current` / `previous` release pointers. GitHub Actions is disabled in this account; treat installer “CI-validated” language as historical. Verify locally with `--check`, and use `--update-mode manual` or `disabled` if you do not want startup update checks.
 
-## Related
+```sh
+djcode --update                 # install the latest managed build
+djcode --rollback               # restore the previous managed build
+djcode --update-mode manual     # only update when asked
+djcode --no-update              # skip update checks this run
+```
 
-- **[DarshjDB](https://github.com/darshjme/darshjdb)** -- Backend-as-a-Service in Rust. Local-first database engine.
-- **[DarshJ.AI](https://darshj.ai)** -- AI tools, infrastructure, and open-source projects.
-- **[cli.darshj.ai](https://cli.darshj.ai)** -- DJcode project website.
+## Use
 
----
+```sh
+djcode                          # full-screen TUI
+djcode --repl                   # line-oriented REPL
+djcode "summarize this repo"    # one shot
+djcode --design-packs           # list bundled design references
+djcode --revision               # installed version without network
+```
 
-## License
+Config, memory and history: `~/.djcode/` (`DJCODE_CONFIG_DIR` overrides). Default provider is Ollama at `http://localhost:11434`, model `gemma4`. `auto_approve_tools` defaults to false.
 
-MIT -- see [LICENSE](LICENSE).
+### Vyasa fleet
 
----
-
-<div align="center">
-
-<br/>
-
-*Use an existing local model or your configured hosted provider.*
-*Open-source software, with local and hosted inference options. Hardware and provider costs depend on your setup.*
-
-<br/>
-
-project by Darshan Kumar Joshi
-
-<br/>
-
-<sub>If DJcode saves you from a cloud subscription, star the repo. That's all I ask.</sub>
-
-</div>
-
-## Optional low-memory inference
-
-DJcode can connect to an existing Colibri server and plan its RAM/VRAM/context budget with `djcode-colibri`. Supported MoE experts can stream from disk through Colibri; this trades memory for storage capacity and latency. Setup is opt-in and downloads no model weights. See the [Colibri integration guide](docs/LOW-MEMORY-COLIBRI.md) for preflight checks and limitations.
-
-## Agent workspace
-
-The development branch adds default DAF/DDAL tool execution, provider → sign-in → model onboarding, browser and desktop tools, skills/MCP, background jobs and durable schedules. See [setup, controls and capability boundaries](docs/AGENT-WORKSPACE.md).
-
-## Vyasa fleet
-
-DJCode 4.3 connects to a self-hosted [Vyasa fleet](https://cli.darshj.ai/vyasa):
+DJcode 4.3 can talk to a [Vyasa](https://github.com/darshjme/vyasa-agent) fleet on loopback:
 
 ```sh
 export VYASA_URL=http://127.0.0.1:19000
-# Set VYASA_TOKEN to a token created with `vyasa token` on the fleet host.
+# Set VYASA_TOKEN from `vyasa token` on the fleet host. Do not commit it.
 djcode --vyasa
-djcode --vyasa --vyasa-employee prometheus --vyasa-session release 'Review this release plan'
+djcode --vyasa --vyasa-employee prometheus --vyasa-session review 'Review this release plan'
 ```
 
-Remote endpoints require HTTPS. Named conversations persist on the fleet host;
-model credentials stay there. This mode requests specialist responses and scoped
-memory operations. Use DJCode's normal local workflow for repository tool execution.
+## Profiles and tools
 
-Updates use verified repository release tags and wheel checksums. GitHub Actions
-is disabled. For installations older than4.3, re-run the installer once to migrate
-from the former workflow-based update protocol. Your configuration is retained.
+**19 engineering profiles:** Vyasa, Prometheus, Sherlock, Agni, Vayu, Dharma, Vishwakarma, Shiva, Garuda, Saraswati, Chanakya, Kavach, Aryabhata, Indra, Kubera, Hermes, Kamadeva, Mitra, Varuna.
 
-### Local release verification
+**12 content profiles:** Narada, Valmiki, Chitragupta, Maya, Kubera, Tvastar, Gandharva, Brihaspati, Saraswati, Vishvakarma, Hanuman, Garuda.
 
-GitHub Actions is disabled. From a clean committed checkout, run `python3 scripts/publish_update.py` to test an isolated checkout, build its wheel/source distribution, and install the wheel in a fresh environment. Add `--publish` only to publish the current canonical `main` commit. Existing immutable release assets are compared and never overwritten; the rolling manifest uses schema 2 and does not depend on an Actions run.
+These are prompt and tool-policy names, not professional credentials.
+
+**Tools the model can call:** `bash`, `file_read`, `file_write`, `file_edit`, `grep`, `glob`, `git`, `web_fetch`, `web_search`, `task_create`, `task_update`, `task_list`, `notebook_read`, `notebook_edit`, `parallel_execute`, `spawn_agent`, `agent_status`, `schedule`, plus capability dispatch for `skill`, `mcp`, `process`, `browser`, `computer`, and `workflow` when those extras are configured.
+
+Optional extras: `computer` (Playwright / PyAutoGUI), `voice` (sounddevice), `tokens` (tiktoken).
+
+## Development
+
+```sh
+uv sync
+uv run python -m djcode --check
+uv run pytest
+uv run ruff check src
+```
+
+See [docs/INSTALLATION-AND-RECOVERY.md](docs/INSTALLATION-AND-RECOVERY.md), [docs/AGENT-WORKSPACE.md](docs/AGENT-WORKSPACE.md), and [docs/ACCOUNT-AUTH.md](docs/ACCOUNT-AUTH.md).
+
+## Related
+
+- [Vyasa Agent](https://github.com/darshjme/vyasa-agent) — self-hosted specialist fleet
+- [DAF](https://github.com/darshjme/daf) — Rust agent-coordination libraries
+- [DarshJDB](https://github.com/darshjme/darshjdb) — self-hosted backend and agent memory
+
+Created by [Darshankumar Joshi](https://github.com/darshjme). Licensed under [MIT](LICENSE).
