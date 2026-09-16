@@ -1709,7 +1709,9 @@ class DJcodeApp(App):
             from djcode.tools import dispatch_tool
 
             result = await dispatch_tool("web_search", {"query": query})
-            chat.write(result)
+            # W3-1: a ToolOutcome is not a Rich renderable. RichLog.write would
+            # Pretty-print the dataclass repr at the user.
+            chat.write(str(result))
         except Exception as e:
             chat.write(f"[{ERROR}]Search error: {e}[/]")
 
@@ -1754,13 +1756,16 @@ class DJcodeApp(App):
 
             with agent_context(self._provider, self._auto_accept, self._approve_tool):
                 result = await dispatch_tool("spawn_agent", {"role": role, "task": task})
-            chat.write(result)
+            text = str(result)  # W3-1: ToolOutcome -> its model-facing content
+            chat.write(text)
             # Update agent status bar
             try:
                 bar = self.query_one("#agent-status-bar", AgentStatusBar)
-                bar.set_agent_state(
-                    role.capitalize(), "error" if result.startswith("Error") else "done"
-                )
+                # W3 interim: `spawn_agent` reports failure only as text
+                # (ok_source "unverified"), so the prefix check stays alongside
+                # the structured flag until that handler returns a ToolOutcome.
+                failed = not result.ok or text.startswith("Error")
+                bar.set_agent_state(role.capitalize(), "error" if failed else "done")
             except Exception:
                 pass
         except Exception as e:

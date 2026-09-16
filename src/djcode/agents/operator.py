@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
+from djcode.core.dispatch import DispatchContext, dispatch_context
 from djcode.core.events import (
     EventBus,
     thinking_event,
@@ -19,6 +21,7 @@ from djcode.core.events import (
     tool_call_event,
     tool_result_event,
 )
+from djcode.core.hooks import HookBus
 from djcode.prompt import build_system_prompt
 from djcode.provider import Message, Provider
 from djcode.tools import dispatch_tool
@@ -134,6 +137,21 @@ class Operator:
         # attached the engine simply runs silent -- which is what a headless
         # caller wants and what `import djcode.core` guarantees.
         self.event_bus = event_bus
+        # W3: the chokepoint's view of this session. Installed for the whole of
+        # `send` with `dispatch_context` rather than passed as an argument,
+        # because the production path is `self.workflow.one(name, args,
+        # dispatch_tool)` -- a positional call that tests monkeypatch with
+        # `async def hang(*args)`. A ContextVar reaches `dispatch_tool` without
+        # changing that call, so nothing downstream had to move.
+        #
+        # `hooks` is an empty bus today (W3-4 shipped the seam, P1-1 ships the
+        # handlers). W5 fills `checkpoints` and W6 fills `permissions`.
+        self.hooks = HookBus()
+        self.dispatch_ctx = DispatchContext(
+            hooks=self.hooks,
+            cwd=os.getcwd(),
+            approval_callback=self._approve_repeated_call,
+        )
         from djcode.workflow import WorkflowEngine
 
         self.workflow = WorkflowEngine()
@@ -179,7 +197,13 @@ class Operator:
     async def send(self, user_input: str) -> AsyncIterator[str]:
         from djcode.capabilities import capability_context
 
-        with capability_context(self.capabilities):
+        # `session_id` is grafted onto the Operator from outside (repl.py,
+        # app.py, session_commands.py), so it is read here rather than in
+        # __init__ where it is reliably absent. The spill writer (W3-2) uses it
+        # to name its per-session directory.
+        self.dispatch_ctx.session_id = getattr(self, "session_id", None)
+        self.dispatch_ctx.cwd = os.getcwd()
+        with capability_context(self.capabilities), dispatch_context(self.dispatch_ctx):
             try:
                 async for token in self._send(user_input):
                     yield token
@@ -446,6 +470,19 @@ class Operator:
         # No approval_callback and no policy permit means DENY. The engine does
         # not prompt -- a front-end owns every interaction with the user. An
         # engine that prompts cannot be driven by a GUI, a test, or a CI run.
+        return False
+
+    async def _approve_repeated_call(self, name: str, args: dict[str, Any], reason: str) -> bool:
+        """Approve a call the doom-loop breaker stopped (P1-9, W3-5).
+
+        Deliberately does NOT honour ``auto_accept``. An unattended run is
+        precisely where a model repeating one byte-identical tool call burns
+        real money with nobody watching, so the breaker is the one gate
+        ``--auto-accept`` does not open. With no front-end callback attached the
+        answer is no; the engine never prompts on its own.
+        """
+        if self.approval_callback is not None:
+            return await self.approval_callback(name, args)
         return False
 
     def _display_tool_call(self, name: str, args: dict, *, call_id: str = "") -> None:

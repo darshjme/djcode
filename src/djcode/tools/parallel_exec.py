@@ -90,7 +90,15 @@ async def execute_parallel(
                 "name": call["name"],
                 "result": result,
                 "elapsed": elapsed,
-                "success": not result.startswith("Error:") if isinstance(result, str) else True,
+                # W3-1: `result` is a ToolOutcome now. The old guard was
+                # `not result.startswith("Error:") if isinstance(result, str) else True`
+                # -- after W3 the isinstance arm is never taken, so `success`
+                # would be unconditionally True and the "N succeeded, 0 failed"
+                # header would lie about a batch in which every child failed.
+                # `result.ok` is the structured verdict; the prefix check is the
+                # W3 interim for the seventeen tools that still report failure
+                # only as text (see tools/__init__.py on ok_source).
+                "success": result.ok and not str(result).startswith("Error:"),
             }
         except TimeoutError:
             elapsed = time.monotonic() - t0

@@ -194,7 +194,18 @@ class WorkflowEngine:
                 results[ident] = DEPENDENCY_SKIPPED
                 continue
             self._record({"event": "tool", "id": ident, "name": node["name"]})
-            results[ident] = await dispatch(node["name"], node["arguments"])
+            # W3-1 interim, replaced by W3-3. The DAF branch has always done
+            # `str(await dispatch(...))` (see `handle` below) and this branch
+            # never did, so `dispatch_tool` returning a ToolOutcome made the two
+            # branches return different TYPES from `one()` -- str on a box with
+            # Rust, ToolOutcome on a box without. That asymmetry lands on
+            # `state.py:262 result[:200]` (TypeError, every spawned agent) and
+            # `capabilities.py:153 json.dumps` (TypeError, the workflow tool),
+            # neither of which any test on a Rust-equipped box would catch. The
+            # `str()` restores symmetry now; W3-3 replaces both branches with a
+            # `self._outcomes` side map that keeps `results` str-valued anyway,
+            # because `capabilities.py` JSON-encodes it.
+            results[ident] = str(await dispatch(node["name"], node["arguments"]))
         return results
 
     async def execute(self, nodes, dispatch, concurrency=1):

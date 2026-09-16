@@ -21,10 +21,12 @@ WHAT IS NOT HERE YET
 --------------------
 ``SSOT.md`` section 2.3 specifies a larger contract than this file exports:
 ``CoreSession``/``SessionOptions`` (W8), ``PermissionEngine``/``Decision`` (W6),
-``Checkpoint``/``CheckpointStore`` (W5), ``FileDiff``/``Hunk`` (W7),
-``HookBus`` (W3) and ``OnboardingFlow`` (W8). None of those modules exist yet.
-Exporting names that do not exist would make ``import djcode.core`` raise, so
-each is added to this file by the wave that builds it -- not before.
+``Checkpoint``/``CheckpointStore`` (W5) and ``FileDiff``/``Hunk`` (W7),
+``OnboardingFlow`` (W8). None of those modules exist yet. Exporting names that
+do not exist would make ``import djcode.core`` raise, so each is added to this
+file by the wave that builds it -- not before. ``HookBus`` and
+``DispatchContext`` were on that list until W3 built them; they are exported
+below because they now exist.
 
 The already-headless re-exports below were each verified to exist at the path
 given. Note ``ContextStats`` and ``InjectedContext`` live in ``context.manager``,
@@ -37,6 +39,7 @@ from __future__ import annotations
 from djcode.agents.registry import AgentRole, AgentSpec
 from djcode.config import load_config, save_config, set_value
 from djcode.context.manager import ContextStats, ContextWindowManager, InjectedContext
+from djcode.core.dispatch import DispatchContext, dispatch_context
 from djcode.core.events import (
     CoreEvent,
     EventBus,
@@ -51,6 +54,7 @@ from djcode.core.events import (
     tool_call_event,
     tool_result_event,
 )
+from djcode.core.hooks import HookBus, HookEvent, HookResult
 from djcode.core.outcome import ToolOutcome
 from djcode.errors import classify_error
 from djcode.provider import TOOL_DEFINITIONS, Message, Provider, ProviderConfig
@@ -63,8 +67,12 @@ __all__ = [
     "ContextStats",
     "ContextWindowManager",
     "CoreEvent",
+    "DispatchContext",
     "EventBus",
     "EventType",
+    "HookBus",
+    "HookEvent",
+    "HookResult",
     "InjectedContext",
     "Message",
     "OrchestratorEvent",
@@ -77,6 +85,7 @@ __all__ = [
     "classify_error",
     "complete_event",
     "diff_event",
+    "dispatch_context",
     "error_event",
     "load_config",
     "save_config",

@@ -405,16 +405,26 @@ class ResearchAssistant:
             # braces. Rather than guess which binary answered, widen once
             # when the filtered pass found nothing -- that also picks up a
             # keyword living in a file type the tree scan never ranked.
-            if include != "*" and (not result or result.startswith("No matches found")):
+            # W3-1: dispatch_tool returns a ToolOutcome, not a str. `str(...)`
+            # is `outcome.content` byte for byte; `.startswith` on the outcome
+            # itself would raise AttributeError into the bare `except Exception`
+            # below and the RA would return an empty briefing forever, silently.
+            text = str(result)
+            if include != "*" and (not text or text.startswith("No matches found")):
                 result = await dispatch_tool(
                     "grep",
                     {"pattern": keyword, "path": self.cwd, "include": "*"},
                 )
-            if not result or result.startswith("Error"):
+                text = str(result)
+            # W3 interim: `grep` reports failure only as text (ok_source
+            # "unverified"), so the prefix check stays until the handler returns
+            # a real ToolOutcome. `not result.ok` catches what dispatch knows:
+            # an unknown tool, a hook veto, a raised exception.
+            if not result.ok or not text or text.startswith("Error"):
                 return snippets
 
             # Parse grep output lines: "file:line:content"
-            for line in result.split("\n")[:20]:  # limit parsing
+            for line in text.split("\n")[:20]:  # limit parsing
                 match = re.match(r"^(.+?):(\d+):(.*)$", line)
                 if match:
                     fpath, lineno, content = match.groups()
@@ -443,10 +453,11 @@ class ResearchAssistant:
                     "path": self.cwd,
                 },
             )
-            if not result or result.startswith("Error"):
+            text = str(result)  # W3-1: ToolOutcome -> its model-facing content
+            if not result.ok or not text or text.startswith("Error"):  # W3 interim sniff
                 return snippets
 
-            files = [f.strip() for f in result.split("\n") if f.strip()][:5]
+            files = [f.strip() for f in text.split("\n") if f.strip()][:5]
             for fpath in files:
                 try:
                     content = await dispatch_tool(
@@ -456,13 +467,14 @@ class ResearchAssistant:
                             "limit": 30,
                         },
                     )
-                    if content and not content.startswith("Error"):
+                    body = str(content)
+                    if content.ok and body and not body.startswith("Error"):  # W3 interim sniff
                         snippets.append(
                             CodeSnippet(
                                 file_path=fpath,
                                 line_start=1,
                                 line_end=30,
-                                content=content[:1000],
+                                content=body[:1000],
                                 relevance=f"matches pattern '{pattern}'",
                             )
                         )
@@ -493,11 +505,19 @@ class ResearchAssistant:
             files: list[str] = []
             seen: set[str] = set()
             for result in gathered:
-                if not isinstance(result, str) or not result or result.startswith("Error"):
+                # `return_exceptions=True` means an entry can be a BaseException.
+                # W3-1: the non-exception entries are ToolOutcome now. The old
+                # guard was `not isinstance(result, str)`, which after W3 is True
+                # for EVERY successful glob -- this function would have gone on
+                # returning "" forever with nothing raised and nothing logged.
+                if isinstance(result, BaseException):
                     continue
-                if result.startswith("No files matching"):
+                text = str(result)
+                if not result.ok or not text or text.startswith("Error"):  # W3 interim sniff
                     continue
-                for line in result.split("\n"):
+                if text.startswith("No files matching"):
+                    continue
+                for line in text.split("\n"):
                     entry = line.strip()
                     # The glob tool appends its own "... (N total matches...)"
                     # footer; it is not a path and must not be counted as one.
@@ -555,8 +575,9 @@ class ResearchAssistant:
 
         try:
             result = await dispatch_tool("git", {"subcommand": subcommand})
-            if result and not result.startswith("Error"):
-                return result[:2000]  # cap output size
+            text = str(result)  # W3-1: ToolOutcome -> its model-facing content
+            if result.ok and text and not text.startswith("Error"):  # W3 interim sniff
+                return text[:2000]  # cap output size
             return ""
         except Exception:
             return ""
