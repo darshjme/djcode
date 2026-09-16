@@ -47,7 +47,7 @@ def test_actual_http_tool_loop_writes_edits_and_runs_test(tmp_path, monkeypatch)
         await provider._client.aclose()
         provider._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         try:
-            operator=Operator(provider,auto_accept=True,raw=True)
+            operator=Operator(provider,auto_accept=True)
             result=''.join([t async for t in operator.send('Fix and test sum.py')])
             assert result=='Verified arithmetic.'
             assert len(requests)==4
@@ -75,7 +75,8 @@ def test_cli_failure_is_nonzero():
 @pytest.mark.parametrize('parts', [['<think>private</think>answer'], ['<thi','nk>private</th','ink>answer'], ['before<think>x</think>after']])
 def test_thinking_tags_any_chunk_boundary(parts):
     parser=ThinkingStreamProcessor(show_thinking=False)
-    answer=''.join(filter(None,(parser.process_token(p) for p in parts)))+(parser.flush() or '')
+    # W2: process_token/flush return (response, thinking); index 0 is the answer.
+    answer=''.join(filter(None,(parser.process_token(p)[0] for p in parts)))+(parser.flush()[0] or '')
     assert answer==('beforeafter' if parts[0].startswith('before') else 'answer')
     assert parser.had_thinking
 
@@ -120,7 +121,7 @@ def test_malformed_arguments_never_execute(tmp_path):
                 yield event({'tool_calls':[{'index':0,'id':'bad','function':{'name':'bash','arguments':'touch sentinel'}}]});yield event(finish='tool_calls')
     async def run():
         with patch('djcode.agents.operator.dispatch_tool',new_callable=AsyncMock) as dispatch:
-            _=[x async for x in Operator(Fake(),auto_accept=True,raw=True).send('task')]
+            _=[x async for x in Operator(Fake(),auto_accept=True).send('task')]
             dispatch.assert_not_awaited()
     asyncio.run(run())
 
@@ -196,7 +197,7 @@ def test_native_tool_summary_code_blocks_are_never_reexecuted(tmp_path, monkeypa
                 raise AssertionError('Native summary incorrectly caused another tool round')
     async def run():
         provider = Fake()
-        operator = Operator(provider, auto_accept=True, raw=True)
+        operator = Operator(provider, auto_accept=True)
         result = ''.join([part async for part in operator.send('Write and summarize test')])
         assert result == summary
         assert provider.calls == 2

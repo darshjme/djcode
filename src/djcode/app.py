@@ -1090,7 +1090,6 @@ class DJcodeApp(App):
             self._operator = Operator(
                 self._provider,
                 bypass_rlhf=self._bypass_rlhf,
-                raw=True,
                 model=self._provider.config.model,
                 auto_accept=self._auto_accept,
                 show_thinking=False,
@@ -2113,7 +2112,6 @@ class DJcodeApp(App):
             self._operator = Operator(
                 self._provider,
                 bypass_rlhf=self._bypass_rlhf,
-                raw=True,
                 model=self._provider.config.model,
                 auto_accept=self._auto_accept,
                 show_thinking=False,

@@ -207,7 +207,7 @@ def test_plan_mode_denies_real_model_tool_request(tmp_path):
                 }
 
     async def run():
-        operator = Operator(Provider(), auto_accept=True, raw=True)
+        operator = Operator(Provider(), auto_accept=True)
         try:
             await repl.handle_slash_command("/plan", operator, None, StatusBar())
             assert operator.plan_mode

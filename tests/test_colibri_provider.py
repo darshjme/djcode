@@ -202,7 +202,7 @@ def test_colibri_fixture_runs_native_file_tool(settings, monkeypatch, tmp_path):
             return httpx.Response(200, text='data: ' + json.dumps({'choices': [{'delta': delta, 'finish_reason': reason}]}) + '\n\ndata: [DONE]\n\n')
         provider._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         try:
-            operator = Operator(provider, auto_accept=True, raw=True)
+            operator = Operator(provider, auto_accept=True)
             text = ''.join([part async for part in operator.send('Write the fixture file')])
             assert text == 'File written.' and len(requests) == 2
             assert target.read_text() == 'fixture verified'

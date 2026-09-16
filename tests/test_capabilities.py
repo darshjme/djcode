@@ -397,7 +397,7 @@ def test_operator_model_tools_reach_capabilities_and_daf(monkeypatch, tmp_path, 
         provider = Fixture(
             ProviderConfig("custom", "https://example.invalid", "fixture", "fixture")
         )
-        op = Operator(provider, auto_accept=True, raw=True)
+        op = Operator(provider, auto_accept=True)
         try:
             answer = "".join([token async for token in op.send("List jobs")])
             assert answer == "No running jobs"
@@ -458,7 +458,7 @@ def test_operator_cancel_completes_tool_protocol(monkeypatch, daf_runtime):
         provider = Fixture(
             ProviderConfig("custom", "https://example.invalid", "fixture", "fixture")
         )
-        op = Operator(provider, auto_accept=True, raw=True)
+        op = Operator(provider, auto_accept=True)
         try:
 
             async def consume():

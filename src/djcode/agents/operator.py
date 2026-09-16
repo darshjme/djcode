@@ -12,15 +12,16 @@ import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
-import questionary
-from rich.console import Console
-from rich.panel import Panel
-
+from djcode.core.events import (
+    EventBus,
+    thinking_event,
+    token_event,
+    tool_call_event,
+    tool_result_event,
+)
 from djcode.prompt import build_system_prompt
 from djcode.provider import Message, Provider
 from djcode.tools import dispatch_tool
-
-console = Console()
 
 # ── Thinking block detection ───────────────────────────────────────────────
 # Models like qwen3, deepseek, gemma4 emit <think>...</think> tags.
@@ -43,18 +44,27 @@ class ThinkingStreamProcessor:
     Everything outside thinking blocks is yielded as normal response text.
     """
 
-    def __init__(self, show_thinking: bool = True, raw: bool = False) -> None:
+    def __init__(self, show_thinking: bool = True) -> None:
         self.show_thinking = show_thinking
-        self.raw = raw
         self._in_think = False
         self._buffer = ""
-        self._think_started = False  # Track if we printed the thinking header
+        self._think_started = False  # Track if a thinking block has been seen
         self._response_text = ""  # Accumulated non-thinking response
 
-    def process_token(self, token: str) -> str | None:
-        """Handle tags even when a complete thinking block arrives in one chunk."""
+    def process_token(self, token: str) -> tuple[str | None, str | None]:
+        """Split one streamed token into (response_text, thinking_text).
+
+        Handles tags even when a complete thinking block arrives in one chunk,
+        and holds back a trailing partial marker so a ``<think>`` split across
+        two chunks is still recognised.
+
+        Returns ``(response, thinking)``; either element is ``None`` when this
+        token contributed nothing of that kind. Thinking is returned as data --
+        W2 removed the raw-ANSI write to stderr so a GUI can render it too.
+        """
         self._buffer += token
         output = []
+        thinking = []
         while self._buffer:
             marker = THINK_CLOSE if self._in_think else THINK_OPEN
             index = self._buffer.find(marker)
@@ -63,8 +73,8 @@ class ThinkingStreamProcessor:
                 if not self._in_think:
                     output.append(text)
                     self._think_started = True
-                elif self.show_thinking and not self.raw:
-                    sys.stderr.write(f"{THINK_PREFIX}{text}{THINK_RESET}")
+                elif self.show_thinking:
+                    thinking.append(text)
                 self._in_think = not self._in_think
                 continue
             hold = max(
@@ -74,28 +84,26 @@ class ThinkingStreamProcessor:
             self._buffer = self._buffer[-hold:] if hold else ""
             if not self._in_think:
                 output.append(safe)
-            elif self.show_thinking and not self.raw:
-                sys.stderr.write(f"{THINK_PREFIX}{safe}{THINK_RESET}")
+            elif self.show_thinking:
+                thinking.append(safe)
             break
         result = "".join(output)
         self._response_text += result
-        return result or None
+        return (result or None, "".join(thinking) or None)
 
-    def flush(self) -> str | None:
-        """Flush any remaining buffer content."""
+    def flush(self) -> tuple[str | None, str | None]:
+        """Flush any remaining buffer content as ``(response, thinking)``."""
         if self._buffer:
             if self._in_think:
-                # Unclosed thinking block — print it
-                if self.show_thinking and not self.raw:
-                    sys.stderr.write(f"{THINK_PREFIX}  {self._buffer}{THINK_RESET}\n")
-                    sys.stderr.flush()
+                # Unclosed thinking block — surface it rather than dropping it.
+                pending = self._buffer
                 self._buffer = ""
-                return None
+                return (None, pending if self.show_thinking else None)
             result = self._buffer
             self._buffer = ""
             self._response_text += result
-            return result
-        return None
+            return (result, None)
+        return (None, None)
 
     @property
     def had_thinking(self) -> bool:
@@ -110,18 +118,22 @@ class Operator:
         provider: Provider,
         *,
         bypass_rlhf: bool = False,
-        raw: bool = False,
         model: str = "",
         auto_accept: bool = False,
         show_thinking: bool = True,
         approval_callback: Callable[[str, dict[str, Any]], Awaitable[bool]] | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         self.provider = provider
         self.bypass_rlhf = bypass_rlhf
-        self.raw = raw
         self.auto_accept = auto_accept
         self.show_thinking = show_thinking
         self.approval_callback = approval_callback
+        # The engine emits; it never prints. A front-end that wants to show
+        # thinking, tool cards or tokens subscribes to this bus. When no bus is
+        # attached the engine simply runs silent -- which is what a headless
+        # caller wants and what `import djcode.core` guarantees.
+        self.event_bus = event_bus
         from djcode.workflow import WorkflowEngine
 
         self.workflow = WorkflowEngine()
@@ -148,9 +160,21 @@ class Operator:
                 ),
             )
         ]
-        self.max_tool_rounds = 20  # Safety limit on tool-calling loops
+        # W1-4: configurable, and the limit no longer destroys completed work.
+        from djcode.config import load_config as _load_config
+
+        self.max_tool_rounds = int(_load_config().get("max_tool_rounds", 200))
         self.last_had_thinking = False  # Track if last response had thinking
         self.last_had_tool_calls = False  # Track if last response used native tool calling
+
+    def _emit(self, event: Any) -> None:
+        """Publish an event if a front-end attached a bus. Never blocks.
+
+        ``emit_nowait`` is deliberate: a slow subscriber must not backpressure
+        the model stream. With no bus this is a no-op and the engine is silent.
+        """
+        if self.event_bus is not None:
+            self.event_bus.emit_nowait(event)
 
     async def send(self, user_input: str) -> AsyncIterator[str]:
         from djcode.capabilities import capability_context
@@ -221,23 +245,29 @@ class Operator:
                 self.messages = self.context_manager.get_messages()
             full_response = ""
             tool_calls: list[dict[str, Any]] = []
-            thinker = ThinkingStreamProcessor(show_thinking=self.show_thinking, raw=self.raw)
+            thinker = ThinkingStreamProcessor(show_thinking=self.show_thinking)
 
             from djcode.streaming import stream_turn
 
             async for text, calls in stream_turn(self.provider, self.messages):
                 if text:
-                    response_part = thinker.process_token(text)
+                    response_part, thinking_part = thinker.process_token(text)
+                    if thinking_part:
+                        self._emit(thinking_event(thinking_part))
                     if response_part:
                         full_response += response_part
+                        self._emit(token_event(response_part))
                         yield response_part
                 if calls:
                     tool_calls.extend(calls)
 
             # Flush remaining buffer
-            remainder = thinker.flush()
+            remainder, thinking_remainder = thinker.flush()
+            if thinking_remainder:
+                self._emit(thinking_event(thinking_remainder))
             if remainder:
                 full_response += remainder
+                self._emit(token_event(remainder))
                 yield remainder
 
             self.last_had_thinking = thinker.had_thinking
@@ -276,9 +306,10 @@ class Operator:
                         )
                         continue
 
-                    # Display tool call
-                    if not self.raw:
-                        self._display_tool_call(name, args)
+                    # Announce the call the moment it is parsed -- before
+                    # approval and before execution -- so a UI can show a
+                    # pending card while the user decides.
+                    self._display_tool_call(name, args, call_id=tc.get("id") or f"call_{name}")
 
                     if not await self._approve_tool(name, args):
                         self.messages.append(
@@ -297,9 +328,8 @@ class Operator:
                     with agent_context(self.provider, self.auto_accept, self.approval_callback):
                         result = await self.workflow.one(name, args, dispatch_tool)
 
-                    # Display result
-                    if not self.raw:
-                        self._display_tool_result(name, result)
+                    # Publish the result
+                    self._display_tool_result(name, result, call_id=tc.get("id") or f"call_{name}")
 
                     # Feed result back to LLM
                     tool_call_id = tc.get("id", f"call_{name}")
@@ -374,9 +404,32 @@ class Operator:
                 self.on_checkpoint(self.messages)
             break
         else:
-            raise RuntimeError(
-                f"Tool round limit ({self.max_tool_rounds}) reached; task is incomplete."
+            # W1-4: the limit used to raise, throwing away every completed tool
+            # round. Instead, tell the model to stop and summarise, run one more
+            # non-tool round, and return normally.
+            self.messages.append(
+                Message(
+                    role="user",
+                    content=(
+                        "<round-limit>You reached the tool-round limit for this turn. "
+                        "Summarise what you completed, what remains, and stop calling "
+                        "tools.</round-limit>"
+                    ),
+                )
             )
+            summary = ""
+            from djcode.streaming import stream_turn as _stream_turn
+
+            async for text, _calls in _stream_turn(self.provider, self.messages):
+                if text:
+                    summary += text
+                    self._emit(token_event(text))
+                    yield text
+            if summary:
+                self.messages.append(Message(role="assistant", content=summary))
+            self.context_manager.replace_messages(self.messages)
+            if self.on_checkpoint:
+                self.on_checkpoint(self.messages)
 
     async def _approve_tool(self, name: str, args: dict[str, Any]) -> bool:
         if self.plan_mode:
@@ -390,145 +443,24 @@ class Operator:
                 "Tool execution needs approval; use --auto-accept for an authorized unattended "
                 "task."
             )
-        console.print(
-            Panel(f"Tool: {name}\n{json.dumps(args, indent=2)[:1000]}", title="Approve tool")
-        )
-        return bool(
-            await asyncio.to_thread(
-                lambda: questionary.confirm("Execute this tool?", default=False).ask()
-            )
-        )
+        # No approval_callback and no policy permit means DENY. The engine does
+        # not prompt -- a front-end owns every interaction with the user. An
+        # engine that prompts cannot be driven by a GUI, a test, or a CI run.
+        return False
 
-    async def _stream_ollama(self) -> AsyncIterator[tuple[str, list[dict]]]:
-        """Stream from Ollama, yielding (text_chunk, tool_calls)."""
-        tool_calls: list[dict[str, Any]] = []
+    def _display_tool_call(self, name: str, args: dict, *, call_id: str = "") -> None:
+        """Announce a tool call as an event. Rendering belongs to the front-end.
 
-        async for chunk in self.provider.chat_ollama(self.messages, stream=True):
-            msg = chunk.get("message", {})
+        Fired the moment the call is parsed out of the stream -- before approval
+        and before execution -- so a UI can show a pending card while the user
+        is still deciding. The display name and argument formatting that used to
+        live here now live in ``djcode.frontends.repl.render``.
+        """
+        self._emit(tool_call_event(name, args, call_id))
 
-            # Text content
-            content = msg.get("content", "")
-            if content:
-                yield (content, [])
-
-            # Tool calls
-            if "tool_calls" in msg:
-                for tc in msg["tool_calls"]:
-                    tool_calls.append(tc)
-
-            # End of stream
-            if chunk.get("done", False):
-                if tool_calls:
-                    yield ("", tool_calls)
-                break
-
-    async def _stream_openai(self) -> AsyncIterator[tuple[str, list[dict]]]:
-        """Stream from OpenAI-compatible endpoint."""
-        tool_calls_acc: dict[int, dict] = {}
-
-        async for chunk in self.provider.chat_openai_compat(self.messages, stream=True):
-            choices = chunk.get("choices", [])
-            if not choices:
-                continue
-
-            delta = choices[0].get("delta", {})
-
-            # Text content
-            content = delta.get("content", "")
-            if content:
-                yield (content, [])
-
-            # Tool calls (streamed incrementally)
-            if "tool_calls" in delta:
-                for tc_delta in delta["tool_calls"]:
-                    idx = tc_delta.get("index", 0)
-                    if idx not in tool_calls_acc:
-                        tool_calls_acc[idx] = {
-                            "id": tc_delta.get("id", ""),
-                            "function": {"name": "", "arguments": ""},
-                        }
-                    if "function" in tc_delta:
-                        fn = tc_delta["function"]
-                        if "name" in fn:
-                            tool_calls_acc[idx]["function"]["name"] = fn["name"]
-                        if "arguments" in fn:
-                            tool_calls_acc[idx]["function"]["arguments"] += fn["arguments"]
-
-            # Finish reason
-            finish = choices[0].get("finish_reason", "")
-            if finish == "tool_calls" and tool_calls_acc:
-                yield ("", list(tool_calls_acc.values()))
-            elif finish == "stop":
-                break
-
-    # ── Clean tool display (Claude Code style) ─────────────────────────
-
-    # Canonical display names for tools
-    TOOL_DISPLAY: dict[str, str] = {
-        "bash": "Bash",
-        "file_read": "Read",
-        "file_write": "Write",
-        "file_edit": "Edit",
-        "grep": "Grep",
-        "glob": "Glob",
-        "git": "Git",
-        "web_fetch": "WebFetch",
-    }
-
-    def _display_tool_call(self, name: str, args: dict) -> None:
-        """Render a tool call as a clean one-liner: ⏺ ToolName(arg)"""
-        display_name = self.TOOL_DISPLAY.get(name, name.title())
-
-        if name == "bash":
-            cmd = args.get("command", "")
-            arg_display = cmd if len(cmd) < 72 else cmd[:69] + "..."
-        elif name in ("file_read", "file_write", "file_edit"):
-            arg_display = args.get("path", "")
-        elif name == "grep":
-            pattern = args.get("pattern", "")
-            path = args.get("path", ".")
-            arg_display = f'"{pattern}" in {path}'
-        elif name == "glob":
-            arg_display = args.get("pattern", "")
-        elif name == "git":
-            sub = args.get("subcommand", "")
-            git_args = args.get("args", "")
-            arg_display = f"{sub} {git_args}".strip()
-        else:
-            # Generic: show first meaningful arg value
-            vals = [str(v) for v in args.values() if v]
-            arg_display = vals[0][:72] if vals else ""
-
-        console.print(f"[#FFD700]\u23fa[/] [bold white]{display_name}[/][dim]({arg_display})[/]")
-
-    def _display_tool_result(self, name: str, result: str) -> None:
-        """Render a tool result — indented dim summary."""
-        lines = result.strip().splitlines()
-        if not lines:
-            return
-
-        total = len(lines)
-
-        # Check for errors
-        first = lines[0].strip().lower()
-        if first.startswith("error") or first.startswith("traceback"):
-            # Show error in red
-            err_msg = lines[0][:120]
-            console.print(f"  [dim]\u21b3[/] [red]Error: {err_msg}[/]")
-            return
-
-        # Short output: just show line count
-        if total <= 3:
-            for line in lines:
-                truncated = line[:120] + "..." if len(line) > 120 else line
-                console.print(f"  [dim]  {truncated}[/]")
-        else:
-            # Show first 3 lines + summary
-            for line in lines[:3]:
-                truncated = line[:120] + "..." if len(line) > 120 else line
-                console.print(f"  [dim]  {truncated}[/]")
-            remaining = total - 3
-            console.print(f"  [dim]  ... ({remaining} more lines)[/]")
+    def _display_tool_result(self, name: str, result: Any, *, call_id: str = "") -> None:
+        """Publish a tool result as an event."""
+        self._emit(tool_result_event(call_id, result, name=name))
 
     def reset(self) -> None:
         """Clear conversation history, keeping system prompt."""

@@ -991,7 +991,6 @@ async def run_repl(
     provider: str | None = None,
     model: str | None = None,
     bypass_rlhf: bool = False,
-    raw: bool = False,
     auto_accept: bool = False,
     show_thinking: bool = True,
 ) -> None:
@@ -1021,16 +1020,24 @@ async def run_repl(
     elif msg:
         console.print(f"[dim]{msg}[/]")
 
-    # Initialize operator with model-aware system prompt
+    # Initialize operator with model-aware system prompt.
+    # W2: the engine no longer prints. It emits CoreEvents on this bus and the
+    # REPL's renderer turns them into terminal output — which is what lets a GUI
+    # subscribe to the very same stream.
     effective_auto_accept = auto_accept or cfg.get("auto_accept", False)
+    from djcode.core.events import EventBus
+    from djcode.frontends.repl.render import render_event
+
+    event_bus = EventBus()
+    event_bus.subscribe(render_event)
     operator = Operator(
         llm,
         bypass_rlhf=bypass_rlhf,
-        raw=raw,
         model=llm.config.model,
         auto_accept=effective_auto_accept,
         show_thinking=show_thinking,
         approval_callback=_approve_repl_tool,
+        event_bus=event_bus,
     )
 
     # Initialize memory
@@ -1149,8 +1156,7 @@ async def run_repl(
             async def respond():
                 full_response = ""
                 try:
-                    if not raw:
-                        console.print()  # Spacing
+                    console.print()  # Spacing
 
                     if enhanced.was_enhanced:
                         desc = describe_enhancement(enhanced)
@@ -1178,12 +1184,8 @@ async def run_repl(
                             # Update thinking indicator while waiting (every 5 tokens)
                             pass
 
-                        if raw:
-                            sys.stdout.write(token)
-                            sys.stdout.flush()
-                        else:
-                            sys.stdout.write(token)
-                            sys.stdout.flush()
+                        sys.stdout.write(token)
+                        sys.stdout.flush()
 
                         full_response += token
 
@@ -1201,7 +1203,7 @@ async def run_repl(
                         sys.stdout.write("\r\033[K")
 
                     # Show response stats after completion
-                    if full_response and not raw:
+                    if full_response:
                         _elapsed = _time.monotonic() - _start_time
                         _est_tokens = len(full_response) // 4
                         if _est_tokens >= 1000:
@@ -1250,7 +1252,7 @@ async def run_repl(
                     )
 
                     # Dim separator after each response
-                    if full_response and not raw:
+                    if full_response:
                         try:
                             _term_width = os.get_terminal_size().columns
                         except OSError:
@@ -1301,7 +1303,6 @@ async def run_oneshot(
     provider: str | None = None,
     model: str | None = None,
     bypass_rlhf: bool = False,
-    raw: bool = False,
     show_thinking: bool = True,
     auto_accept: bool = False,
 ) -> None:
@@ -1323,13 +1324,18 @@ async def run_oneshot(
             raise click.ClickException(msg)
         if msg:
             console.print(msg, markup=False)
+        from djcode.core.events import EventBus
+        from djcode.frontends.repl.render import render_event
+
+        oneshot_bus = EventBus()
+        oneshot_bus.subscribe(render_event)
         operator = Operator(
             llm,
             bypass_rlhf=bypass_rlhf,
-            raw=raw,
             model=llm.config.model,
             show_thinking=show_thinking,
             auto_accept=auto_accept,
+            event_bus=oneshot_bus,
         )
         operator.on_checkpoint = lambda messages: session_db.save_conversation(session_id, messages)
         async for token in operator.send(prompt):
