@@ -1,4 +1,17 @@
-"""Shell execution with bounded output and process-group cancellation."""
+"""Shell execution with a memory bound and process-group cancellation.
+
+``output_limit`` is a MEMORY bound and nothing else. It stops ``yes`` or a
+runaway build log from growing an unbounded ``bytearray`` in this process; it is
+not the model-facing output policy and it no longer writes a sentence into the
+result. W3-2 moved that policy to the one chokepoint
+(``djcode/core/spill.py``), which keeps head+tail and spills the full text to a
+file the model can read back -- something this function could never do, because
+by the time it is truncating, the bytes it is dropping are already gone.
+
+The old value was 50_000 bytes here and 30_000 in ``git.py``: two different
+ceilings, both below what a real ``git diff`` or test run produces, both
+silently unrecoverable. One bound, 2 MB, applied in one place.
+"""
 
 from __future__ import annotations
 
@@ -6,12 +19,17 @@ import asyncio
 import os
 import signal
 
+#: 2 MB. Big enough that the chokepoint's spill file, not this cap, is what a
+#: user hits in practice; small enough that N concurrent ``parallel_execute``
+#: children cannot exhaust memory.
+OUTPUT_LIMIT = 2_000_000
+
 
 async def run_process(
     *args: str,
     timeout: float,
     shell: bool = False,
-    output_limit: int = 50_000,
+    output_limit: int = OUTPUT_LIMIT,
     cwd: str | None = None,
 ) -> str:
     kwargs = dict(
@@ -26,14 +44,13 @@ async def run_process(
         else asyncio.create_subprocess_exec(*args, **kwargs)
     )
     chunks = bytearray()
-    truncated = False
 
     async def read_output() -> None:
-        nonlocal truncated
+        # Keep draining after the bound is reached: the child blocks on a full
+        # pipe otherwise and the timeout would fire on a command that finished.
         while chunk := await proc.stdout.read(8192):
             room = max(0, output_limit - len(chunks))
             chunks.extend(chunk[:room])
-            truncated |= len(chunk) > room
         await proc.wait()
 
     async def stop() -> None:
@@ -55,8 +72,6 @@ async def run_process(
         await stop()
         raise
     result = chunks.decode(errors="replace").strip()
-    if truncated:
-        result += "\n... (output truncated)"
     if proc.returncode:
         result = f"[exit code {proc.returncode}]\n{result}"
     return result or "(no output)"

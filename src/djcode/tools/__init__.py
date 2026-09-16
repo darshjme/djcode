@@ -23,6 +23,7 @@ from djcode.capabilities import dispatch_capability
 from djcode.core.dispatch import DOOM_LOOP_THRESHOLD, DispatchContext, active_context
 from djcode.core.hooks import HookEvent
 from djcode.core.outcome import ToolOutcome
+from djcode.core.spill import apply_output_policy
 from djcode.scheduler import schedule_tool
 from djcode.tools.agent_spawn import execute_agent_status, execute_spawn_agent
 from djcode.tools.bash import execute_bash
@@ -221,6 +222,18 @@ async def dispatch_tool(
         details.update(extra)
         return ToolOutcome(content=text, ok=False, details=details, duration_ms=elapsed_ms())
 
+    def failed(text: str, **extra: Any) -> ToolOutcome:
+        """A handler raised. Bounded like any other output -- an exception
+        message is not automatically short (a subprocess error can carry a whole
+        stderr dump), and the output policy has exactly one owner."""
+        outcome = ToolOutcome(
+            content=text,
+            ok=False,
+            details={**hook_details, "tool": name, "ok_source": "raised", **extra},
+            duration_ms=elapsed_ms(),
+        )
+        return apply_output_policy(outcome, session_id=getattr(ctx, "session_id", None))
+
     hook_details: dict[str, Any] = {}
     payload: dict[str, Any] = {
         "name": name,
@@ -289,43 +302,26 @@ async def dispatch_tool(
         raise
     except TypeError as exc:
         phase = "bind" if _is_bind_error(handler, arguments) else "handler"
-        return ToolOutcome(
-            content=f"Error executing {name}: {exc}",
-            ok=False,
-            details={
-                **hook_details,
-                "tool": name,
-                "ok_source": "raised",
-                "exception": "TypeError",
-                "phase": phase,
-            },
-            duration_ms=elapsed_ms(),
-        )
+        return failed(f"Error executing {name}: {exc}", exception="TypeError", phase=phase)
     except Exception as exc:
-        return ToolOutcome(
-            content=f"Error executing {name}: {exc}",
-            ok=False,
-            details={
-                **hook_details,
-                "tool": name,
-                "ok_source": "raised",
-                "exception": type(exc).__name__,
-            },
-            duration_ms=elapsed_ms(),
-        )
+        return failed(f"Error executing {name}: {exc}", exception=type(exc).__name__)
 
     # 5. Checkpoint post-image + diff construction (P0-1/P0-3). W5/W7 STUB.
     # 6. Post-edit diagnostics (P1-3). W11 STUB.
-    # 7. Bounded output + spill file (P1-4). W3-2 -- the next stage of THIS
-    #    wave -- replaces this comment with head-2000 + tail-2000 truncation and
-    #    a spill file under CONFIG_DIR/tool-output/<session>/, setting
-    #    outcome.spill_path and putting the absolute path in content too. It
-    #    also deletes the five ad-hoc truncations in bash/grep/parallel_exec/
-    #    notebook/agent_spawn, because this is where that policy lives now.
-    #    Nothing else in this function moves when that lands.
 
     # 8. ToolOutcome construction (P0-8).
     outcome = _build_outcome(name, raw, duration_ms=elapsed_ms(), extra_details=hook_details)
+
+    # 7. Bounded output + spill file (P1-4, W3-2). Deliberately after step 8,
+    #    not before it as section 2.4 numbers them: a handler may return its own
+    #    ToolOutcome (the W7-2 diff seam), so bounding the raw handler value
+    #    would miss exactly the outcomes W7 will produce. Applied here, ONE call
+    #    covers every shape -- and this is now the only place in the codebase
+    #    that truncates a tool result. The five ad-hoc truncations that used to
+    #    live in bash/grep/parallel_exec/notebook/agent_spawn (plus the silent
+    #    one in web_fetch and the second bound in git) are gone; see
+    #    djcode/core/spill.py for what replaced them.
+    apply_output_policy(outcome, session_id=getattr(ctx, "session_id", None))
 
     # 9. PostToolUse hook. Advisory only: the side effect already happened, so a
     #    veto here cannot undo it and is recorded rather than enforced.

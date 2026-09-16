@@ -330,13 +330,13 @@ async def execute_agent_status(agent_id: str = "") -> str:
             lines.append(f"Duration: {info['elapsed']:.1f}s")
 
         if info["status"] == "completed" and info["result"]:
-            result = info["result"]
-            if len(result) > 5000:
-                # W3 spills the full text to a file and links it from here.
-                # Until then the message states what happened to the tail.
-                dropped = len(result) - 5000
-                result = result[:5000] + f"\n... (truncated; {dropped} chars dropped)"
-            lines.append(f"\nResult:\n{result}")
+            # W3-2: the 5 000-char head-only cut that used to be here is gone.
+            # `agent_status` goes through dispatch_tool like every other tool,
+            # so a long agent result is now bounded head+tail and spilled to a
+            # file the model can read back -- which is what the removed comment
+            # here promised W3 would do. The full text was never in danger of
+            # being lost to memory: _background_tasks holds it either way.
+            lines.append(f"\nResult:\n{info['result']}")
         elif info["status"] == "failed" and info["error"]:
             lines.append(f"\nError: {info['error']}")
 

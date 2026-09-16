@@ -57,6 +57,10 @@ async def execute_git(subcommand: str) -> str:
         arguments = shlex.split(subcommand)
         if not arguments or arguments[0].startswith("-"):
             return "Error: a git subcommand is required (global options are not accepted)"
-        return await run_process("git", "--no-pager", *arguments, timeout=30, output_limit=30_000)
+        # No output_limit= here on purpose. It used to be 30_000 -- a second,
+        # lower ceiling than bash's, so a real `git diff` or `git log` was cut
+        # at 30 k with no way to recover the rest. The chokepoint's spill file
+        # (W3-2) is the one policy now; run_process keeps only its memory bound.
+        return await run_process("git", "--no-pager", *arguments, timeout=30)
     except Exception as exc:
         return f"Error: {exc}"

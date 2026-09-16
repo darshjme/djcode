@@ -331,10 +331,10 @@ TOOL_DEFINITIONS = [
                         "type": "string",
                         "description": "The URL to fetch.",
                     },
-                    "max_chars": {
-                        "type": "integer",
-                        "description": "Maximum characters to return (default 10000).",
-                    },
+                    # No max_chars: W3-2 deleted it from execute_web_fetch. A
+                    # schema property whose handler does not accept it turns a
+                    # legal model call into a TypeError at dispatch, so schema
+                    # and signature change together or not at all.
                 },
                 "required": ["url"],
             },
@@ -497,10 +497,8 @@ TOOL_DEFINITIONS = [
                         "type": "string",
                         "description": "Filter by cell type: code, markdown, or raw.",
                     },
-                    "max_output_chars": {
-                        "type": "integer",
-                        "description": "Maximum characters per cell output (default 5000).",
-                    },
+                    # No max_output_chars: W3-2 deleted it from
+                    # execute_notebook_read. See the web_fetch note above.
                 },
                 "required": ["path"],
             },

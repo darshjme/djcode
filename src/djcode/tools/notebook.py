@@ -17,15 +17,22 @@ async def execute_notebook_read(
     path: str,
     cell_index: int | None = None,
     cell_type: str | None = None,
-    max_output_chars: int = 5000,
 ) -> str:
     """Read a Jupyter notebook and display cells with outputs.
+
+    W3-2 removed the ``max_output_chars`` parameter along with the per-output
+    ``_truncate`` helper and the 5 000-char budget. It was a model-facing knob
+    (it was in ``provider.py``'s tool schema) whose only effect was to discard
+    text irrecoverably, and it bounded outputs PER CELL, so a 500-cell notebook
+    still returned megabytes. The chokepoint now bounds the whole result once
+    and spills the rest to a file. Note the shape of what the model sees does
+    change: a single enormous cell output can now push later cells into the
+    elided middle -- they are in the spill file, which the result links.
 
     Args:
         path: Absolute path to the .ipynb file.
         cell_index: If specified, show only this cell (0-based index).
         cell_type: Filter by cell type: 'code', 'markdown', or 'raw'.
-        max_output_chars: Maximum characters per cell output (default 5000).
 
     Returns:
         Formatted display of notebook cells with their content and outputs.
@@ -99,7 +106,7 @@ async def execute_notebook_read(
             if cell_type and ct != cell_type:
                 continue
 
-            lines.append(_format_cell(idx, cell, max_output_chars))
+            lines.append(_format_cell(idx, cell))
             lines.append("")
 
         return "\n".join(lines)
@@ -232,7 +239,7 @@ async def execute_notebook_edit(
         return f"Error editing notebook {path}: {e}"
 
 
-def _format_cell(idx: int, cell: dict[str, Any], max_output_chars: int) -> str:
+def _format_cell(idx: int, cell: dict[str, Any]) -> str:
     """Format a single cell for display."""
     ct = cell.get("cell_type", "unknown")
     exec_count = cell.get("execution_count")
@@ -265,7 +272,6 @@ def _format_cell(idx: int, cell: dict[str, Any], max_output_chars: int) -> str:
     if outputs:
         lines.append("")
         lines.append("  Output:")
-        total_chars = 0
 
         for out in outputs:
             output_type = out.get("output_type", "unknown")
@@ -273,16 +279,11 @@ def _format_cell(idx: int, cell: dict[str, Any], max_output_chars: int) -> str:
             if output_type == "stream":
                 text = "".join(out.get("text", []))
                 stream_name = out.get("name", "stdout")
-                text = _truncate(text, max_output_chars - total_chars)
-                total_chars += len(text)
                 lines.append(f"  [{stream_name}] {text}")
 
             elif output_type == "execute_result":
                 data = out.get("data", {})
-                text = _extract_output_text(data)
-                text = _truncate(text, max_output_chars - total_chars)
-                total_chars += len(text)
-                lines.append(f"  => {text}")
+                lines.append(f"  => {_extract_output_text(data)}")
 
             elif output_type == "error":
                 ename = out.get("ename", "Error")
@@ -294,26 +295,17 @@ def _format_cell(idx: int, cell: dict[str, Any], max_output_chars: int) -> str:
                     import re
 
                     tb = "\n".join(traceback_lines)
-                    tb = re.sub(r"\x1b\[[0-9;]*m", "", tb)
-                    error_text = _truncate(tb, max_output_chars - total_chars)
-                total_chars += len(error_text)
+                    error_text = re.sub(r"\x1b\[[0-9;]*m", "", tb)
                 lines.append(f"  [ERROR] {error_text}")
 
             elif output_type == "display_data":
                 data = out.get("data", {})
                 if "text/plain" in data:
-                    text = "".join(data["text/plain"])
-                    text = _truncate(text, max_output_chars - total_chars)
-                    total_chars += len(text)
-                    lines.append(f"  [display] {text}")
+                    lines.append(f"  [display] {''.join(data['text/plain'])}")
                 if "image/png" in data:
                     lines.append("  [display] <image/png embedded>")
                 if "text/html" in data:
                     lines.append("  [display] <text/html embedded>")
-
-            if total_chars >= max_output_chars:
-                lines.append("  ... (output truncated)")
-                break
 
     return "\n".join(lines)
 
@@ -350,15 +342,6 @@ def _extract_output_text(data: dict[str, Any]) -> str:
         return f"<{types}>"
 
     return "(no text output)"
-
-
-def _truncate(text: str, max_chars: int) -> str:
-    """Truncate text to max_chars."""
-    if max_chars <= 0:
-        return "..."
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars] + "..."
 
 
 def _string_to_source_lines(text: str) -> list[str]:

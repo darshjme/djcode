@@ -46,10 +46,13 @@ async def execute_grep(
     if not result:
         return "No matches found."
 
-    # Cap output
-    lines = result.splitlines()
-    if len(lines) > 200:
-        lines = lines[:200]
-        lines.append(f"... ({len(lines)} matches shown, more truncated)")
-
-    return "\n".join(lines)
+    # The 200-line slice that used to be here is gone (W3-2). It was an output
+    # truncation wearing a search-limit's clothes, it dropped the tail with no
+    # way to get it back, and its own message was wrong: `len(lines)` was read
+    # AFTER the slice, so it always claimed exactly "200 matches shown" however
+    # many there were, and the append made the list 201 long. The chokepoint
+    # keeps head+tail and spills the full match list to a file instead.
+    #
+    # `--max-count=200` on line 20 stays: that is ripgrep's PER-FILE search
+    # bound, an argument to the search, not a cut taken after it.
+    return result

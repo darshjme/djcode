@@ -141,9 +141,51 @@ def test_shell_timeout_kills_descendant(tmp_path):
     assert not marker.exists()
 
 
-def test_shell_output_bounded():
+def test_shell_output_bound_is_memory_only():
+    """run_process still bounds the pipe read; it no longer editorialises.
+
+    This used to assert `len(result)<50100 and 'truncated' in result` -- the old
+    50 k cap plus the sentence bash appended about it. W3-2 raised the cap to
+    2 MB and deleted the sentence: this function bounds MEMORY, and the
+    chokepoint owns the model-facing policy (next test), because only the
+    chokepoint can keep the bytes it drops.
+    """
+    from djcode.tools.bash import OUTPUT_LIMIT, run_process
     result=asyncio.run(execute_bash("yes x | head -c 90000"))
-    assert len(result)<50100 and 'truncated' in result
+    assert len(result)==89999          # 90_000 bytes; .strip() eats the trailing newline
+    assert 'truncated' not in result   # nothing invented, nothing claimed
+    assert OUTPUT_LIMIT==2_000_000
+    # The bound still bounds -- proven with a small one rather than 2 MB of pipe.
+    small=asyncio.run(run_process("yes x | head -c 90000",shell=True,timeout=30,output_limit=1000))
+    assert len(small)==999 and 'truncated' not in small
+
+
+def test_chokepoint_bounds_and_spills_shell_output(tmp_path, monkeypatch):
+    """The other half of the contract the test above used to cover alone.
+
+    Note it goes through dispatch_tool, not execute_bash: the old test called
+    the tool directly, so even rewritten in place it would have proven nothing
+    about the policy that now owns truncation.
+    """
+    from djcode import config
+    from djcode.core.spill import HEAD_CHARS, TAIL_CHARS
+    from djcode.tools import dispatch_tool
+    monkeypatch.setattr(config,'CONFIG_DIR',tmp_path)
+    raw=asyncio.run(execute_bash("yes x | head -c 90000"))
+    outcome=asyncio.run(dispatch_tool('bash',{'command':"yes x | head -c 90000"}))
+    spill=outcome.spill_path
+    assert spill is not None and Path(spill).is_absolute()
+    # Bounded head+tail, not the 89_999 characters bash produced.
+    assert outcome.content.startswith(raw[:HEAD_CHARS])
+    assert raw[-TAIL_CHARS:] in outcome.content
+    assert len(outcome.content)<=HEAD_CHARS+TAIL_CHARS+2*len(spill)+200
+    # The model can get the rest back: the absolute path is in the text it reads.
+    assert spill in outcome.content
+    # ...and the file is the FULL output, in UTF-8, byte for byte.
+    assert Path(spill).read_bytes().decode('utf-8')==raw
+    assert Path(spill).read_text(encoding='utf-8').count('x')==45000
+    assert outcome.details['output_chars']==len(raw)
+    assert Path(spill).is_relative_to((tmp_path/'tool-output').resolve())
 
 
 def test_featherless_config(monkeypatch):

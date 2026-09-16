@@ -158,12 +158,13 @@ def _format_parallel_results(
         header = f"--- [{r['id']}] {r['name']} ({status}, {r['elapsed']:.2f}s) ---"
         lines.append(header)
 
-        result_text = str(r["result"])
-        # Truncate individual results if too long
-        if len(result_text) > 10000:
-            result_text = result_text[:10000] + "\n... (output truncated at 10000 chars)"
-
-        lines.append(result_text)
+        # No per-result truncation here (W3-2). Every child went through
+        # dispatch_tool, so every child's text is ALREADY bounded and, if it was
+        # large, already spilled to a file whose path is inside that text. The
+        # 10 000-char cut that used to live here sliced through those bounded
+        # results a second time -- taking the head only, which is precisely
+        # where it would drop the spill marker and strand the file.
+        lines.append(str(r["result"]))
         lines.append("")
 
     return "\n".join(lines)
