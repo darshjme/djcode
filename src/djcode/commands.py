@@ -12,7 +12,17 @@ class Command:
     name: str
     description: str
     group: str
+    #: Listed by the line-oriented REPL.
     repl: bool = True
+    #: Listed by the full-screen TUI. The symmetric counterpart of ``repl``:
+    #: ``tui=False`` means the TUI has no handler for this command, and
+    #: ``tests/test_execution.py::test_registry_has_dispatch_for_every_command``
+    #: is the reason the flag has to be honest rather than the palette
+    #: advertising a command that does nothing. Blueprint W5-4 defers the TUI
+    #: undo surface ("Esc-Esc in the TUI is deferred with the TUI") and SSOT
+    #: non-goal 8 puts the TUI in maintenance, so the undo family ships
+    #: REPL-only in W5.
+    tui: bool = True
 
 
 COMMANDS = (
@@ -73,6 +83,23 @@ COMMANDS = (
     Command("/recipe", "List, inspect or run a recipe", "Context & tools"),
     Command("/history", "Browse past sessions", "Session"),
     Command("/resume", "Resume a past session by ID", "Session"),
+    # W5 (P0-1). These go in the registry NOW, not in W9: this list is what
+    # SlashCompleter and /help read, and it is the list W9's command registry
+    # will be built from. A row added only to repl.py's if/elif chain is a row
+    # W9 silently drops.
+    Command(
+        "/undo",
+        "Revert the files the last turn changed (/undo <n> goes further back)",
+        "Session",
+        tui=False,
+    ),
+    Command("/redo", "Re-apply the most recent /undo", "Session", tui=False),
+    Command(
+        "/rewind",
+        "Pick a past turn and roll the files back to before it",
+        "Session",
+        tui=False,
+    ),
     Command("/uncensored", "Show uncensored model info", "Models & setup"),
     Command("/shortcuts", "Show keyboard shortcuts", "Session"),
     Command("/todo", "Manage session todos (add/done/rm/list)", "Context & tools", repl=False),
@@ -88,7 +115,9 @@ COMMANDS = (
 
 
 def commands_for(interface: str = "tui") -> tuple[Command, ...]:
-    return tuple(command for command in COMMANDS if interface != "repl" or command.repl)
+    if interface == "repl":
+        return tuple(command for command in COMMANDS if command.repl)
+    return tuple(command for command in COMMANDS if command.tui)
 
 
 def match_commands(query: str, interface: str = "tui") -> list[Command]:

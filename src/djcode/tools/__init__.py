@@ -177,6 +177,34 @@ def _build_outcome(
     return outcome
 
 
+async def _finish_checkpoint(store: Any, pending: Any) -> dict[str, Any]:
+    """Close a capture window and summarise it for ``ToolOutcome.details``.
+
+    Only shas, paths and counts go into ``details`` -- never a file body.
+    ``details`` rides on ``tool_result_event``, which W10 serialises to JSONL,
+    so a 4 MB pre-image in there would be written to the event stream on every
+    edit. ``apply_output_policy`` bounds ``.content`` only; it never looks at
+    ``details``.
+
+    A checkpoint failure must never turn into a tool failure, so everything
+    here is swallowed and logged.
+    """
+    try:
+        checkpoint = await store.after(pending)
+    except Exception:  # pragma: no cover - defensive
+        return {}
+    covered = bool(getattr(pending, "covered", True))
+    summary: dict[str, Any] = {"covered": covered}
+    if not covered and getattr(pending, "reason", ""):
+        summary["reason"] = pending.reason
+    if checkpoint is not None:
+        summary["id"] = checkpoint.id
+        summary["seq"] = checkpoint.seq
+        summary["files"] = len(checkpoint.files)
+        summary["paths"] = [f.path for f in checkpoint.files[:20]]
+    return {"checkpoint": summary}
+
+
 async def dispatch_tool(
     name: str,
     arguments: dict[str, Any],
@@ -287,30 +315,56 @@ async def dispatch_tool(
                 extra={**hook_details, "doom_loop": True},
             )
 
-    # 3. Checkpoint pre-image capture (P0-1). W5 STUB -- reads the target's
-    #    pre-image for file_write/file_edit/notebook_edit and takes the bash
-    #    mtime+size ledger, via ctx.checkpoints. Nothing to capture yet.
+    # 3. Checkpoint pre-image capture (P0-1, W5-2). Reads the target's bytes
+    #    for file_write/file_edit/notebook_edit and refreshes the bash/git
+    #    content ledger, via ctx.checkpoints. Deliberately the LAST thing before
+    #    the handler: everything that can refuse is above it, so a pre-image is
+    #    never taken for a call that does not run.
+    pending: Any = None
+    checkpoint_details: dict[str, Any] = {}
+    store = getattr(ctx, "checkpoints", None) if ctx is not None else None
+    if store is not None:
+        pending = await store.before(
+            name,
+            arguments,
+            session_id=getattr(ctx, "session_id", None) or "",
+            cwd=getattr(ctx, "cwd", None),
+        )
 
     # 4. The handler. Everything above this line can refuse; nothing below it
     #    can, because from here on the side effect has happened.
     try:
-        raw = await handler(**arguments)
-    except asyncio.CancelledError:
-        # MUST propagate -- see the docstring. Redundant against `except
-        # Exception` (CancelledError is a BaseException on 3.12) and kept
-        # deliberately so the invariant is stated, not inferred.
-        raise
-    except TypeError as exc:
-        phase = "bind" if _is_bind_error(handler, arguments) else "handler"
-        return failed(f"Error executing {name}: {exc}", exception="TypeError", phase=phase)
-    except Exception as exc:
-        return failed(f"Error executing {name}: {exc}", exception=type(exc).__name__)
+        try:
+            raw = await handler(**arguments)
+        except asyncio.CancelledError:
+            # MUST propagate -- see the docstring. Redundant against `except
+            # Exception` (CancelledError is a BaseException on 3.12) and kept
+            # deliberately so the invariant is stated, not inferred.
+            raise
+        except TypeError as exc:
+            phase = "bind" if _is_bind_error(handler, arguments) else "handler"
+            return failed(f"Error executing {name}: {exc}", exception="TypeError", phase=phase)
+        except Exception as exc:
+            return failed(f"Error executing {name}: {exc}", exception=type(exc).__name__)
+    finally:
+        # 5. Checkpoint post-image (P0-1/W5-2). In a `finally` on purpose: a
+        #    handler that raised, and a bash call that was cancelled halfway,
+        #    may both have written bytes already. Skipping the post-image there
+        #    would leave a pre-image with nothing to compare it to -- and, for
+        #    the ledger tools, would leak the capture lock. The diff half of
+        #    this step (P0-3) is W7's and is still a stub.
+        if pending is not None and store is not None:
+            checkpoint_details = await _finish_checkpoint(store, pending)
 
-    # 5. Checkpoint post-image + diff construction (P0-1/P0-3). W5/W7 STUB.
     # 6. Post-edit diagnostics (P1-3). W11 STUB.
 
     # 8. ToolOutcome construction (P0-8).
-    outcome = _build_outcome(name, raw, duration_ms=elapsed_ms(), extra_details=hook_details)
+    outcome = _build_outcome(
+        name,
+        raw,
+        duration_ms=elapsed_ms(),
+        extra_details={**hook_details, **checkpoint_details},
+    )
 
     # 7. Bounded output + spill file (P1-4, W3-2). Deliberately after step 8,
     #    not before it as section 2.4 numbers them: a handler may return its own

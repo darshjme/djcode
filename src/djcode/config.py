@@ -37,6 +37,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "auto_accept": False,
     "base_url": "",
     "custom_providers": {},
+    # W5 (P0-1) checkpoints. `checkpoint_budget_mb` is the key the blueprint
+    # names; the other four exist because the honest answer to "can bash be
+    # undone here?" depends on the size of the tree, and a user with a
+    # 100k-file repo needs to be able to move the line rather than be told no.
+    "checkpoint_budget_mb": 256,
+    "checkpoint_max_file_mb": 8,
+    "checkpoint_bash": True,
+    "checkpoint_walk_budget_ms": 400,
+    "checkpoint_baseline_budget_ms": 1500,
+    "checkpoint_max_entries": 20000,
 }
 
 

@@ -20,9 +20,16 @@ it here -- never to reach into ``djcode.repl`` or ``djcode.app``.
 WHAT IS NOT HERE YET
 --------------------
 ``SSOT.md`` section 2.3 specifies a larger contract than this file exports:
-``CoreSession``/``SessionOptions`` (W8), ``PermissionEngine``/``Decision`` (W6),
-``Checkpoint``/``CheckpointStore`` (W5) and ``FileDiff``/``Hunk`` (W7),
-``OnboardingFlow`` (W8). None of those modules exist yet. Exporting names that
+``CoreSession``/``SessionOptions`` (W8), ``PermissionEngine``/``Decision`` (W6)
+and ``FileDiff``/``Hunk`` (W7), ``OnboardingFlow`` (W8). Those modules do not
+exist yet. ``Checkpoint``/``CheckpointStore``/``RestoreReport`` were on that
+list until W5 and are exported below.
+
+SSOT 2.3 hangs the undo API off ``CoreSession.checkpoints()`` / ``.restore(id)``
+-- but ``CoreSession`` is W8 and does not exist, so W5 cannot put it there. The
+methods live on ``CheckpointStore`` (``checkpoints(session_id)``,
+``restore(...)``, ``restore_ids(...)``) and W8 re-exposes them as the thin
+``CoreSession`` facade over a store it already holds. Exporting names that
 do not exist would make ``import djcode.core`` raise, so each is added to this
 file by the wave that builds it -- not before. ``HookBus`` and
 ``DispatchContext`` were on that list until W3 built them; they are exported
@@ -39,6 +46,12 @@ from __future__ import annotations
 from djcode.agents.registry import AgentRole, AgentSpec
 from djcode.config import load_config, save_config, set_value
 from djcode.context.manager import ContextStats, ContextWindowManager, InjectedContext
+from djcode.core.checkpoints import (
+    Checkpoint,
+    CheckpointStore,
+    FileChange,
+    RestoreReport,
+)
 from djcode.core.dispatch import DispatchContext, dispatch_context
 from djcode.core.events import (
     CoreEvent,
@@ -66,10 +79,13 @@ __all__ = [
     "AgentSpec",
     "ContextStats",
     "ContextWindowManager",
+    "Checkpoint",
+    "CheckpointStore",
     "CoreEvent",
     "DispatchContext",
     "EventBus",
     "EventType",
+    "FileChange",
     "HookBus",
     "HookEvent",
     "HookResult",
@@ -78,6 +94,7 @@ __all__ = [
     "OrchestratorEvent",
     "Provider",
     "ProviderConfig",
+    "RestoreReport",
     "Session",
     "SessionDB",
     "ToolOutcome",

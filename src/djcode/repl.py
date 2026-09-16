@@ -229,6 +229,213 @@ def _handle_provider_switch_interactive(operator: Operator, status_bar: StatusBa
     console.print(f"[green]Provider switched to:[/] {prov_info.get('name', provider_id)}")
 
 
+def _checkpoint_store(operator: Operator):
+    """The store the chokepoint is writing into, or None when undo is inactive."""
+    return getattr(getattr(operator, "dispatch_ctx", None), "checkpoints", None)
+
+
+def drain_checkpoint_notices(operator: Operator) -> None:
+    """Print anything the checkpoint store needs the user to know, once.
+
+    This is what makes "bash is not covered" visible AT THE MOMENT IT MATTERS
+    rather than in a docstring: the store raises a notice the first time a
+    shell command runs without protection, and the REPL prints it as soon as
+    the turn ends, long before the user reaches for /undo.
+    """
+    store = _checkpoint_store(operator)
+    if store is None:
+        return
+    for note in store.pop_notices():
+        console.print(f"[yellow]⚠ {note}[/]")
+
+
+def _render_restore_plan(title: str, actions, coverage: list[str]) -> bool:
+    """Show exactly what will be touched. Returns True if anything would move."""
+    from rich.table import Table
+
+    console.print(f"\n[bold {GOLD}]↺ {title}[/]")
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column(no_wrap=True)
+    # Paths must never be elided: the whole point of the dry run is that the
+    # user can see exactly which file is about to be overwritten or deleted.
+    table.add_column(overflow="fold")
+    table.add_column(overflow="fold")
+    moves = 0
+    for action in actions:
+        if action.action == "restore":
+            table.add_row("[green]restore[/]", action.path, "")
+            moves += 1
+        elif action.action == "delete":
+            table.add_row("[red]delete[/]", action.path, f"[dim]{action.reason}[/]")
+            moves += 1
+        elif action.action == "skip":
+            table.add_row("[yellow]skip[/]", action.path, f"[dim]{action.reason}[/]")
+        elif action.action == "keep-dir":
+            table.add_row("[dim]keep dir[/]", action.path, f"[dim]{action.reason}[/]")
+        else:
+            table.add_row("[dim]no-op[/]", action.path, f"[dim]{action.reason}[/]")
+    if actions:
+        console.print(table)
+    skipped = sum(1 for a in actions if a.action == "skip")
+    console.print(f"  [dim]{moves} change(s) · {skipped} skipped · nothing else is touched[/]")
+    for note in coverage:
+        console.print(f"  [dim]· {note}[/]")
+    return moves > 0
+
+
+def _render_restore_report(report) -> None:
+    console.print(
+        f"  [green]{len(report.restored)} restored[/] · "
+        f"[red]{len(report.deleted)} deleted[/] · "
+        f"[yellow]{len(report.skipped)} skipped[/] · "
+        f"[red]{len(report.failed)} failed[/]"
+    )
+    for path, reason in report.failed:
+        console.print(f"  [red]failed[/] {path} — {reason}", markup=False)
+    for path in report.kept_dirs:
+        console.print(f"  [dim]kept empty directory {path}[/]", markup=False)
+
+
+def _tell_the_model(operator: Operator, report) -> None:
+    """Tell the model the tree moved under it.
+
+    Without this the model's next tool call is built on a false premise: it
+    will `file_edit` with an old_string that no longer exists, fall into the
+    recovery ladder, find nothing, and thrash. Same mechanism W6-4 uses for
+    deny-with-comment -- a plain user message, so it survives /resume and the
+    session log like any other.
+    """
+    if not report.restored and not report.deleted:
+        return
+    from djcode.provider import Message as _Msg
+
+    lines = ["[djcode] The user rolled the working tree back with /undo."]
+    for path in report.restored:
+        lines.append(f"  restored  {path}")
+    for path in report.deleted:
+        lines.append(f"  deleted   {path}")
+    for path, reason in report.skipped:
+        lines.append(f"  untouched {path} ({reason})")
+    lines.append("Re-read any of these files before editing them; earlier reads are stale.")
+    operator.messages.append(_Msg(role="user", content="\n".join(lines)))
+
+
+async def _handle_undo_family(command: str, arg: str, operator: Operator) -> None:
+    """`/undo`, `/redo`, `/rewind`.
+
+    Presentation only. Every semantic -- which checkpoints a command resolves
+    to, what a restore would do, and the restore itself -- lives in
+    `djcode.core.checkpoints`, which is terminal-free and which W9 does not
+    move. W9 deletes these ~90 lines and re-renders them in
+    frontends/repl/commands.py; it deletes no logic.
+    """
+    store = _checkpoint_store(operator)
+    session_id = getattr(operator, "session_id", "") or ""
+    if store is None:
+        console.print("[yellow]Checkpoints are not active in this session.[/]")
+        return
+
+    targets = []
+    title = ""
+    if command == "/redo":
+        target = store.pending_redo(session_id)
+        if target is None:
+            console.print("[dim]Nothing to redo.[/]")
+            return
+        targets = [target]
+        title = "Redo the last undo"
+    elif command == "/rewind":
+        turns = store.turns(session_id, limit=20)
+        if not turns:
+            console.print("[dim]No checkpoints in this session yet.[/]")
+            return
+        choices = []
+        for group in turns:
+            head = group[0]
+            files = sum(len(cp.files) for cp in group)
+            label = head.label or head.tool_name or "(no prompt)"
+            choices.append(
+                questionary.Choice(
+                    title=f"#{head.seq}  {head.created_at}  {files} file(s)  {label[:60]}",
+                    value=min(cp.seq for cp in group),
+                )
+            )
+        picked = await questionary.select(
+            "Roll the files back to before which turn?", choices=choices, style=Q_STYLE
+        ).ask_async()
+        if picked is None:
+            return
+        targets = store.resolve_seq(session_id, int(picked))
+        title = f"Rewind to before checkpoint #{picked}"
+    else:
+        if arg.strip().isdigit():
+            seq = int(arg.strip())
+            targets = store.resolve_seq(session_id, seq)
+            title = f"Undo back to before checkpoint #{seq}"
+        else:
+            targets = store.last_turn(session_id)
+            if targets:
+                head = targets[0]
+                shown = head.label or head.tool_name or ""
+                title = f"Undo turn “{shown[:60]}” ({len(targets)} checkpoint(s))"
+    if not targets:
+        console.print("[dim]Nothing to undo. No tool has changed a file in this session.[/]")
+        for note in store.coverage_notes():
+            console.print(f"  [dim]· {note}[/]")
+        return
+
+    # A background agent inherits this session's DispatchContext and keeps
+    # writing after the turn ends -- possibly while this restore runs. Rolling
+    # files back under a live writer produces a tree neither of them intended.
+    try:
+        from djcode.tools.agent_spawn import _background_tasks
+
+        live = [a for a, i in _background_tasks.items() if i.get("status") == "running"]
+    except Exception:
+        live = []
+    if live:
+        console.print(
+            f"[yellow]⚠ {len(live)} background agent(s) are still writing "
+            f"({', '.join(live[:4])}). Their changes are not in this checkpoint and "
+            "they may overwrite the restore.[/]"
+        )
+
+    actions = store.plan_restore(targets)
+    has_moves = _render_restore_plan(title, actions, store.coverage_notes())
+    if not has_moves:
+        console.print("[dim]Nothing to change.[/]")
+        return
+    # No flag, config key or approval mode skips this. An undo is not something
+    # the model asked for, and a mis-fired one destroys work the store does not
+    # hold.
+    ok = await questionary.confirm("Apply?", default=False, style=Q_STYLE).ask_async()
+    if not ok:
+        console.print("[dim]Cancelled. Nothing was touched.[/]")
+        return
+
+    if command == "/redo":
+        report = store.redo(session_id)
+    else:
+        report = store.restore(targets, session_id=session_id)
+    _render_restore_report(report)
+    _tell_the_model(operator, report)
+
+    db = getattr(operator, "session_db", None)
+    if db is not None and session_id:
+        try:
+            import json as _json
+
+            db.save_message(
+                session_id,
+                role="system",
+                content="",
+                entry_type="checkpoint",
+                checkpoint_blob=_json.dumps(report.as_dict()),
+            )
+        except Exception:
+            logger.debug("could not log the restore to the session", exc_info=True)
+
+
 async def handle_slash_command(
     cmd: str,
     operator: Operator,
@@ -897,6 +1104,13 @@ async def handle_slash_command(
         else:
             console.print("[dim]Usage: /history [search <query>][/]")
 
+    # W5-4 (P0-1). Temporary if/elif entries per the blueprint's collision
+    # matrix -- W9 moves them into the registry. Deliberately NOT blocked by
+    # plan mode: plan mode stops the model changing the tree, and /undo is the
+    # user un-changing it.
+    elif command in ("/undo", "/redo", "/rewind"):
+        await _handle_undo_family(command, arg, operator)
+
     elif command == "/resume":
         if not arg.strip():
             console.print("[dim]Usage: /resume <session_id>[/]")
@@ -1069,6 +1283,15 @@ async def run_repl(
     operator.on_checkpoint = lambda messages: session_db.append_messages(
         operator.session_id, messages
     )
+    # W5 (P0-1): hand the chokepoint somewhere to record pre-images. The store
+    # reads ctx.session_id at CALL time, never caches it, so `/resume` (which
+    # reassigns operator.session_id in place) keeps working.
+    try:
+        from djcode.core.checkpoints import store_from_config
+
+        operator.dispatch_ctx.checkpoints = store_from_config(session_db, cwd=os.getcwd())
+    except Exception:
+        logger.warning("checkpoints unavailable; /undo will be inactive", exc_info=True)
     files_touched: list[str] = []
 
     # Initialize extension manager
@@ -1203,6 +1426,12 @@ async def run_repl(
                     if first_token:
                         # Never got a token -- clear thinking indicator
                         sys.stdout.write("\r\033[K")
+
+                    # W5: anything the checkpoint store needs the user to know
+                    # -- above all "shell commands are NOT being checkpointed"
+                    # -- is printed here, at the end of the turn that raised it,
+                    # not left for /undo to disclose after the damage.
+                    drain_checkpoint_notices(operator)
 
                     # Show response stats after completion
                     if full_response:
@@ -1340,6 +1569,18 @@ async def run_oneshot(
             event_bus=oneshot_bus,
         )
         operator.on_checkpoint = lambda messages: session_db.append_messages(session_id, messages)
+        # W5: the one-shot path used to leave operator.session_id unset, so
+        # every spill file and every checkpoint it produced was filed under the
+        # process fallback bucket instead of this session. Graft it here, the
+        # same way the interactive path does.
+        operator.session_id = session_id
+        operator.session_db = session_db
+        try:
+            from djcode.core.checkpoints import store_from_config
+
+            operator.dispatch_ctx.checkpoints = store_from_config(session_db, cwd=os.getcwd())
+        except Exception:
+            logger.debug("checkpoints unavailable on the one-shot path", exc_info=True)
         async for token in operator.send(prompt):
             sys.stdout.write(token)
             sys.stdout.flush()

@@ -203,6 +203,17 @@ class Operator:
         # to name its per-session directory.
         self.dispatch_ctx.session_id = getattr(self, "session_id", None)
         self.dispatch_ctx.cwd = os.getcwd()
+        # W5: one turn = one undo. A turn that edits five files must revert as
+        # a single action or the fourth `/undo` leaves the tree half rolled
+        # back, so the checkpoint store needs to know where a turn starts. The
+        # store is attached by the surface (repl.py); with none attached this
+        # is a no-op and every capture falls into one anonymous turn.
+        _checkpoints = getattr(self.dispatch_ctx, "checkpoints", None)
+        if _checkpoints is not None:
+            try:
+                _checkpoints.begin_turn(user_input)
+            except Exception:  # pragma: no cover - never fail a turn over this
+                pass
         with capability_context(self.capabilities), dispatch_context(self.dispatch_ctx):
             try:
                 async for token in self._send(user_input):

@@ -266,6 +266,70 @@ session_id, role)
                     key TEXT PRIMARY KEY,
                     value TEXT
                 );
+
+                -- W5-1: checkpoints (P0-1). Purely additive tables, so they do
+                -- NOT bump SCHEMA_VERSION: a version bump would make every
+                -- older build refuse to open the database
+                -- (_init_db raises on `found > SCHEMA_VERSION`), and locking a
+                -- user out of their own history is too high a price for three
+                -- CREATE TABLE IF NOT EXISTS statements that heal themselves on
+                -- every open exactly the way _SCHEMA_COLUMNS does.
+                --
+                -- They live here, in executescript, and not in _migrate,
+                -- because _migrate forbids executescript (implicit COMMIT) and
+                -- because this keeps sessions.py the ONE ddl writer for this
+                -- file. djcode/core/checkpoints.py owns only the logic.
+                CREATE TABLE IF NOT EXISTS blobs (
+                    sha256 TEXT PRIMARY KEY,
+                    body BLOB NOT NULL,
+                    size INTEGER NOT NULL DEFAULT 0
+                );
+
+                -- `seq` is the `#7` DESIGN-CLI's tool cards print and the
+                -- argument `/undo 7` takes; a uuid primary key alone cannot be
+                -- rendered or typed. `turn_id` groups the checkpoints of one
+                -- turn so /undo reverts a five-file turn as one action instead
+                -- of five. `entry_id` stays NULL: checkpoints are captured
+                -- mid-round, and the conversations row for that round does not
+                -- exist until on_checkpoint fires at the end of it.
+                -- No FOREIGN KEY on session_id on purpose -- headless and
+                -- one-shot paths dispatch tools with a session_id that has no
+                -- sessions row, and an FK would turn those into hard failures.
+                CREATE TABLE IF NOT EXISTS checkpoints (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    turn_id TEXT NOT NULL DEFAULT '',
+                    seq INTEGER NOT NULL DEFAULT 0,
+                    entry_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    tool_name TEXT,
+                    label TEXT,
+                    coverage TEXT DEFAULT ''
+                );
+
+                -- `kind` distinguishes a file from a directory the tool created
+                -- (file_write does parent.mkdir(parents=True), and without this
+                -- undo leaves empty directories behind). `mode` carries the
+                -- POSIX permission bits so `chmod +x` survives a round trip.
+                CREATE TABLE IF NOT EXISTS checkpoint_files (
+                    checkpoint_id TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    pre_sha TEXT,
+                    post_sha TEXT,
+                    existed INTEGER NOT NULL,
+                    kind TEXT NOT NULL DEFAULT 'file',
+                    mode INTEGER,
+                    FOREIGN KEY (checkpoint_id) REFERENCES checkpoints(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_session
+                    ON checkpoints(session_id, seq);
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_created
+                    ON checkpoints(created_at);
+                CREATE INDEX IF NOT EXISTS idx_checkpoint_files_cp
+                    ON checkpoint_files(checkpoint_id);
+                CREATE INDEX IF NOT EXISTS idx_checkpoint_files_pre
+                    ON checkpoint_files(pre_sha);
             """
 
 @dataclass
