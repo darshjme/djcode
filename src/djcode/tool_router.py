@@ -294,6 +294,28 @@ _GIT_PATTERNS = [
 # ── Main Router ───────────────────────────────────────────────────────────
 
 
+def _intent_result(result) -> tuple[str, bool]:
+    """Normalise a dispatcher result to (text, success).
+
+    W3 made ``dispatch_tool`` return a ``ToolOutcome``; this router still
+    receives a bare ``str`` when a caller supplies its own dispatcher, so both
+    shapes are handled here rather than at three call sites.
+
+    The success flag is only trusted when it is authoritative. ``ok_source ==
+    "unverified"`` means dispatch saw no failure signal -- 17 of 24 tools report
+    failure only as text -- so in that case the text heuristic decides, exactly
+    as it did before W3. Trusting an unverified flag here would report a failed
+    write or a non-zero command as a success.
+    """
+    text = result if isinstance(result, str) else str(result)
+    ok = getattr(result, "ok", None)
+    source = (getattr(result, "details", None) or {}).get("ok_source")
+    if isinstance(ok, bool) and source != "unverified":
+        return text, ok
+    lowered = text.lstrip().lower()
+    return text, not lowered.startswith(("error", "traceback", "[exit code", "command timed out"))
+
+
 class ToolExtractionRouter:
     """Extracts and executes tool calls from plain text model output.
 
@@ -1082,11 +1104,8 @@ class ToolExtractionRouter:
                         "content": intent.content,
                     },
                 )
-                return ToolResult(
-                    intent=intent,
-                    success="Error" not in result,
-                    output=result,
-                )
+                text, ok = _intent_result(result)
+                return ToolResult(intent=intent, success=ok, output=text)
 
             elif intent.action == "file_edit":
                 if not intent.path:
@@ -1111,11 +1130,8 @@ class ToolExtractionRouter:
                         output="Edit detected but old/new strings not fully extracted. Manual edit "
                         "needed.",
                     )
-                return ToolResult(
-                    intent=intent,
-                    success="Error" not in result,
-                    output=result,
-                )
+                text, ok = _intent_result(result)
+                return ToolResult(intent=intent, success=ok, output=text)
 
             elif intent.action == "bash":
                 if not intent.content:
@@ -1125,11 +1141,8 @@ class ToolExtractionRouter:
                         output="No command to execute",
                     )
                 result = await self._dispatcher("bash", {"command": intent.content})
-                return ToolResult(
-                    intent=intent,
-                    success=not (result.startswith(("Error:", "[exit code", "Command timed out"))),
-                    output=result,
-                )
+                text, ok = _intent_result(result)
+                return ToolResult(intent=intent, success=ok, output=text)
 
             elif intent.action == "mkdir":
                 if not intent.path:

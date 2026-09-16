@@ -52,8 +52,17 @@ def _result_ok(result) -> bool:
     it mirrors what the DAF host itself does with such a value.
     """
     ok = getattr(result, "ok", None)
-    if isinstance(ok, bool):
+    source = (getattr(result, "details", None) or {}).get("ok_source")
+    if isinstance(ok, bool) and source != "unverified":
+        # The flag is authoritative: the handler raised, returned its own
+        # outcome, or dispatch itself refused the call.
         return ok
+    # ok_source == "unverified" means dispatch observed no failure signal -- it
+    # is NOT a claim of success (see tools/__init__.py). 17 of 24 tools report
+    # failure only as text, bash among them, so trusting the flag here would
+    # tell the DAF host that `exit 7` succeeded and let it run every dependent
+    # node. Fall back to the same heuristic the host applies to a bare string,
+    # which is also what the native branch does -- keeping the two in step.
     text = result if isinstance(result, str) else str(result)
     return not text.lower().startswith(_ERROR_PREFIXES)
 
