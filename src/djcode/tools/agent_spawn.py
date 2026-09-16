@@ -268,6 +268,11 @@ async def _spawn_background(spec: Any, task: str, max_rounds: int | None) -> str
         """Run the agent and store results."""
         try:
             result = await _spawn_foreground(spec, task, max_rounds)
+            # W3 interim sniff: _spawn_foreground returns a plain str (it is the
+            # agent's assembled response, not a dispatch result), so there is no
+            # ToolOutcome.ok to consult here. Converting this to a structured
+            # flag means giving _spawn_foreground an outcome of its own; until
+            # then an honest prefix check beats a fabricated ok.
             _background_tasks[agent_id]["status"] = (
                 "failed" if result.startswith("Error") else "completed"
             )

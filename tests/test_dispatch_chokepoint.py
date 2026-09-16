@@ -787,3 +787,77 @@ def test_no_tool_reinvents_its_own_output_bound(filename, literals):
     source = (Path(djcode.tools.__file__).parent / filename).read_text(encoding="utf-8")
     for literal in literals:
         assert literal not in source, f"{filename} reintroduced an ad-hoc truncation: {literal}"
+
+
+# ── W3-3: the outcome passthrough (the trap) ────────────────────────────────
+# BLUEPRINT-CLI.md section 2.4 calls this "non-obvious": dispatch_tool's result
+# does not reach Operator directly. It passes through WorkflowEngine, which used
+# to do `str(await dispatch(...))` on BOTH branches -- so a ToolOutcome was
+# flattened to text and `details` was destroyed before anyone saw it. P0-8 would
+# have silently done nothing. These tests fail if that str() ever comes back.
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["native", "daf"])
+async def test_workflow_one_preserves_the_outcome(mode, tmp_path, monkeypatch):
+    """one() must hand back a ToolOutcome, not its string form."""
+    import shutil
+
+    from djcode.workflow import WorkflowEngine
+
+    if mode == "daf" and shutil.which("cargo") is None:
+        pytest.skip("DAF engine needs a Rust toolchain; native branch covers the logic")
+
+    from djcode.tools import dispatch_tool
+
+    engine = WorkflowEngine(mode=mode)
+    outcome = await engine.one("file_read", {"path": str(tmp_path / "nope.txt")}, dispatch_tool)
+
+    assert isinstance(outcome, ToolOutcome), (
+        f"{engine.mode} branch returned {type(outcome).__name__}; the str() in "
+        "workflow.py is back and ToolOutcome.details is being destroyed"
+    )
+    assert outcome.details, "details were dropped crossing the workflow engine"
+    assert outcome.details.get("tool") == "file_read"
+    assert str(outcome) == outcome.content
+
+
+@pytest.mark.asyncio
+async def test_workflow_native_and_daf_agree_on_type(tmp_path):
+    """Both branches must return the same TYPE.
+
+    The asymmetry this guards against is real and was shipped for one commit:
+    str on a box with Rust, ToolOutcome on a box without, which lands on
+    state.py's result[:200] and capabilities.py's json.dumps -- neither of which
+    a test on a Rust-equipped box would ever catch.
+    """
+    import shutil
+
+    from djcode.tools import dispatch_tool
+    from djcode.workflow import WorkflowEngine
+
+    args = {"command": "echo agree"}
+    native = await WorkflowEngine(mode="native").one("bash", args, dispatch_tool)
+    assert isinstance(native, ToolOutcome)
+
+    if shutil.which("cargo") is None:
+        pytest.skip("no Rust toolchain: DAF half of the comparison cannot run here")
+    daf_engine = WorkflowEngine(mode="daf")
+    daf = await daf_engine.one("bash", args, dispatch_tool)
+    assert daf_engine.mode == "daf", "engine fell back; this assertion proved nothing"
+    assert type(daf) is type(native), f"DAF returned {type(daf)}, native returned {type(native)}"
+    assert daf.details.keys() == native.details.keys()
+
+
+@pytest.mark.asyncio
+async def test_workflow_ok_comes_from_the_outcome_not_a_prefix_sniff():
+    """_result_ok must trust the flag, not the text."""
+    from djcode.workflow import _result_ok
+
+    # A successful outcome whose content merely starts with the word "error".
+    assert _result_ok(ToolOutcome(content="Error: none found", ok=True)) is True
+    # A failed outcome whose content looks perfectly cheerful.
+    assert _result_ok(ToolOutcome(content="all good", ok=False)) is False
+    # Bare strings still fall back to the heuristic the DAF host itself applies.
+    assert _result_ok("Error: something") is False
+    assert _result_ok("fine") is True

@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 
 from djcode.config import CONFIG_DIR, load_config
+from djcode.core.outcome import ToolOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,16 @@ class DAFUnavailableError(RuntimeError):
 
 
 def _result_ok(result) -> bool:
-    """Mirror the DAF host's success heuristic for a dispatched tool result."""
+    """Whether a dispatched result counts as success, for the DAF wire frame.
+
+    W3-3: when the result is a ToolOutcome the flag is authoritative and is used
+    directly -- no sniffing. The prefix heuristic survives only for callers that
+    still hand this function a bare string (tests supply their own dispatch), and
+    it mirrors what the DAF host itself does with such a value.
+    """
+    ok = getattr(result, "ok", None)
+    if isinstance(ok, bool):
+        return ok
     text = result if isinstance(result, str) else str(result)
     return not text.lower().startswith(_ERROR_PREFIXES)
 
@@ -152,6 +162,13 @@ class WorkflowEngine:
         self.event_callback = event_callback
         self.last_run = None
         self.last_events = []
+        # W3-3: the ToolOutcome side map. `results` must stay str-valued --
+        # capabilities.py JSON-encodes it and state.py slices it -- so the
+        # structured outcome rides here instead, keyed by node id, and `one()`
+        # hands it back intact. Without this the DAF branch stringifies the
+        # outcome on the wire and `details` is destroyed before Operator ever
+        # sees it, which is P0-8 silently doing nothing.
+        self._outcomes: dict[str, ToolOutcome] = {}
 
     def _record(self, event):
         self.last_events.append(event)
@@ -205,7 +222,9 @@ class WorkflowEngine:
             # `str()` restores symmetry now; W3-3 replaces both branches with a
             # `self._outcomes` side map that keeps `results` str-valued anyway,
             # because `capabilities.py` JSON-encodes it.
-            results[ident] = str(await dispatch(node["name"], node["arguments"]))
+            outcome = await dispatch(node["name"], node["arguments"])
+            self._outcomes[ident] = outcome
+            results[ident] = str(outcome)
         return results
 
     async def execute(self, nodes, dispatch, concurrency=1):
@@ -214,6 +233,7 @@ class WorkflowEngine:
             raise ValueError("concurrency must be 1..4")
         self.last_run = uuid.uuid4().hex
         self.last_events = []
+        self._outcomes = {}
         if self.mode not in {"native", "daf"}:
             raise ValueError(f"Unknown workflow engine: {self.mode}")
         binary = None
@@ -242,11 +262,19 @@ class WorkflowEngine:
         async def handle(event):
             ident = event["id"]
             try:
-                result = str(await dispatch(event["name"], event["arguments"]))
+                outcome = await dispatch(event["name"], event["arguments"])
             except Exception as error:
-                result = f"Error: {error}"
+                outcome = ToolOutcome(
+                    content=f"Error: {error}",
+                    ok=False,
+                    details={"exception": type(error).__name__, "ok_source": "raised"},
+                )
+            self._outcomes[ident] = outcome
+            result = str(outcome)
             results[ident] = result
-            ok = _result_ok(result)
+            # ok now comes from the outcome rather than a prefix sniff of the
+            # text. The wire frame is unchanged, so the Rust host needs no work.
+            ok = _result_ok(outcome)
             process.stdin.write(
                 (json.dumps({"id": ident, "ok": ok, "result": result}) + "\n").encode()
             )
@@ -323,4 +351,9 @@ class WorkflowEngine:
         result = await self.execute(
             [{"id": "tool", "name": name, "arguments": arguments}], dispatch
         )
+        # Hand back the ToolOutcome, not its string form -- this is the whole
+        # point of W3-3. Falls back to the string only if a caller supplied a
+        # dispatch that does not produce outcomes (tests do this).
+        if "tool" in self._outcomes:
+            return self._outcomes["tool"]
         return result["tool"]

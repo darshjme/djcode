@@ -397,6 +397,12 @@ class AgentExecutor:
                 result = await asyncio.wait_for(
                     self.workflow.one(tool_name, args, dispatch_tool), timeout=120.0
                 )
+            # W3-3: one() now hands back a ToolOutcome. This function's contract
+            # is str -- every error path below returns one, and state.py slices
+            # the value into a preview -- so the conversion happens here, at the
+            # boundary, rather than by making one() lie about its return type.
+            # A later wave gives the executor its own outcome-aware path.
+            result = str(result)
             elapsed_ms = (time.monotonic() - start) * 1000
             logger.debug(
                 "%s: tool %s completed in %.0fms",

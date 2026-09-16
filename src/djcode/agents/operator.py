@@ -355,12 +355,15 @@ class Operator:
                     # Publish the result
                     self._display_tool_result(name, result, call_id=tc.get("id") or f"call_{name}")
 
-                    # Feed result back to LLM
+                    # Feed result back to LLM. The EVENT above carries the
+                    # whole ToolOutcome (that is what W3-3 preserves); the
+                    # message carries only the model-facing text, because
+                    # Message.content is serialised onto the wire.
                     tool_call_id = tc.get("id", f"call_{name}")
                     self.messages.append(
                         Message(
                             role="tool",
-                            content=result,
+                            content=str(result),
                             tool_call_id=tool_call_id,
                             name=name,
                         )

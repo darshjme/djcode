@@ -106,4 +106,5 @@ async def handle(operator, command, argument=""):
     from djcode.tools import dispatch_tool
 
     with capability_context(operator.capabilities):
-        return await operator.workflow.one(name, args, dispatch_tool)
+        # str(): this returns into app.py's chat pane, which renders text.
+        return str(await operator.workflow.one(name, args, dispatch_tool))
