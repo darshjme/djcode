@@ -25,7 +25,29 @@ from djcode.core.events import (
 from djcode.core.hooks import HookBus
 from djcode.prompt import build_system_prompt
 from djcode.provider import Message, Provider
+from djcode.providers.base import TokenUsage
+from djcode.streaming import UsageSink
 from djcode.tools import dispatch_tool
+
+
+class _TurnUsage(UsageSink):
+    """A turn's token accounting that also folds into the session's running total.
+
+    Two sinks, one ``record`` call: the turn figure is what the footer and the
+    status line print, the session figure is what ``/cost`` prints. Keeping them
+    as separate sinks rather than subtracting one from the other means
+    ``received`` stays honest on both -- a turn the provider reported nothing
+    for cannot borrow a previous turn's credibility.
+    """
+
+    def __init__(self, session: UsageSink) -> None:
+        super().__init__()
+        self._session = session
+
+    def record(self, usage: TokenUsage) -> None:
+        super().record(usage)
+        self._session.record(usage)
+
 
 # ── Thinking block detection ───────────────────────────────────────────────
 # Models like qwen3, deepseek, gemma4 emit <think>...</think> tags.
@@ -196,6 +218,15 @@ class Operator:
         self.last_had_thinking = False  # Track if last response had thinking
         self.last_had_tool_calls = False  # Track if last response used native tool calling
         self.last_tool_rounds = 0  # W8: rounds the last turn actually ran
+        # W1-3 built the accounting; nothing ever collected it. `stream_turn`
+        # takes a `usage_sink` and was called without one at both sites, so
+        # every token and cost figure the surfaces showed was `len(text) // 4`.
+        # `session_usage` totals the whole session; `turn_usage` is the current
+        # turn and is replaced at the top of every `send`. `received` is the
+        # honest flag: False means what a surface is about to print is an
+        # ESTIMATE and must carry the `~` prefix.
+        self.session_usage = UsageSink()
+        self.turn_usage: UsageSink = UsageSink()
         # W8 (P0-5). Steer text the user typed WHILE this turn is running. It is
         # a plain list and nothing else may touch `self.messages` on its behalf:
         # `steer()` appends here and returns, and the ONLY place the text
@@ -222,6 +253,10 @@ class Operator:
         # to name its per-session directory.
         self.dispatch_ctx.session_id = getattr(self, "session_id", None)
         self.dispatch_ctx.cwd = os.getcwd()
+        # One sink per turn, folding into the session total as it fills. A turn
+        # can span many requests (every tool round is one) and UsageSink.record
+        # already sums them, so the turn figure stays the turn's.
+        self.turn_usage = _TurnUsage(self.session_usage)
         # W5: one turn = one undo. A turn that edits five files must revert as
         # a single action or the fourth `/undo` leaves the tree half rolled
         # back, so the checkpoint store needs to know where a turn starts. The
@@ -324,7 +359,9 @@ class Operator:
 
             from djcode.streaming import stream_turn
 
-            async for text, calls in stream_turn(self.provider, self.messages):
+            async for text, calls in stream_turn(
+                self.provider, self.messages, usage_sink=self.turn_usage
+            ):
                 if text:
                     response_part, thinking_part = thinker.process_token(text)
                     if thinking_part:
@@ -534,7 +571,9 @@ class Operator:
             summary = ""
             from djcode.streaming import stream_turn as _stream_turn
 
-            async for text, _calls in _stream_turn(self.provider, self.messages):
+            async for text, _calls in _stream_turn(
+                self.provider, self.messages, usage_sink=self.turn_usage
+            ):
                 if text:
                     summary += text
                     self._emit(token_event(text))

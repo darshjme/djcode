@@ -1212,6 +1212,11 @@ async def handle_slash_command(
     return True
 
 
+def _format_token_count(count: int) -> str:
+    """Compact token count. Callers prepend `~` when the number is an estimate."""
+    return f"{count / 1000:.1f}k" if count >= 1000 else str(count)
+
+
 def _estimate_tokens(messages: list) -> int:
     """Rough token estimate: ~4 chars per token."""
     total_chars = sum(len(getattr(m, "content", "") or "") for m in messages)
@@ -1258,13 +1263,37 @@ def _render_approval_preview(name: str, arguments: dict) -> bool:
     return False
 
 
-async def _approve_repl_tool(name: str, arguments: dict) -> bool:
-    import json
+#: The permission engine the approval card reads to label its "always" option.
+#: The callback is a module-level function because it is handed to both the
+#: Operator and the Orchestrator before either exists as an object the other
+#: can see; `run_repl` fills this in once the engine is built.
+_approval_engine = None
 
-    if not _render_approval_preview(name, arguments):
-        body = Text(f"Tool: {name}\n{json.dumps(arguments, indent=2)[:2000]}")
-        console.print(Panel(body, title="Approve tool"))
-    return bool(await questionary.confirm("Execute this tool?", default=False).ask_async())
+
+def set_approval_engine(engine) -> None:
+    global _approval_engine
+    _approval_engine = engine
+
+
+async def _approve_repl_tool(name: str, arguments: dict, *, agent_name: str = ""):
+    """The REPL's answer to a tool request. Returns a `Decision`, not a bool.
+
+    `Operator._approve_tool` has accepted a `Decision` -- and wired `ALWAYS` and
+    `SESSION` through to `grant_always`/`grant_session` -- since W6, but this
+    callback returned `bool`, so "don't ask me again" was unreachable from the
+    only surface that ships. `agent_name` is accepted because
+    `agent_spawn._accepts_agent_name` inspects this signature: with it, a
+    subagent's request says whose it is.
+    """
+    from djcode.frontends.repl.approval import ask
+
+    return await ask(
+        name,
+        arguments,
+        engine=_approval_engine,
+        console=console,
+        agent_name=agent_name,
+    )
 
 
 async def _run_repl_command(command, operator, memory, status_bar, orchestrator) -> bool:
@@ -1330,7 +1359,14 @@ async def run_repl(
     # subscribe to the very same stream.
     effective_auto_accept = auto_accept or cfg.get("auto_accept", False)
     from djcode.core.events import EventBus
+    from djcode.frontends.repl.diffview import _ensure_utf8_stdout
     from djcode.frontends.repl.render import render_event
+
+    # W7 proved the cp1252 crash class on file CONTENT and fixed it inside the
+    # diff renderer. The same crash takes down the banner, the tool cards and
+    # the model's own output -- any of them can carry an em-dash. Widen the
+    # stream once, for the whole REPL, at the top.
+    _ensure_utf8_stdout(console)
 
     event_bus = EventBus()
     event_bus.subscribe(render_event)
@@ -1343,6 +1379,9 @@ async def run_repl(
         approval_callback=_approve_repl_tool,
         event_bus=event_bus,
     )
+
+    # The approval card can now say exactly what an "always" would persist.
+    set_approval_engine(operator.permissions)
 
     # Initialize memory
     memory = MemoryManager()
@@ -1394,6 +1433,10 @@ async def run_repl(
         auto_suggest=AutoSuggestFromHistory(),
         completer=SlashCompleter(),
         complete_while_typing=True,
+        # Up/Down filter history by what is already typed instead of walking
+        # every line ever entered. FileHistory itself is unchanged -- SSOT
+        # forbids regressing it.
+        enable_history_search=True,
         bottom_toolbar=status_bar.render,
     )
 
@@ -1521,23 +1564,40 @@ async def run_repl(
                     # not left for /undo to disclose after the damage.
                     drain_checkpoint_notices(operator)
 
+                    # W9: the turn's accounting, and whether it is the
+                    # provider's own numbers or our arithmetic. `received` is
+                    # False when the provider reported nothing, and every
+                    # figure derived from that case is printed with a leading
+                    # `~` so an estimate is never shown as a measurement.
+                    _usage = getattr(operator, "turn_usage", None)
+                    _measured = bool(_usage is not None and _usage.received)
+                    _out_tokens = (
+                        _usage.usage.output_tokens if _measured else len(full_response) // 4
+                    )
+                    _tilde = "" if _measured else "~"
+
                     # Show response stats after completion
                     if full_response:
                         _elapsed = _time.monotonic() - _start_time
-                        _est_tokens = len(full_response) // 4
-                        if _est_tokens >= 1000:
-                            _tok_str = f"{_est_tokens / 1000:.1f}k"
-                        else:
-                            _tok_str = str(_est_tokens)
-                        console.print(
-                            f"\n  [dim]\u2193 {_tok_str} tokens \u00b7 {_elapsed:.1f}s[/]"
+                        _footer = (
+                            f"\u2193 {_tilde}{_format_token_count(_out_tokens)} tokens "
+                            f"\u00b7 {_elapsed:.1f}s"
                         )
+                        if _measured:
+                            _footer = (
+                                f"\u2191 {_format_token_count(_usage.usage.input_tokens)} "
+                                f"\u00b7 {_footer}"
+                            )
+                            _cost = _usage.cost(llm.config.model)
+                            if _cost:
+                                _footer += f" \u00b7 ${_cost:.4f}"
+                        console.print(f"\n  [dim]{_footer}[/]")
 
                     if full_response:
                         memory.add_session_message("assistant", full_response)
 
                         # Track usage stats (legacy JSON + SQLite)
-                        token_est = len(full_response) // 4
+                        token_est = _out_tokens
                         record_session_update(session_id, tokens=token_est, messages=1)
                         session_db.update_session(
                             operator.session_id,
@@ -1563,10 +1623,17 @@ async def run_repl(
                             )
 
                     # Update status bar token count (toolbar auto-updates on next prompt)
-                    token_est = _estimate_tokens(operator.messages)
+                    # The provider's input count for the last request IS the
+                    # context it actually charged for; prefer it over our
+                    # len//4 guess, and say which one is on screen.
+                    if _measured and _usage.last is not None:
+                        _context_tokens = _usage.last.input_tokens
+                    else:
+                        _context_tokens = _estimate_tokens(operator.messages)
                     current_cfg = load_config()
                     status_bar.update(
-                        token_count=token_est,
+                        token_count=_context_tokens,
+                        tokens_estimated=not _measured,
                         auto_accept=current_cfg.get("auto_accept", False),
                     )
 

@@ -389,8 +389,13 @@ class AgentExecutor:
             if not self.auto_accept:
                 if self.approval_callback is None:
                     return f"Error: Tool '{tool_name}' requires write approval; auto-accept is off."
-                if not await self.approval_callback(tool_name, args):
-                    return f"Error: User denied tool '{tool_name}'."
+                answer = await self.approval_callback(tool_name, args)
+                if not answer:
+                    # A `Decision` carries the user's own words about what to do
+                    # instead. Discarding them left the model guessing.
+                    note = getattr(answer, "comment", "") or ""
+                    refusal = f"Error: User denied tool '{tool_name}'."
+                    return f"{refusal} {note}".strip() if note else refusal
 
         # Execute the tool
         start = time.monotonic()

@@ -42,6 +42,12 @@ class StatusBar:
         self.model: str = ""
         self.provider: str = ""
         self.token_count: int = 0
+        # W9 / P1-6: `token_count` used to be len(text)//4 with nothing saying
+        # so. It is now the provider's own input count when the provider
+        # reported one, and this flag is what puts the `~` back on the display
+        # when it did not. Defaulting to True means a caller that has not been
+        # taught the difference still renders an honest estimate.
+        self.tokens_estimated: bool = True
         self.auto_accept: bool = False
         self.uncensored: bool = False
         self.mode: str = "ACT"
@@ -52,6 +58,7 @@ class StatusBar:
         model: str | None = None,
         provider: str | None = None,
         token_count: int | None = None,
+        tokens_estimated: bool | None = None,
         auto_accept: bool | None = None,
         uncensored: bool | None = None,
         mode: str | None = None,
@@ -63,6 +70,8 @@ class StatusBar:
             self.provider = provider
         if token_count is not None:
             self.token_count = token_count
+        if tokens_estimated is not None:
+            self.tokens_estimated = tokens_estimated
         if auto_accept is not None:
             self.auto_accept = auto_accept
         if uncensored is not None:
@@ -78,7 +87,7 @@ class StatusBar:
         """
         name = "DJcode"
         cwd = escape(_shorten_cwd())
-        tokens = _format_tokens(self.token_count)
+        tokens = ("~" if self.tokens_estimated else "") + _format_tokens(self.token_count)
 
         model_display = escape(self.model or "no model")
 

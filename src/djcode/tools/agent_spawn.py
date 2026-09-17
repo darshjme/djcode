@@ -93,7 +93,7 @@ def _child_approval(agent_name: str, auto_accept: bool, approval_callback):
 
     passes_agent_name = _accepts_agent_name(approval_callback)
 
-    async def presented(name: str, arguments: dict) -> bool:
+    async def presented(name: str, arguments: dict):
         # Wrappers nest (a subagent may spawn its own), and the outermost call
         # is the one closest to the tool. Whoever claims the name first is the
         # agent that actually asked; inner wrappers relay it unchanged.
@@ -106,7 +106,14 @@ def _child_approval(agent_name: str, auto_accept: bool, approval_callback):
                 decision = approval_callback(name, arguments)
             if inspect.isawaitable(decision):
                 decision = await decision
-            return bool(decision)
+            # Hand the front-end's answer back UNCHANGED. `bool(decision)`
+            # collapsed a `Decision(DENY, comment="use uv, not pip")` to False,
+            # so deny-with-a-note worked for the main agent and was silently
+            # dropped for every subagent -- the model got the generic "User
+            # denied tool execution" and had no idea what it was meant to do
+            # instead. `Decision.__bool__` is fail-closed, so every caller that
+            # still writes `if not await callback(...)` keeps its meaning.
+            return decision
         finally:
             if token is not None:
                 _approval_agent.reset(token)
