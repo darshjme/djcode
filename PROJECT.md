@@ -134,7 +134,7 @@ graph TB
         VOICE["voice.py<br/>Voice Input"]
         INSTALLER["installer.py<br/>Setup Wizard"]
         CONTEXT["context_file.py<br/>djcode.md"]
-        PERMS["permissions.py<br/>Tool Permissions"]
+        PERMS["core/permissions.py<br/>Permission Engine"]
         UPDATER["updater.py<br/>Auto-Update"]
         STATS["stats.py<br/>Usage Analytics"]
         CONFIG["config.py<br/>Settings"]
@@ -220,7 +220,7 @@ graph TB
 | 38 | `src/djcode/voice.py` | 429 | Voice input | Voice-to-text via sounddevice |
 | 39 | `src/djcode/installer.py` | 477 | Setup wizard | Interactive installation, dependency checks |
 | 40 | `src/djcode/context_file.py` | 180 | Per-project context | `djcode.md` persistence, auto-load |
-| 41 | `src/djcode/permissions.py` | 192 | Tool permissions | `PermissionManager`, allow/deny/ask rules |
+| 41 | `src/djcode/core/permissions.py` | ~1150 | Permission engine (W6) | `PermissionEngine`, HARDLINE floor, POSIX u cmd tokeniser, `Decision`, tighten-only `Narrowing` |
 | 43 | `src/djcode/updater.py` | 139 | Auto-update checker | `get_update_message()`, version comparison |
 | 44 | `src/djcode/stats.py` | 421 | Usage analytics | `record_session_start()`, `render_stats()`, activity heatmaps |
 | 45 | `tests/test_cli.py` | 252 | CLI test suite | pytest tests for CLI, config, tools |
@@ -236,7 +236,7 @@ graph TB
 | 9 LLM providers (local + cloud) | Done | `auth.py`, `provider.py` |
 | Fuzzy model matching | Done | `provider.py` |
 | 8 async tool handlers | Done | `tools/` |
-| Tool confirmation gate | Done | `operator.py`, `permissions.py` |
+| Tool confirmation gate | Done | `operator.py`, `core/permissions.py`, `tools/__init__.py` |
 | Auto-accept mode | Done | `tui.py`, `repl.py` |
 | Smart prompt enhancement | Done | `prompt_enhancer.py` |
 | Intent classification | Done | `prompt_enhancer.py`, `router.py` |
@@ -263,7 +263,7 @@ graph TB
 | Teachable skills (.skill.md) | Done | `skills.py` |
 | Voice input | Done | `voice.py` |
 | Per-project djcode.md context | Done | `context_file.py` |
-| Permission system | Done | `permissions.py` |
+| Permission system | Done (W6; before W6 the old module had ZERO importers) | `core/permissions.py` |
 | Installer wizard | Done | `installer.py` |
 | /launch full pipeline (build+campaign) | Done | `repl.py` |
 | Rich emoji-structured output | Done | `prompt.py` |

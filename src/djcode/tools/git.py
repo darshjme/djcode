@@ -46,9 +46,16 @@ async def execute_git(subcommand: str) -> str:
     # Check for dangerous patterns
     for dangerous in DANGEROUS_PATTERNS:
         if dangerous in subcommand:
+            # W6: this used to end with "Use bash tool directly if you really
+            # need this" -- a refusal that told the model how to route around
+            # itself, into a tool that had no screening at all. The permission
+            # engine now gates both paths, so the escape hatch is gone and the
+            # text is a plain refusal. It also starts with "Error" now: the old
+            # "Warning:" prefix made `workflow._result_ok` read a refusal as a
+            # success and run every dependent node.
             return (
-                f"Warning: '{subcommand}' is a destructive operation. "
-                "Use bash tool directly if you really need this."
+                f"Error: '{subcommand}' is a destructive git operation and was not run. "
+                "Ask the user to perform it, or choose a non-destructive alternative."
             )
 
     from djcode.tools.bash import run_process

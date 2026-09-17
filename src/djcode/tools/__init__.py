@@ -23,6 +23,14 @@ from djcode.capabilities import dispatch_capability
 from djcode.core.dispatch import DOOM_LOOP_THRESHOLD, DispatchContext, active_context
 from djcode.core.hooks import HookEvent
 from djcode.core.outcome import ToolOutcome
+from djcode.core.permissions import (
+    Resolution,
+    ToolRequest,
+    Verdict,
+    command_of,
+    hardline_message,
+    hardline_reason,
+)
 from djcode.core.spill import apply_output_policy
 from djcode.scheduler import schedule_tool
 from djcode.tools.agent_spawn import execute_agent_status, execute_spawn_agent
@@ -282,10 +290,11 @@ async def dispatch_tool(
                 extra=hook_details,
             )
 
-    # 2. Permission evaluation (P0-2). W6 builds the engine; what exists today
-    #    is the half of the rule that must never wait for it -- an unknown tool
-    #    FAILS CLOSED. Do not move this below the handler call: "unknown" is the
-    #    one verdict this layer can reach on its own.
+    # 2. Permission evaluation (P0-2, W6). This first half must never wait for
+    #    the engine and must stay ABOVE it: an unknown tool FAILS CLOSED, and a
+    #    ToolRequest for a tool that does not exist should never reach the
+    #    policy at all. Do not move it below the handler call either -- "unknown"
+    #    is the one verdict this layer can reach entirely on its own.
     if handler is None:
         return refused(f"Error: Unknown tool '{name}'", by="unknown_tool", extra=hook_details)
     if not isinstance(arguments, Mapping):
@@ -295,10 +304,52 @@ async def dispatch_tool(
             by="bad_arguments",
             extra=hook_details,
         )
-    # W6 STUB: ctx.permissions.evaluate(ToolRequest(...)) -> HARDLINE_BLOCK | ALLOW | ASK.
-    # The policy must always evaluate and the mode must govern only whether a
-    # prompt is shown (blueprint W6-1). Until then this is deliberately empty
-    # rather than a permissive placeholder that a later wave might forget.
+    # 2a. THE HARDLINE FLOOR (W6-2). Runs with or without an engine attached,
+    #     because a headless caller, a subagent and the Textual TUI all reach
+    #     this line with ctx.permissions possibly None -- and the floor is the
+    #     one rule that is not allowed to depend on wiring. Three tools carry a
+    #     shell command, not one: `bash`, `schedule` and `process`, and the
+    #     latter two DEFER execution past every approval context, so the create
+    #     call is the only moment their command can be judged at all.
+    #     `refused()` gives ok=False with ok_source="dispatch", so a block can
+    #     never be read as an unverified success on the DAF wire.
+    permission_command = command_of(name, arguments)
+    if permission_command:
+        floor_reason = hardline_reason(permission_command)
+        if floor_reason is not None:
+            return refused(
+                hardline_message(permission_command, floor_reason),
+                by="hardline",
+                extra={**hook_details, "permission": "hardline_block"},
+            )
+
+    # 2b. The policy engine (W6-1). It is CONSULTED here; the PROMPT stays in
+    #     the front-end, which has already run by the time a call reaches this
+    #     line. What the chokepoint enforces is the half a prompt cannot cover:
+    #     an explicit deny rule, and an unparseable command in a mode with
+    #     nobody watching. `resolve` is the only place the mode acts -- the
+    #     policy itself always evaluates, which is the fix for F3.
+    engine = getattr(ctx, "permissions", None) if ctx is not None else None
+    if engine is not None:
+        from djcode.tools.agent_spawn import current_approval_agent
+
+        request = ToolRequest(
+            tool=name,
+            arguments=dict(arguments),
+            cwd=getattr(ctx, "cwd", None),
+            agent=current_approval_agent(),
+        )
+        verdict = engine.evaluate(request)
+        hook_details["permission"] = str(verdict)
+        if engine.resolve(verdict, tool=name) is Resolution.DENY:
+            detail = engine.explain(request) or (
+                f"Error: '{name}' is denied by the current permission policy."
+            )
+            return refused(
+                detail,
+                by="hardline" if verdict is Verdict.HARDLINE_BLOCK else str(verdict),
+                extra=hook_details,
+            )
 
     # 2b. Doom-loop breaker (P1-9, W3-5). Recorded before the first await so
     #     that concurrent children cannot forge a false "consecutive" run.

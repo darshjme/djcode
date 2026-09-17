@@ -147,8 +147,18 @@ class Operator:
         # `hooks` is an empty bus today (W3-4 shipped the seam, P1-1 ships the
         # handlers). W5 fills `checkpoints` and W6 fills `permissions`.
         self.hooks = HookBus()
+        # W6 (P0-2). The ENGINE is built here, in the engine, and NOT attached
+        # by a surface. W5 attached its checkpoint store from `repl.py` and the
+        # Textual TUI silently ended up with no checkpoints at all; doing the
+        # same for permissions would recreate F3 in the TUI -- the exact bug
+        # this wave exists to close. A front-end supplies `approval_callback`
+        # and nothing else.
+        from djcode.core.permissions import PermissionEngine
+
+        self.permissions = PermissionEngine(mode=self._initial_mode(auto_accept), load=True)
         self.dispatch_ctx = DispatchContext(
             hooks=self.hooks,
+            permissions=self.permissions,
             cwd=os.getcwd(),
             approval_callback=self._approve_repeated_call,
         )
@@ -332,6 +342,7 @@ class Operator:
                     Message(role="assistant", content=full_response, tool_calls=tool_calls)
                 )
 
+                denial_notes: list[str] = []
                 for tc in tool_calls:
                     func = tc.get("function", {})
                     name = func.get("name", "unknown")
@@ -362,15 +373,33 @@ class Operator:
                     # pending card while the user decides.
                     self._display_tool_call(name, args, call_id=tc.get("id") or f"call_{name}")
 
-                    if not await self._approve_tool(name, args):
+                    decision = await self._approve_tool(name, args)
+                    if not decision:
+                        # TWO appends, and the order matters. The `role="tool"`
+                        # message is mandatory: every tool_call id must be
+                        # answered or provider role-alternation breaks -- the
+                        # same invariant `send`'s cancellation bookkeeping
+                        # protects. The comment rides along here so the model
+                        # sees the reason even if it reads no further, and is
+                        # ALSO queued as a `user` message flushed after the
+                        # whole loop: appending it BETWEEN two tool messages
+                        # would produce assistant(tool_calls) -> tool -> user ->
+                        # tool, which several providers reject outright.
+                        note = decision.comment.strip()
                         self.messages.append(
                             Message(
                                 role="tool",
-                                content="Error: User denied tool execution",
+                                content=(
+                                    f"Error: User denied tool execution: {note}"
+                                    if note
+                                    else "Error: User denied tool execution"
+                                ),
                                 tool_call_id=tc["id"],
                                 name=name,
                             )
                         )
+                        if note:
+                            denial_notes.append(note)
                         continue
 
                     # Execute tool
@@ -395,6 +424,11 @@ class Operator:
                             name=name,
                         )
                     )
+
+                if denial_notes:
+                    # "no, use uv not pip" becomes the next instruction rather
+                    # than killing the turn (W6-4).
+                    self.messages.append(Message(role="user", content="\n".join(denial_notes)))
 
                 images = self.capabilities.computer.images
                 if images:
@@ -437,8 +471,20 @@ class Operator:
                     self.messages.append(Message(role="assistant", content=full_response))
                     results = []
                     for intent in pending:
-                        args = {"path": intent.path, "content": intent.content}
-                        if await self._approve_tool(intent.action, args):
+                        # The shape presented for approval must be the shape
+                        # that is dispatched. A `bash` intent carries its
+                        # command in `intent.content` and has no `path` at all,
+                        # so the old `{"path", "content"}` dict handed a rule
+                        # matcher no `command` key; and a `mkdir` intent is
+                        # dispatched as `bash` with a synthesised `mkdir -p`,
+                        # so it was judged under a tool name that never runs.
+                        if intent.action in ("bash", "mkdir"):
+                            tool_name = "bash"
+                            args = {"command": intent.content or f"mkdir -p {intent.path}"}
+                        else:
+                            tool_name = intent.action
+                            args = {"path": intent.path, "content": intent.content}
+                        if await self._approve_tool(tool_name, args):
                             results.append(await router._execute_intent(intent))
                     if results:
                         self.last_had_tool_calls = True
@@ -485,13 +531,89 @@ class Operator:
             if self.on_checkpoint:
                 self.on_checkpoint(self.messages)
 
-    async def _approve_tool(self, name: str, args: dict[str, Any]) -> bool:
+    @staticmethod
+    def _initial_mode(auto_accept: bool):
+        """The mode a session starts in. A FLAG must not rewrite the config.
+
+        `djcode --auto-accept` used to call `set_value("auto_accept", True)`, so
+        every later interactive session started in auto-accept with no expiry
+        and nothing saying so. The flag now selects the mode for THIS process
+        only; `permission_mode` in config.json is the default it overrides, and
+        the two legacy booleans stay readable for one release.
+        """
+        from djcode.config import load_config
+        from djcode.core.permissions import Mode
+
+        if auto_accept:
+            return Mode.AUTO
+        config = load_config()
+        raw = config.get("permission_mode")
+        if isinstance(raw, str):
+            try:
+                return Mode(raw)
+            except ValueError:
+                pass
+        if config.get("auto_accept") or config.get("auto_approve_tools"):
+            return Mode.AUTO
+        return Mode.MANUAL
+
+    async def _approve_tool(self, name: str, args: dict[str, Any]):
+        """Returns a ``Decision``, not a ``bool`` (W6-4).
+
+        ``Decision.__bool__`` is ``action in {ALLOW, ALWAYS, SESSION}``, so the
+        six other call sites that still write ``if not await
+        self._approve_tool(...)`` keep the SAME meaning -- and any site that is
+        ever missed fails closed on a deny rather than silently allowing it,
+        which a plain slotted dataclass (unconditionally truthy) would not.
+
+        The ORDER below is the whole point of the wave: the policy is consulted
+        before plan mode and before auto-accept. The old body returned ``True``
+        on ``self.auto_accept`` before any rule ran at all. That is F3.
+        """
+        from djcode.core.permissions import (
+            Decision,
+            DecisionAction,
+            Mode,
+            Resolution,
+            ToolRequest,
+            Verdict,
+        )
+
+        request = ToolRequest(tool=name, arguments=dict(args), cwd=os.getcwd())
+        verdict = self.permissions.evaluate(request)
+        mode = Mode.AUTO if self.auto_accept else self.permissions.mode
+        # Keep the engine in step with a runtime toggle (`/auto`, Ctrl+T), so
+        # that the chokepoint's own `resolve` -- which has no view of
+        # `self.auto_accept` -- reaches the same answer this method does.
+        self.permissions.mode = mode
+
+        if verdict is Verdict.HARDLINE_BLOCK:
+            return Decision(DecisionAction.DENY, comment=self.permissions.explain(request))
         if self.plan_mode:
-            return False
-        if self.auto_accept:
-            return True
+            # Plan mode is not a permission verdict, and the old refusal text
+            # ("User denied tool execution") lied to the model about who
+            # refused and why.
+            return Decision(
+                DecisionAction.DENY,
+                comment=f"Plan mode is on, so '{name}' was not run. Present the plan first.",
+            )
+        resolution = self.permissions.resolve(verdict, mode, tool=name)
+        if resolution is Resolution.ALLOW:
+            return Decision(DecisionAction.ALLOW)
+        if resolution is Resolution.DENY:
+            return Decision(DecisionAction.DENY, comment=self.permissions.explain(request))
         if self.approval_callback:
-            return await self.approval_callback(name, args)
+            answer = await self.approval_callback(name, args)
+            if isinstance(answer, Decision):
+                if answer.action is DecisionAction.SESSION:
+                    self.permissions.grant_session(request, answer.rule)
+                elif answer.action is DecisionAction.ALWAYS:
+                    self.permissions.grant_always(request, answer.rule)
+                return answer
+            return Decision(
+                DecisionAction.ALLOW if answer else DecisionAction.DENY,
+                rule=self.permissions.rule_for(request),
+            )
         if not sys.stdin.isatty():
             raise PermissionError(
                 "Tool execution needs approval; use --auto-accept for an authorized unattended "
@@ -500,7 +622,7 @@ class Operator:
         # No approval_callback and no policy permit means DENY. The engine does
         # not prompt -- a front-end owns every interaction with the user. An
         # engine that prompts cannot be driven by a GUI, a test, or a CI run.
-        return False
+        return Decision(DecisionAction.DENY)
 
     async def _approve_repeated_call(self, name: str, args: dict[str, Any], reason: str) -> bool:
         """Approve a call the doom-loop breaker stopped (P1-9, W3-5).

@@ -1215,10 +1215,15 @@ async def run_repl(
 
     # Provider setup is handled once by the CLI startup flow.
 
-    # Apply auto_accept from CLI flag or config
+    # Apply auto_accept from CLI flag or config.
+    #
+    # W6: this used to be `if auto_accept: set_value("auto_accept", True)`, so
+    # `djcode --auto-accept` ONCE made every later interactive session start in
+    # auto-accept, with no expiry and nothing saying so beyond a one-word status
+    # line. That is GAP-REPORT B4 in its most literal form. The flag now selects
+    # the mode for this process only (`Operator._initial_mode` reads it); the
+    # persisted default lives in config's `permission_mode`.
     cfg = load_config()
-    if auto_accept:
-        set_value("auto_accept", True)
 
     # Initialize provider
     provider_config = ProviderConfig.from_config(

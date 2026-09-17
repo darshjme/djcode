@@ -125,8 +125,14 @@ async def handle(operator, command, argument=""):
             args["job_id" if name == "process" else "tab"] = parts[1]
     if not isinstance(args, dict):
         raise ValueError("Command arguments must be a JSON object")
-    if not await operator._approve_tool(name, args):
-        return "Tool execution denied"
+    # W6: `_approve_tool` returns a `Decision` now, not a `bool`. This stays a
+    # truthiness test on purpose -- `Decision.__bool__` is
+    # `action in {ALLOW, ALWAYS, SESSION}`, so the meaning is unchanged and a
+    # site like this one fails CLOSED on a deny instead of coercing a slotted
+    # dataclass to an unconditional True.
+    decision = await operator._approve_tool(name, args)
+    if not decision:
+        return f"Tool execution denied{': ' + decision.comment if decision.comment else ''}"
     from djcode.tools import dispatch_tool
 
     with capability_context(operator.capabilities):

@@ -40,6 +40,18 @@ class Capabilities:
         if action in {"start", "schedule"}:
             if not command.strip() or not 0 <= delay <= 86400:
                 raise ValueError("A command and delay of 0..86400 seconds are required")
+            # THE FLOOR, second spawn site (W6-2). This handler calls
+            # `asyncio.create_subprocess_shell` itself and never goes through
+            # `execute_bash`, so a floor written only in `tools/bash.py` would
+            # not see it -- and `delay` accepts 86400, so the command can fire a
+            # day later with every approval context long gone. `process` raises
+            # on failure (it is in STRUCTURED_FAILURE_TOOLS), so raising here
+            # produces a real ok=False rather than an unverified ok=True.
+            from djcode.core.permissions import hardline_message, hardline_reason
+
+            reason = hardline_reason(command)
+            if reason is not None:
+                raise ValueError(hardline_message(command, reason))
             if sum(not j["task"].done() for j in self.jobs.values()) >= 8:
                 raise ValueError("Eight active jobs maximum")
             ident = uuid.uuid4().hex[:8]
@@ -145,8 +157,12 @@ class Capabilities:
             raise ValueError("Nested workflows are not supported")
 
         async def approved(name, arguments):
-            if not await self.operator._approve_tool(name, arguments):
-                return "Error: User denied tool execution"
+            # Truthiness on a `Decision` (W6): see session_commands.py for why
+            # this shape is deliberate rather than an unmigrated call site.
+            decision = await self.operator._approve_tool(name, arguments)
+            if not decision:
+                return f"Error: User denied tool execution{
+                    ': ' + decision.comment if decision.comment else ''}"
             return await dispatch_tool(name, arguments)
 
         engine = WorkflowEngine(self.operator.workflow.event_callback, mode="daf")

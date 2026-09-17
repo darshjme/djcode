@@ -369,16 +369,20 @@ class AgentExecutor:
             )
 
         # Tools outside this explicit read set require user-approved write mode.
-        read_tools = {
-            "file_read",
-            "grep",
-            "glob",
-            "web_fetch",
-            "web_search",
-            "notebook_read",
-            "task_list",
-            "agent_status",
-        }
+        #
+        # W6: this set is now READ FROM THE ENGINE rather than restated here.
+        # Two hardcoded definitions of "read-only" in one codebase is two
+        # policies, and they had already drifted -- `web_fetch` reaches the
+        # network and is ASK in the engine, while `task_create`/`task_update`
+        # touch nothing outside the process and are ALLOW there. The engine's
+        # answer wins; `web_fetch` is kept here so this gate never becomes
+        # LOOSER than it was, only tighter where the engine is tighter.
+        from djcode.core.permissions import READ_ONLY_TOOLS
+
+        read_tools = (
+            set(READ_ONLY_TOOLS)
+            - {"task_create", "task_update"}  # a child must not create work items
+        ) | {"web_fetch"}
         if tool_name not in read_tools:
             if self.spec.read_only:
                 return f"Error: Tool '{tool_name}' requires write approval; agent is read-only."

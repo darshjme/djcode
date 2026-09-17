@@ -38,10 +38,11 @@ breaker requires three byte-identical consecutive signatures.
 
 WHAT IS NOT HERE YET
 --------------------
-``permissions`` is typed ``Any`` because ``djcode.core.permissions`` is W6, and
-``checkpoints`` because ``djcode.core.checkpoints`` is W5. W2's rule applies:
-do not annotate against a module that does not exist. Both slots are read by
-``dispatch_tool``'s numbered steps, which are no-ops until those waves land.
+``checkpoints`` is typed ``Any`` because annotating it would import
+``djcode.core.checkpoints`` for a field whose whole contract is "optional".
+``permissions`` no longer is: W6 landed ``djcode.core.permissions``, so the slot
+is annotated against the real type, as the W2 rule (do not annotate against a
+module that does not exist) always intended once it did.
 """
 
 from __future__ import annotations
@@ -57,6 +58,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from djcode.core.hooks import HookBus
+from djcode.core.permissions import PermissionEngine
 
 #: Three byte-identical consecutive calls trip the breaker -- the third one is
 #: refused, per the W3 green gate ("doom-loop triggers on the third identical
@@ -127,9 +129,13 @@ class DispatchContext:
 
     #: Hook seam (W3-4). ``None`` means no hooks fire at all.
     hooks: HookBus | None = None
-    #: ``PermissionEngine`` once W6 exists. Read by ``dispatch_tool``'s step 2,
-    #: which is a no-op stub until then.
-    permissions: Any | None = None
+    #: The ``PermissionEngine`` this session evaluates against (W6). Attached
+    #: by ``Operator.__init__`` -- by the ENGINE, not by a surface -- so that
+    #: every front-end gets it. ``None`` still works and still runs the tool:
+    #: the HARDLINE floor in ``dispatch_tool``'s step 2a does NOT depend on this
+    #: field being set, precisely because a headless caller, a subagent and a
+    #: bare ``dispatch_tool(name, args)`` all reach the chokepoint without one.
+    permissions: PermissionEngine | None = None
     #: ``CheckpointStore`` once W5 exists. Read by steps 3 and 5, both stubs.
     checkpoints: Any | None = None
     #: Owns the per-session spill directory W3-2 writes into. ``None`` means the

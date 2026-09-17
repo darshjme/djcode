@@ -19,6 +19,8 @@ import asyncio
 import os
 import signal
 
+from djcode.core.permissions import hardline_message, hardline_reason
+
 #: 2 MB. Big enough that the chokepoint's spill file, not this cap, is what a
 #: user hits in practice; small enough that N concurrent ``parallel_execute``
 #: children cannot exhaust memory.
@@ -38,6 +40,18 @@ async def run_process(
         start_new_session=(os.name == "posix"),
         cwd=cwd,
     )
+    if shell:
+        # THE FLOOR, at the last possible moment before a shell exists (W6-2).
+        # It is here rather than in `execute_bash` because `scheduler.run_once`
+        # calls `execute_bash` directly and never touches `dispatch_tool` -- a
+        # persisted job would otherwise run with no hook, no permission check
+        # and no checkpoint. The message begins with "Error" so that
+        # `workflow._result_ok`'s bare-string fallback, which is exactly what
+        # the scheduler hands it, reads this as a failure and does not run
+        # every dependent node.
+        reason = hardline_reason(args[0])
+        if reason is not None:
+            return hardline_message(args[0], reason)
     proc = await (
         asyncio.create_subprocess_shell(args[0], **kwargs)
         if shell

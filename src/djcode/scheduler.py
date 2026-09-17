@@ -95,7 +95,10 @@ class Scheduler:
             result = await WorkflowEngine(mode="daf").one(
                 "bash", {"command": job["command"], "cwd": job["cwd"]}, dispatch
             )
-            failed = result.startswith(("Error", "[exit code", "Command timed out"))
+            # `str()`: this dispatcher bypasses `dispatch_tool`, so whatever
+            # `execute_bash` returns lands here raw. A future ToolOutcome return
+            # would make a bare `.startswith` raise inside the worker.
+            failed = str(result).startswith(("Error", "[exit code", "Command timed out"))
             state = "failed" if failed else "pending" if job["interval"] else "completed"
             with self.connect() as db:
                 db.execute(

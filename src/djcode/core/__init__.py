@@ -20,9 +20,13 @@ it here -- never to reach into ``djcode.repl`` or ``djcode.app``.
 WHAT IS NOT HERE YET
 --------------------
 ``SSOT.md`` section 2.3 specifies a larger contract than this file exports:
-``CoreSession``/``SessionOptions`` (W8), ``PermissionEngine``/``Decision`` (W6)
-and ``FileDiff``/``Hunk`` (W7), ``OnboardingFlow`` (W8). Those modules do not
-exist yet. ``Checkpoint``/``CheckpointStore``/``RestoreReport`` were on that
+``CoreSession``/``SessionOptions`` (W8), ``FileDiff``/``Hunk`` (W7) and
+``OnboardingFlow`` (W8). Those modules do not exist yet.
+``PermissionEngine``/``Decision`` were on that list until W6 and are exported
+below; note the module is pure data and logic, with no Rich anywhere -- the old
+top-level ``permissions.py`` instantiated a ``Console()`` at import time, which
+is exactly why it could never have lived in core.
+``Checkpoint``/``CheckpointStore``/``RestoreReport`` were on that
 list until W5 and are exported below.
 
 SSOT 2.3 hangs the undo API off ``CoreSession.checkpoints()`` / ``.restore(id)``
@@ -69,12 +73,34 @@ from djcode.core.events import (
 )
 from djcode.core.hooks import HookBus, HookEvent, HookResult
 from djcode.core.outcome import ToolOutcome
+from djcode.core.permissions import (
+    Decision,
+    DecisionAction,
+    Level,
+    Mode,
+    Narrowing,
+    PermissionEngine,
+    Resolution,
+    Rule,
+    ToolRequest,
+    Verdict,
+)
 from djcode.errors import classify_error
 from djcode.provider import TOOL_DEFINITIONS, Message, Provider, ProviderConfig
 from djcode.sessions import Session, SessionDB
 
 __all__ = [
     "TOOL_DEFINITIONS",
+    "Decision",
+    "DecisionAction",
+    "Level",
+    "Mode",
+    "Narrowing",
+    "PermissionEngine",
+    "Resolution",
+    "Rule",
+    "ToolRequest",
+    "Verdict",
     "AgentRole",
     "AgentSpec",
     "ContextStats",

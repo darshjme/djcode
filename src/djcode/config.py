@@ -33,6 +33,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "telemetry": False,
     "theme": "auto",  # auto | dark | light | ansi16; resolved by theme.detect()
     "workflow_engine": "daf",
+    # W6 (P0-2). `permission_mode` is the single source of truth:
+    # manual | accept-edits | auto | bypass. The two booleans below it are the
+    # legacy spelling, kept READABLE for one release (`Operator._initial_mode`
+    # falls back to them) but no longer written by `--auto-accept` or Ctrl+T --
+    # a one-shot flag must not become a permanent setting.
+    "permission_mode": "manual",
     "auto_approve_tools": False,
     "auto_accept": False,
     "base_url": "",
