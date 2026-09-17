@@ -40,31 +40,38 @@ THINK_RESET = "\033[0m"
 
 # Display names for every dispatchable tool. Core must not carry display
 # strings, so this is the one place a tool's human-facing name is decided.
+#: Every key here is a key of ``tools.TOOL_DISPATCH``, and every key of
+#: ``TOOL_DISPATCH`` is here -- ``tests/test_repl_render.py`` asserts both
+#: directions. The previous table listed nine tools that do not exist
+#: (``agent_spawn``, ``file_multi_edit``, ``memory_read``, ``memory_write``,
+#: ``screenshot``, ``session_read``, ``task``, ``think``, ``todo_write``) and
+#: was missing seven that do, so a ``schedule`` call rendered as "Schedule" by
+#: accident and a ``spawn_agent`` call rendered as "Spawn_Agent".
 TOOL_DISPLAY: dict[str, str] = {
     "bash": "Bash",
     "file_read": "Read",
     "file_write": "Write",
     "file_edit": "Edit",
-    "file_multi_edit": "MultiEdit",
     "grep": "Grep",
     "glob": "Glob",
     "git": "Git",
     "web_fetch": "WebFetch",
     "web_search": "WebSearch",
-    "todo_write": "Todo",
-    "notebook_edit": "Notebook",
-    "agent_spawn": "Agent",
-    "task": "Task",
+    "task_create": "TaskCreate",
+    "task_update": "TaskUpdate",
+    "task_list": "TaskList",
+    "notebook_read": "NotebookRead",
+    "notebook_edit": "NotebookEdit",
+    "parallel_execute": "Parallel",
+    "spawn_agent": "Agent",
+    "agent_status": "AgentStatus",
+    "schedule": "Schedule",
     "skill": "Skill",
-    "workflow": "Workflow",
-    "memory_read": "MemoryRead",
-    "memory_write": "MemoryWrite",
-    "session_read": "SessionRead",
-    "computer": "Computer",
-    "screenshot": "Screenshot",
-    "browser": "Browser",
     "mcp": "MCP",
-    "think": "Think",
+    "process": "Process",
+    "browser": "Browser",
+    "computer": "Computer",
+    "workflow": "Workflow",
 }
 
 
@@ -85,6 +92,18 @@ def format_tool_args(name: str, args: dict[str, Any]) -> str:
         sub = args.get("subcommand", "")
         git_args = args.get("args", "")
         return f"{sub} {git_args}".strip()
+    if name == "spawn_agent":
+        return str(args.get("agent") or args.get("agent_type") or args.get("role") or "")
+    if name in ("notebook_read", "notebook_edit"):
+        return str(args.get("notebook_path") or args.get("path") or "")
+    if name in ("web_fetch",):
+        return str(args.get("url", ""))[:72]
+    if name in ("skill", "mcp", "process", "browser", "computer", "workflow"):
+        # The six capability tools share one dispatcher and key off `action`,
+        # so the action IS the interesting detail, not the first dict value.
+        action = args.get("action") or args.get("name") or ""
+        target = args.get("target") or args.get("server") or args.get("skill") or ""
+        return f"{action} {target}".strip()[:72]
     vals = [str(v) for v in args.values() if v]
     return vals[0][:72] if vals else ""
 
@@ -104,36 +123,127 @@ def render_tool_call(name: str, args: dict[str, Any]) -> None:
     )
 
 
-def render_tool_result(content: str, details: dict[str, Any] | None = None) -> None:
-    """Render a tool result as an indented dim summary, plus its diff (W7).
+#: `ToolOutcome.ok` is only a verdict when the handler or the dispatcher
+#: produced it. For the seventeen tools that still report `ok_source
+#: ="unverified"`, `ok=True` means "dispatch saw no failure signal" -- which is
+#: not the same sentence as "the tool succeeded", and rendering it as a tick is
+#: exactly the class of mistake W3-VERIFICATION.md catalogues twice.
+AUTHORITATIVE_OK_SOURCES = frozenset({"handler", "raised", "dispatch"})
+
+
+def verdict_of(ok: bool, details: dict[str, Any] | None) -> str:
+    """``"ok"`` | ``"failed"`` | ``"blocked"`` | ``"unverified"``.
+
+    The one function allowed to decide whether a tool card gets a tick. Nothing
+    here sniffs ``content`` for an "Error:" prefix -- that sniff is the bug
+    P0-8 exists to delete, and a renderer reintroducing it would be the third
+    time the same regression shipped.
+    """
+    details = details or {}
+    if details.get("refused_by") or details.get("permission") in {"hardline_block", "deny"}:
+        return "blocked"
+    if details.get("ok_source") not in AUTHORITATIVE_OK_SOURCES:
+        return "unverified"
+    return "ok" if ok else "failed"
+
+
+def format_duration(ms: int) -> str:
+    """`41ms` / `1.9s` / `1m 12s`, per DESIGN-CLI §9.4."""
+    if ms < 1000:
+        return f"{ms}ms"
+    if ms < 60_000:
+        return f"{ms / 1000:.1f}s"
+    minutes, seconds = divmod(int(round(ms / 1000)), 60)
+    return f"{minutes}m {seconds}s"
+
+
+def result_trailer(
+    verdict: str,
+    details: dict[str, Any] | None = None,
+    *,
+    duration_ms: int = 0,
+    spill_path: str | None = None,
+) -> str:
+    """The right-hand end of a tool card: what happened, and how long it took."""
+    details = details or {}
+    parts: list[str] = []
+    if verdict == "ok":
+        parts.append(f"[dj.ok]{glyph('ok')}[/]")
+    elif verdict == "failed":
+        parts.append(f"[dj.err]{glyph('fail')} failed[/]")
+    elif verdict == "blocked":
+        reason = details.get("refused_by") or details.get("permission") or "blocked"
+        parts.append(f"[dj.err]{glyph('blocked')} {reason}[/]")
+    # "unverified" adds NOTHING. Silence is the honest rendering: the card shows
+    # what the tool said and makes no claim about whether it worked.
+
+    exit_code = details.get("exit_code")
+    if isinstance(exit_code, int) and exit_code != 0:
+        parts.append(f"[dj.err]exit {exit_code}[/]")
+    for key, label in (("hits", "hits"), ("files", "files"), ("lines", "lines")):
+        value = details.get(key)
+        if isinstance(value, int):
+            parts.append(f"[dim]{value} {label}[/]")
+    if duration_ms:
+        parts.append(f"[dim]{format_duration(duration_ms)}[/]")
+    if spill_path:
+        parts.append(f"[dim]spill {glyph('child')} {spill_path}[/]")
+    return f" [dim]{glyph('sep')}[/] ".join(parts)
+
+
+def render_tool_result(
+    content: str,
+    details: dict[str, Any] | None = None,
+    *,
+    ok: bool = True,
+    duration_ms: int = 0,
+    spill_path: str | None = None,
+) -> None:
+    """Render a tool result: its diff, its body, and an honest trailer.
 
     The diff comes first and the text summary second, because "Edited
-    <path>: replaced 1 occurrence" is the sentence the diff makes
-    redundant. ``details`` carries the bounded ``FileDiff.as_dict()`` that
+    <path>: replaced 1 occurrence" is the sentence the diff makes redundant.
+    ``details`` carries the bounded ``FileDiff.as_dict()`` that
     ``file_edit``/``file_write`` build and that ``dispatch_tool``'s step-5
-    checkpoint half builds for every other tool that changed a file.
+    checkpoint half builds for every other tool that changed a file -- plus,
+    since W3, ``ok_source``, the spill path and the duration, none of which any
+    surface has ever rendered.
     """
     if details:
         from djcode.frontends.repl.diffview import render_outcome_diff
 
         render_outcome_diff(console, details)
 
+    verdict = verdict_of(ok, details)
+    trailer = result_trailer(
+        verdict, details, duration_ms=duration_ms, spill_path=spill_path
+    )
+
     lines = content.strip().splitlines()
     if not lines:
+        if trailer:
+            console.print(f"  [dim]{glyph('child')}[/] {trailer}")
         return
 
     total = len(lines)
-    first = lines[0].strip().lower()
-    if first.startswith("error") or first.startswith("traceback"):
-        console.print(f"  [dim]{glyph('child')}[/] [dj.err]Error: {lines[0][:120]}[/]")
-        return
+    # A failure's useful text is at the END (a traceback's last line, a
+    # compiler's summary), so a failed card shows the tail rather than the head.
+    if verdict in ("failed", "blocked") and total > 3:
+        shown = lines[-3:]
+        elided = total - 3
+        prefix = "dj.err" if verdict != "blocked" else "dj.warn"
+    else:
+        shown = lines if total <= 3 else lines[:3]
+        elided = total - len(shown)
+        prefix = "dim"
 
-    shown = lines if total <= 3 else lines[:3]
     for line in shown:
-        truncated = line[:120] + "..." if len(line) > 120 else line
-        console.print(f"  [dim]  {truncated}[/]")
-    if total > 3:
-        console.print(f"  [dim]  ... ({total - 3} more lines)[/]")
+        truncated = line[:120] + glyph("ellipsis") if len(line) > 120 else line
+        console.print(f"  [{prefix}]  {truncated}[/]")
+    if elided > 0:
+        console.print(f"  [dim]  {glyph('ellipsis')} ({elided} more lines)[/]")
+    if trailer:
+        console.print(f"  [dim]{glyph('child')}[/] {trailer}")
 
 
 def render_thinking(text: str) -> None:
@@ -160,7 +270,13 @@ async def render_event(event: CoreEvent) -> None:
     elif event.event_type == EventType.TOOL_CALL:
         render_tool_call(event.data.get("name", ""), event.data.get("args", {}))
     elif event.event_type == EventType.TOOL_RESULT:
-        render_tool_result(event.data.get("content", ""), event.data.get("details"))
+        render_tool_result(
+            event.data.get("content", ""),
+            event.data.get("details"),
+            ok=bool(event.data.get("ok", True)),
+            duration_ms=int(event.data.get("duration_ms", 0) or 0),
+            spill_path=event.data.get("spill_path"),
+        )
 
 
 # ── Agent presentation ──────────────────────────────────────────────────────

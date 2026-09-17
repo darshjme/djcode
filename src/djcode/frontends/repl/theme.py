@@ -312,6 +312,12 @@ def make_console(
         kwargs["color_system"] = "standard" if palette.name == "ansi16" else "truecolor"
     if os.name == "nt" and "legacy_windows" not in kwargs:
         kwargs["legacy_windows"] = False
+    # Rich's automatic highlighter repaints every number, path and URL inside a
+    # plain string. In a dim tool trailer that turns `654 passed . 41ms` into
+    # four colours, and it coloured the `/` in `rm -rf /` magenta on the one
+    # card where the command must read exactly as typed. Styling here is always
+    # deliberate, never inferred from the text.
+    kwargs.setdefault("highlight", False)
     console = Console(
         stderr=stderr,
         theme=palette.theme,
