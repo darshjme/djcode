@@ -1,0 +1,19 @@
+{
+  "date": "2026-09-17",
+  "source_version": "4.3.0",
+  "source_commit": "77a842b83ace33c29384683dfc028f1a193ef75e",
+  "target_version": "4.4.0",
+  "entry_point": "Provider.chat_ollama(use_tools=False)",
+  "provider": "Ollama on localhost",
+  "model": "qwen2.5:1.5b",
+  "scope": "validate_milestone_status only; type annotations and formatting reviewed locally",
+  "output_sha256": "3526fa0e0189b0beeb260a245c1b6cea51dfda2b14c9d2b43e9893de22219d3d",
+  "integrated_file": "src/djcode/milestones.py",
+  "integrated_sha256": "f33b3277ff4b8e4a046a0a74bf3cc50827eed861cd3268c9b3cf7e191ce10c0b",
+  "tests": "tests/test_studio.py: ten valid/invalid milestone parameter cases passed",
+  "failed_attempts": [
+    "Installed 3.0 CLI returned empty output",
+    "Unmodified 4.3 CLI returned empty output"
+  ],
+  "whole_release_self_built": false
+}

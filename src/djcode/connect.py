@@ -23,12 +23,12 @@ class ConnectScreen(ModalScreen[dict | None]):
     DEFAULT_CSS = """
     ConnectScreen { align: center middle; background: rgba(0,0,0,0.65); }
     #connect-box { width: 76; max-width: 95%; height: auto; max-height: 95%;
-        border: round #C79B7A; background: #17191D; padding: 1 2; }
+        border: round #7C96FF; background: #080808; padding: 1 2; }
     #connect-title { height: 2; color: #EEEAE3; text-style: bold; }
     #connect-detail { height: auto; max-height: 5; color: #A6A4A0; margin-bottom: 1; }
     #connect-options { height: 10; max-height: 40%; border: none; }
     #connect-input { height: 3; margin-top: 1; border: round #55514A; color: #EEEAE3; }
-    #connect-input:focus { border: round #C79B7A; }
+    #connect-input:focus { border: round #7C96FF; }
     #connect-options > .option-list--option-highlighted { background: #A2BA9A 15%; color: #A2BA9A; }
     #connect-cancel { height: 3; margin-top: 1; }
     """

@@ -8,7 +8,12 @@ from pathlib import Path
 from djcode.capabilities import capability_context
 from djcode.config import load_config, save_config
 
-NAMES = {
+from djcode.studio import COMMANDS as STUDIO_COMMANDS
+
+NAMES = STUDIO_COMMANDS | {
+    "/features",
+    "/project",
+    "/fleet",
     "/schedule",
     "/workflow",
     "/skills",
@@ -24,6 +29,19 @@ NAMES = {
 
 
 async def handle(operator, command, argument=""):
+    if command in STUDIO_COMMANDS:
+        from djcode.studio import handle as studio_handle
+        return await studio_handle(operator, command, argument)
+    if command == "/features":
+        from djcode.workspace import feature_help
+        return feature_help()
+    if command == "/project":
+        import asyncio
+        from djcode.workspace import project_context
+        return await asyncio.to_thread(project_context)
+    if command == "/fleet":
+        from djcode.workspace import fleet_command
+        return await fleet_command(argument)
     if operator is None:
         return "Connect a provider first with /connect"
     if command == "/workflow":

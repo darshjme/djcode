@@ -3,7 +3,7 @@
 Premium terminal experience with:
 - Left panel: chat with streaming responses + vim navigation
 - Right panel: tabbed sidebar (Files/Agents/Stats/MCP)
-- Gold/black theme matching DJcode brand
+- Charcoal workspace and cobalt focus matching cli.darshj.ai
 - Full keyboard navigation with vim keys
 - All classic REPL features: slash commands, tool router, memory, orchestrator
 - Command palette with fuzzy search
@@ -25,7 +25,7 @@ from typing import Any, AsyncIterator
 from textual import on, work, events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.containers import VerticalScroll, Horizontal, Vertical, ScrollableContainer
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -64,7 +64,7 @@ COMMAND_REGISTRY = [(command.name, command.description) for command in commands_
 # ── Help overlay screen ────────────────────────────────────────────────
 
 HELP_TEXT = """\
-[bold #C79B7A]Keyboard Shortcuts[/]
+[bold #7C96FF]Keyboard Shortcuts[/]
 
   [cyan]j / k[/]      Scroll chat down / up
   [cyan]g[/]          Jump to top of chat
@@ -96,7 +96,7 @@ class ToolApprovalScreen(ModalScreen[bool]):
     BINDINGS = [Binding("escape", "deny", "Deny")]
     DEFAULT_CSS = """
     ToolApprovalScreen { align: center middle; background: rgba(0, 0, 0, 0.85); }
-    #approval-box { width: 76; height: auto; max-height: 85%; border: round #C79B7A; background: #111111; padding: 1 2; }
+    #approval-box { width: 76; height: auto; max-height: 85%; border: round #7C96FF; background: #111111; padding: 1 2; }
     #approval-details { height: auto; max-height: 12; overflow-y: auto; }
     #approval-actions { height: 3; margin-top: 1; }
     #approval-actions Button { margin-right: 2; }
@@ -142,7 +142,7 @@ class HelpScreen(ModalScreen[None]):
         height: auto;
         max-height: 85%;
         background: #111111;
-        border: double #C79B7A;
+        border: double #7C96FF;
         padding: 1 2;
         overflow-y: auto;
     }
@@ -156,7 +156,7 @@ class HelpScreen(ModalScreen[None]):
 # ── Agents overlay screen ──────────────────────────────────────────────
 
 AGENTS_TEXT = """\
-[bold #C79B7A]DJcode Agent Roster[/]
+[bold #7C96FF]DJcode Agent Roster[/]
 
 [bold]Build Agents[/]
   [cyan]Operator[/]    Default — general coding
@@ -197,7 +197,7 @@ class AgentsScreen(ModalScreen[None]):
         height: auto;
         max-height: 80%;
         background: #111111;
-        border: double #C79B7A;
+        border: double #7C96FF;
         padding: 1 2;
     }
     """
@@ -224,12 +224,12 @@ class ModelPicker(ModalScreen[str | None]):
         width: 76;
         height: 36;
         background: #141414;
-        border: double #C79B7A;
+        border: double #7C96FF;
         padding: 1 2;
     }
     #model-title {
         height: 1;
-        color: #C79B7A;
+        color: #7C96FF;
         text-style: bold;
         text-align: center;
         margin-bottom: 1;
@@ -237,12 +237,12 @@ class ModelPicker(ModalScreen[str | None]):
     #model-search {
         height: 3;
         background: #1a1a1a;
-        color: #C79B7A;
+        color: #7C96FF;
         border: solid #2a2a2a;
         margin-bottom: 1;
     }
     #model-search:focus {
-        border: solid #C79B7A;
+        border: solid #7C96FF;
     }
     #model-info {
         height: 1;
@@ -254,11 +254,11 @@ class ModelPicker(ModalScreen[str | None]):
         height: 1fr;
         background: #101010;
         scrollbar-color: #2a2a2a;
-        scrollbar-color-hover: #C79B7A;
+        scrollbar-color-hover: #7C96FF;
     }
     #model-list > .option-list--option-highlighted {
-        background: #C79B7A 20%;
-        color: #C79B7A;
+        background: #7C96FF 20%;
+        color: #7C96FF;
     }
     #model-list > .option-list--option {
         padding: 0 1;
@@ -425,12 +425,12 @@ class ProviderPicker(ModalScreen[dict | None]):
         height: 30;
         max-height: 90%;
         background: #141414;
-        border: double #C79B7A;
+        border: double #7C96FF;
         padding: 1 2;
     }
     #provider-title {
         height: 1;
-        color: #C79B7A;
+        color: #7C96FF;
         text-style: bold;
         text-align: center;
         margin-bottom: 1;
@@ -438,22 +438,22 @@ class ProviderPicker(ModalScreen[dict | None]):
     #provider-search {
         height: 3;
         background: #1a1a1a;
-        color: #C79B7A;
+        color: #7C96FF;
         border: solid #2a2a2a;
         margin-bottom: 1;
     }
     #provider-search:focus {
-        border: solid #C79B7A;
+        border: solid #7C96FF;
     }
     #provider-list {
         height: 1fr;
         background: #101010;
         scrollbar-color: #2a2a2a;
-        scrollbar-color-hover: #C79B7A;
+        scrollbar-color-hover: #7C96FF;
     }
     #provider-list > .option-list--option-highlighted {
-        background: #C79B7A 20%;
-        color: #C79B7A;
+        background: #7C96FF 20%;
+        color: #7C96FF;
     }
     #provider-list > .option-list--option {
         padding: 0 1;
@@ -472,7 +472,7 @@ class ProviderPicker(ModalScreen[dict | None]):
         border: solid #2a2a2a;
     }
     #provider-url-input:focus {
-        border: solid #C79B7A;
+        border: solid #7C96FF;
     }
     #provider-key-input {
         height: 3;
@@ -482,7 +482,7 @@ class ProviderPicker(ModalScreen[dict | None]):
         margin-top: 1;
     }
     #provider-key-input:focus {
-        border: solid #C79B7A;
+        border: solid #7C96FF;
     }
     """
 
@@ -586,7 +586,7 @@ class ProviderPicker(ModalScreen[dict | None]):
             url_section = self.query_one("#provider-url-section")
             url_section.styles.display = "block"
             self.query_one("#provider-config-label", Static).update(
-                f"[bold #C79B7A]Configure Custom Endpoint[/]"
+                f"[bold #7C96FF]Configure Custom Endpoint[/]"
             )
             self.query_one("#provider-url-input", Input).focus()
             return
@@ -735,12 +735,12 @@ class CommandPalette(ModalScreen[str | None]):
         width: 72;
         height: 32;
         background: #111111;
-        border: double #C79B7A;
+        border: double #7C96FF;
         padding: 1 2;
     }
     #palette-title {
         height: 1;
-        color: #C79B7A;
+        color: #7C96FF;
         text-style: bold;
         text-align: center;
         margin-bottom: 1;
@@ -748,22 +748,22 @@ class CommandPalette(ModalScreen[str | None]):
     #palette-input {
         height: 3;
         background: #1a1a1a;
-        color: #C79B7A;
+        color: #7C96FF;
         border: solid #333333;
         margin-bottom: 1;
     }
     #palette-input:focus {
-        border: solid #C79B7A;
+        border: solid #7C96FF;
     }
     #palette-list {
         height: 1fr;
         background: #0a0a0a;
         scrollbar-color: #333333;
-        scrollbar-color-hover: #C79B7A;
+        scrollbar-color-hover: #7C96FF;
     }
     #palette-list > .option-list--option-highlighted {
-        background: #C79B7A 20%;
-        color: #C79B7A;
+        background: #7C96FF 20%;
+        color: #7C96FF;
     }
     #palette-list > .option-list--option {
         padding: 0 1;
@@ -848,13 +848,13 @@ class SearchBar(ModalScreen[str | None]):
         width: 60;
         margin-top: 2;
         background: #111111;
-        border: solid #C79B7A;
+        border: solid #7C96FF;
         padding: 0 1;
         height: 3;
     }
     #search-input {
         background: #111111;
-        color: #C79B7A;
+        color: #7C96FF;
         height: 3;
     }
     """
@@ -921,6 +921,14 @@ class DJcodeApp(App):
         show_thinking: bool = True,
     ) -> None:
         super().__init__()
+        from textual.theme import Theme
+        self.register_theme(Theme(
+            name="djcode-workspace", primary="#7C96FF", secondary="#B7A1D9",
+            accent="#7C96FF", foreground="#F4F4F4", background="#080808",
+            surface="#111112", panel="#161617", success="#A2BA9A",
+            warning="#D4B483", error="#ED9393", dark=True,
+        ))
+        self.theme = "djcode-workspace"
         self._provider_name = provider_name
         self._model_name = model_name
         self._bypass_rlhf = bypass_rlhf
@@ -955,12 +963,32 @@ class DJcodeApp(App):
     def compose(self) -> ComposeResult:
         yield HackerHeader(id="hacker-header")
         with Horizontal(id="main-layout"):
+            with VerticalScroll(id="workspace-nav"):
+                yield Static("❯_ [bold]DJcode[/]   F4", classes="nav-brand")
+                yield Static("WORKSPACE", classes="nav-heading")
+                for ident, label in (
+                    ("build", "Build session"), ("project", "Project context"),
+                    ("memory", "Memory"), ("design", "Design packs"),
+                ):
+                    yield Button(label, id=f"nav-{ident}")
+                yield Static("YOUR TEAM", classes="nav-heading")
+                for ident, label in (
+                    ("scout", "● Garuda"), ("architect", "● Vishwakarma"),
+                    ("build-agent", "● Prometheus"), ("test", "● Agni"),
+                    ("fleet", "Vyasa fleet"),
+                ):
+                    yield Button(label, id=f"nav-{ident}")
+                yield Button("All features", id="nav-features")
+                yield Button("Project studio", id="nav-studio")
+                yield Button("Roadmap / timeline", id="nav-timeline")
+                yield Static("Local-first by design", classes="nav-footnote")
             with Vertical(id="chat-panel"):
+                yield Static(Path.cwd().name + "  /  BUILD SESSION", id="workspace-title", markup=False)
                 yield ConversationLog(
                     id="chat-log",
                     markup=True,
                     wrap=True,
-                    highlight=True,
+                    highlight=False,
                     auto_scroll=True,
                 )
                 yield OptionList(id="cmd-suggest")
@@ -968,26 +996,62 @@ class DJcodeApp(App):
                 yield AgentStatusBar(id="agent-status-bar")
                 yield Input(
                     id="prompt-input",
-                    placeholder="❯ Ask anything, or / for commands",
+                    placeholder="❯ What would you like to build?  / commands",
                 )
             yield SidePanel(project_path=Path.cwd(), id="side-panel")
         yield Static(self._build_status_text(), id="status-bar", markup=False)
         yield Footer(compact=True)
 
     def on_resize(self, event: events.Resize) -> None:
-        self._update_layout()
+        self._update_layout(event.size.width, event.size.height)
 
-    def _update_layout(self) -> None:
+    def _update_layout(self, width=None, height=None) -> None:
         if not self.is_mounted:
             return
-        visible = self._sidebar_override if self._sidebar_override is not None else False
+        visible = self._sidebar_override if self._sidebar_override is not None else (width or self.size.width) >= 150
         self.query_one("#side-panel").display = visible
-        self.query_one("#chat-panel").styles.width = "65%" if visible else "100%"
+        self.query_one("#workspace-nav").display = (width or self.size.width) >= 110 and (height or self.size.height) >= 26
+        self.query_one("#chat-panel").styles.width = "1fr"
+        self.query_one("#side-panel").styles.width = "28%" if (width or self.size.width) >= 150 else "35%"
         self._refresh_status_bar()
 
     def action_toggle_sidebar(self) -> None:
         self._sidebar_override = not self.query_one("#side-panel").display
         self._update_layout()
+
+    def _studio_command(self, command: str | None) -> None:
+        if command:
+            self.run_worker(self._run_slash_command(command), group="slash-command", exclusive=False)
+
+    @on(Button.Pressed, "#workspace-nav Button")
+    async def navigate_workspace(self, event: Button.Pressed) -> None:
+        event.stop()
+        ident = event.button.id
+        prompt = self.query_one("#prompt-input", Input)
+        if ident == "nav-studio":
+            from djcode.studio_screen import StudioScreen
+            self.push_screen(StudioScreen(), self._studio_command)
+            return
+        if ident == "nav-build":
+            prompt.focus()
+            return
+        # Preparing a specialist prompt never starts a task without an intent.
+        specialist = {"nav-scout": "/scout ", "nav-architect": "/architect ",
+                      "nav-build-agent": "/build ", "nav-test": "/test "}
+        if ident in specialist:
+            prompt.value = specialist[ident]
+            prompt.cursor_position = len(prompt.value)
+            prompt.focus()
+            return
+        commands = {"nav-project": "/project", "nav-memory": "/memory",
+                    "nav-timeline": "/timeline", "nav-design": "/design", "nav-features": "/features"}
+        if ident == "nav-fleet":
+            prompt.value = "/fleet "
+            prompt.focus()
+            return
+        if ident in commands:
+            await self._handle_slash_command(commands[ident])
+            prompt.focus()
 
     # ── Status bar helpers ────────────────────────────────────────────────
 
@@ -1040,8 +1104,14 @@ class DJcodeApp(App):
         self._update_layout()
         chat = self.query_one("#chat-log", RichLog)
         chat.write(
-            f"[bold {GOLD}]\u23fa DJcode[/] [dim]v{__version__}[/]  "
-            f"[dim]project by Darshankumar Joshi[/]\n"
+            "[#A0A0A5]YOUR INTENT[/]\n\n[bold #F4F4F4]Your terminal. An entire team.[/]\n"
+            "[#A0A0A5]Describe a change. Explore, plan, build, and verify.[/]\n\n"
+            "[#B7A1D9]01  Explore[/]   /scout       [#A0A0A5]Garuda[/]\n"
+            "[#7C96FF]02  Plan[/]      /architect   [#A0A0A5]Vishwakarma[/]\n"
+            "[#D4B483]03  Build[/]     /build       [#A0A0A5]Prometheus[/]\n"
+            "[#A2BA9A]04  Verify[/]    /test        [#A0A0A5]Agni[/]\n\n"
+            "[#A0A0A5]Choose a command with your task, or describe it below.\n"
+            "/features capabilities · /design references · /connect models[/]\n"
         )
 
         # Focus the input by default
@@ -1395,7 +1465,7 @@ class DJcodeApp(App):
 
     async def _run_slash_command(self, text: str) -> None:
         """Keep the event pump free while a specialist awaits a permission modal."""
-        long_commands = {"/spawn", "/waves", "/orchestra", "/scout", "/architect", "/review", "/debug", "/test", "/refactor", "/devops", "/launch", "/campaign", "/image", "/video", "/social", "/docs", "/recipe", "/search"}
+        long_commands = {"/flow", "/finish", "/doctor", "/spawn", "/waves", "/orchestra", "/scout", "/architect", "/build", "/review", "/debug", "/test", "/refactor", "/devops", "/launch", "/campaign", "/image", "/video", "/social", "/docs", "/recipe", "/search"}
         tracks_task = text.split()[0].lower() in long_commands
         if tracks_task:
             if self._is_generating:
@@ -1614,7 +1684,7 @@ class DJcodeApp(App):
 
         # Agent dispatch commands — send to orchestrator or operator
         elif cmd in (
-            "/scout", "/architect", "/orchestra", "/review", "/debug",
+            "/scout", "/architect", "/build", "/orchestra", "/review", "/debug",
             "/test", "/refactor", "/devops", "/launch", "/campaign",
             "/image", "/video", "/social",
         ):
@@ -1816,6 +1886,7 @@ class DJcodeApp(App):
 
         agent_map = {
             "/scout": ("Scout", "scout", "Read-only codebase exploration"),
+            "/build": ("Prometheus", "build", "Code implementation"),
             "/architect": ("Architect", "architect", "Implementation planning"),
             "/review": ("Dharma", "review", "Code review"),
             "/debug": ("Sherlock", "debug", "Root cause analysis"),
@@ -1842,12 +1913,17 @@ class DJcodeApp(App):
             side.agent_panel.set_agent("Operator", "General")
             return
 
+        if cmd == "/build" and not arg.strip():
+            chat.write(f"[{WARNING}]Usage: /build <task>[/]")
+            return
+
         if cmd in agent_map and self._orchestrator:
             agent_name, _, desc = agent_map[cmd]
             from djcode.agents.registry import AgentRole
             role_map = {
                 "/scout": AgentRole.SCOUT,
                 "/architect": AgentRole.ARCHITECT,
+                "/build": AgentRole.CODER,
                 "/review": AgentRole.REVIEWER,
                 "/debug": AgentRole.DEBUGGER,
                 "/test": AgentRole.TESTER,

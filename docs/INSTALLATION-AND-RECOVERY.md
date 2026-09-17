@@ -1,6 +1,6 @@
 # Installation, updates and recovery
 
-DJcode 4.2 requires an existing Python 3.12+ installation. Git is needed for source installation and Git workflows. Choose an existing local model server or a configured hosted provider. Installation and onboarding do not download inference or embedding models.
+DJcode 4.4 requires an existing Python 3.12+ installation. Git is needed for source installation and Git workflows. Choose an existing local model server or a configured hosted provider. Installation and onboarding do not download inference or embedding models.
 
 project by Darshan Kumar Joshi
 
@@ -12,9 +12,9 @@ djcode --version
 djcode --check
 ```
 
-The default installer verifies the canonical `darshjme/djcode` main-build manifest and its completed successful push CI run. It checks the wheel URL and SHA-256, creates `~/.local/share/djcode/release.<revision>.<suffix>/venv`, then validates the staged CLI before activation. The `current` symlink selects the active release; `previous` retains the preceding build. Launchers in `~/.local/bin` follow `current`. Add that directory to PATH if needed. The installer does not modify shell startup files.
+The default installer verifies the canonical `darshjme/djcode` build manifest, source commit tag, wheel URL and SHA-256. GitHub Actions is not required. It stages an isolated release, validates the CLI, and then switches the `current` symlink; `previous` retains the preceding release. Launchers in `~/.local/bin` follow `current`. Add that directory to PATH if needed; the installer does not modify shell startup files.
 
-The manifest records the full commit, package version, canonical wheel URL, checksum and CI run ID. A build must match the canonical main push workflow `.github/workflows/ci.yml`; this is repository/CI verification, not an independent signature or a guarantee that a build has no defects.
+This verifies repository provenance and integrity, not an independent signature or a guarantee of correctness. The default DAF engine requires Cargo for its first local build, or an existing binary configured through `DJCODE_DAF_ENGINE`.
 
 Managed installs check and apply validated updates at startup by default. Updates stage a separate environment and switch `current` atomically after validation; a failed activation attempts to restore the old pointer. Previous releases and user configuration are retained. Network metadata, downloads and staging commands have time and size budgets; dependency installation can still take several minutes. The startup launcher restarts into a successfully updated build. An update requested from the TUI asks you to restart after your current work.
 
@@ -64,3 +64,9 @@ uv run --with pytest pytest tests/test_updates.py tests/test_memory_recovery.py 
 These deterministic checks complement a real installation and provider inference smoke test; they do not replace them.
 
 `djcode --revision` reports the running managed build commit without contacting GitHub. Source and custom installations are labeled unmanaged.
+
+## Scheduler worker recovery
+
+Stop old scheduler workers before upgrading. New workers hold an OS lock for each claimed job. A lost worker's job becomes `interrupted` on the next list/claim/cancel operation and is never automatically replayed. Review effects before creating a replacement. Interrupted jobs can be cancelled.
+
+Jobs claimed by older lockless workers are preserved as `running` because their liveness cannot be established. After stopping that worker, use `/schedule {"action":"recover","schedule_id":"ID"}` to mark a legacy run interrupted. This does not run the command again. Keep the database and its adjacent `.locks` directory on a local filesystem; do not delete lock files while workers are running.

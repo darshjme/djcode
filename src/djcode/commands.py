@@ -29,6 +29,16 @@ COMMANDS = (
     Command("/fork", "Branch into a new session with current context", "Session"),
     Command("/new", "Save and begin a fresh session", "Session"),
     Command("/queue", "Inspect queued follow-ups; clear removes them", "Session", repl=False),
+    Command("/features", "Browse website capabilities and their commands", "Session"),
+    Command("/project", "Inspect workspace, branch, changes and diff summary", "Context & tools"),
+    Command("/fleet", "List or message an authenticated Vyasa fleet", "Specialists"),
+    Command("/agent", "Define your own specialist agents", "Project studio"),
+    Command("/organisation", "Define teams of custom agents", "Project studio"),
+    Command("/flow", "Save and run dependency workflows", "Project studio"),
+    Command("/roadmap", "Plan milestones and report progress", "Project studio"),
+    Command("/timeline", "Git history and recorded project activity", "Project studio"),
+    Command("/doctor", "Check installation and runtime availability", "Project studio"),
+    Command("/finish", "Run approved completion checks", "Project studio"),
     Command("/help", "Browse commands and keyboard shortcuts", "Session"),
     Command("/check", "Run runtime and source checks", "Models & setup"),
     Command("/lint", "Run runtime and source checks", "Models & setup"),
@@ -47,6 +57,7 @@ COMMANDS = (
     Command("/plan", "Toggle plan/act mode", "Session"),
     Command("/agents", "Show engineering and content profiles", "Specialists"),
     Command("/scout", "Read-only codebase exploration", "Specialists"),
+    Command("/build", "Prometheus code implementation", "Specialists"),
     Command("/architect", "Generate implementation plan", "Specialists"),
     Command("/orchestra", "Multi-agent orchestration", "Specialists"),
     Command("/review", "Code review (Dharma agent)", "Specialists"),
@@ -116,7 +127,7 @@ def command_groups(interface: str) -> dict[str, list[tuple[str, str]]]:
 def command_help(interface: str) -> str:
     sections = []
     for group, commands in command_groups(interface).items():
-        lines = [f"[bold #FFD700]{group}[/]"]
+        lines = [f"[bold #7C96FF]{group}[/]"]
         lines.extend(f"  [cyan]{name:<16}[/] {description}" for name, description in commands)
         sections.append("\n".join(lines))
     return "\n\n".join(sections)
@@ -124,6 +135,12 @@ def command_help(interface: str) -> str:
 
 def plan_blocks_command(command: str, argument: str) -> bool:
     """Keep task dispatch from bypassing the no-execution Plan mode."""
+    if command in {"/agent", "/organisation", "/flow", "/roadmap"}:
+        return argument.split(maxsplit=1)[:1] in (["save"], ["run"])
+    if command == "/finish":
+        return True
+    if command == "/fleet":
+        return bool(argument.strip())
     if command == "/docs":
         from djcode.docs import DOCS_SECTIONS
 
@@ -134,6 +151,7 @@ def plan_blocks_command(command: str, argument: str) -> bool:
     if command == "/recipe":
         return argument.split(maxsplit=1)[:1] == ["run"]
     return command in {
+        "/build",
         "/orchestra",
         "/review",
         "/debug",

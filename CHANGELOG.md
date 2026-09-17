@@ -1,3 +1,12 @@
+# 4.4.0 — 2026-09-17
+
+- Add persistent project agents, organisations and dependency workflows through shared TUI/REPL commands and a visual Project studio.
+- Add roadmap milestones, Git/runtime timelines and approval-gated completion checks.
+- Verify memory restart and real DAF/DDAL transport with doctor, available without a model connection.
+- Align the terminal workspace with the website palette and navigation; add shared project, build, capability and fleet commands.
+- Recover abandoned scheduler jobs without replaying work or stealing live ownership.
+- Document actual application captures and the bounded contribution from the older 4.3 provider runtime.
+
 # 4.3.0 — 2026-09-14
 
 - Add authenticated Vyasa fleet listing, specialist selection and persistent sessions.

@@ -1,5 +1,7 @@
 # DJcode 4.1.0 validation
 
+For the current website/workspace work, see [capability and validation record](WEBSITE-PARITY.md).
+
 This release repairs execution paths in the existing agent, rather than measuring a new model. There are 19 engineering profiles, 12 content profiles, 17 built-in tools and 48 registered TUI commands. Profiles are system prompts and tool policies, not people or academic credentials.
 
 ## Acceptance coverage
@@ -19,7 +21,7 @@ This release repairs execution paths in the existing agent, rather than measurin
 | Memory routing | Offline lexical retrieval by default. Semantic search requires explicit embeddings/configuration; no default embedding model download. Existing Chroma data is retained. |
 | Featherless | Named provider and `FEATHERLESS_API_KEY`, official OpenAI-compatible endpoint. No live Featherless account test or invented referral/partnership. |
 
-Current release gate: **286 tests passed**, and the 4.1.0 wheel/source distribution built. The earlier 4.0.2 hosted runtime evidence below remains explicitly tied to that commit. The clean hosted rerun completed the read/edit/test fixture with exit 0 and no async-generator shutdown warning. An earlier overloaded-provider run correctly returned nonzero; retry now occurs only before any stream data is emitted.
+Historical 4.1.0 release gate: **286 tests passed**, and the 4.1.0 wheel/source distribution built. The earlier 4.0.2 hosted runtime evidence below remains explicitly tied to that commit. The clean hosted rerun completed the read/edit/test fixture with exit 0 and no async-generator shutdown warning. An earlier overloaded-provider run correctly returned nonzero; retry now occurs only before any stream data is emitted.
 
 Image/video commands draft prompts rather than directly calling media-generation services. Campaign executes its director; launch builds and drafts campaign content, without a guaranteed production deployment. MCP extension servers require separate configuration and were not live-tested.
 

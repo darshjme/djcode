@@ -1,6 +1,6 @@
 # DJcode
 
-Local-first coding agent for the terminal. Version **4.3.0**. Python 3.12+. MIT.
+Local-first coding agent for the terminal. Version **4.4.0**. Python 3.12+. MIT.
 
 DJcode runs a model you choose — Ollama, MLX, or a hosted OpenAI-compatible provider — against your working tree. It can read and edit files, run shell and Git commands, call specialist profiles, and keep sessions on disk. Tool auto-accept starts off. The installer does not download model weights.
 
@@ -8,7 +8,7 @@ Website: [cli.darshj.ai](https://cli.darshj.ai) · Source: [github.com/darshjme/
 
 ## Install
 
-Requires git and Python 3.12+ (or a uv-managed Python).
+Requires git and Python 3.12+ (or a uv-managed Python). The default DAF engine also requires Cargo to build its bundled Rust runtime, or an existing binary selected with `DJCODE_DAF_ENGINE`.
 
 ```sh
 curl -fsSL https://cli.darshj.ai/install.sh | bash
@@ -27,7 +27,7 @@ uv sync
 uv run python -m djcode --check
 ```
 
-Managed installs live under `~/.local/share/djcode/` with `current` / `previous` release pointers. GitHub Actions is disabled in this account; treat installer “CI-validated” language as historical. Verify locally with `--check`, and use `--update-mode manual` or `disabled` if you do not want startup update checks.
+Managed installs live under `~/.local/share/djcode/` with `current` / `previous` release pointers. Managed updates verify the canonical source tag and wheel checksum; GitHub Actions is not required. Verify locally with `--check`, and use `--update-mode manual` or `disabled` if you do not want startup update checks.
 
 ```sh
 djcode --update                 # install the latest managed build
@@ -76,7 +76,7 @@ Optional extras: `computer` (Playwright / PyAutoGUI), `voice` (sounddevice), `to
 ```sh
 uv sync
 uv run python -m djcode --check
-uv run pytest
+uv run --with pytest pytest
 uv run ruff check src
 ```
 
@@ -89,3 +89,7 @@ See [docs/INSTALLATION-AND-RECOVERY.md](docs/INSTALLATION-AND-RECOVERY.md), [doc
 - [DarshJDB](https://github.com/darshjme/darshjdb) — self-hosted backend and agent memory
 
 Created by [Darshankumar Joshi](https://github.com/darshjme). Licensed under [MIT](LICENSE).
+
+The app opens the website-style workspace on wide terminals; the REPL uses the same palette and commands. Start with `/features`, `/project`, `/design` or `/fleet`. See [website feature coverage and terminal controls](docs/WEBSITE-PARITY.md).
+
+Project teams, dependency workflows, roadmap and completion checks: [Project studio](docs/PROJECT-STUDIO.md). Use `djcode --doctor` to verify memory and DAF/DDAL locally.

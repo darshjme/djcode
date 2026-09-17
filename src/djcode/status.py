@@ -11,7 +11,7 @@ from html import escape
 
 from prompt_toolkit.formatted_text import HTML
 
-GOLD = "#C79B7A"
+from djcode.tui_theme import GOLD
 
 
 def _shorten_cwd() -> str:

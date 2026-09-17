@@ -78,13 +78,13 @@ from djcode.tui import (
 
 console = Console()
 
-GOLD = "#C79B7A"
+from djcode.tui_theme import GOLD
 
 Q_STYLE = questionary.Style([
-    ("selected", "fg:#C79B7A bold"),
-    ("pointer", "fg:#C79B7A bold"),
-    ("highlighted", "fg:#C79B7A"),
-    ("question", "fg:#C79B7A bold"),
+    ("selected", "fg:#7C96FF bold"),
+    ("pointer", "fg:#7C96FF bold"),
+    ("highlighted", "fg:#7C96FF"),
+    ("question", "fg:#7C96FF bold"),
     ("answer", "fg:#FFFFFF bold"),
 ])
 
@@ -97,12 +97,14 @@ def print_banner(provider: Provider, *, auto_accept: bool = False) -> None:
     except ValueError:
         pass
     body = Text()
-    body.append(f"DJcode {__version__}", style=f"bold {GOLD}")
+    body.append(f"❯_ DJcode {__version__}", style="bold #F4F4F4")
     body.append(f"  {provider.config.name} · {provider.config.model}\n")
+    body.append("Your terminal. An entire team.\n", style="bold #F4F4F4")
     body.append(cwd + "\n", style="dim")
     body.append(f"Approvals: {'auto' if auto_accept else 'ask'}", style="yellow")
     body.append(" · /help commands · Tab complete · Ctrl+P plan", style="dim")
-    console.print(Panel(body, border_style=GOLD, padding=(0, 1)))
+    body.append("\n/features · /project · /memory · /design · /fleet", style=GOLD)
+    console.print(Panel(body, border_style="#29292C", padding=(1, 2)))
 
 
 HELP_TEXT = command_help("repl") + "\n\n[dim]Tab completes commands · Up/Down history · /shortcuts for keys[/]"
@@ -468,6 +470,15 @@ async def handle_slash_command(
             title=f"[bold {GOLD}]Uncensored Mode[/]",
             border_style=GOLD,
         ))
+
+    elif command == "/build":
+        if not arg.strip():
+            console.print("[yellow]Usage: /build <task>[/]")
+        else:
+            async for token in orchestrator.run_single_agent_streaming(AgentRole.CODER, arg):
+                sys.stdout.write(token)
+                sys.stdout.flush()
+            console.print()
 
     elif command == "/orchestra":
         if not arg:
@@ -997,7 +1008,7 @@ async def run_repl(
                 if tui_mode.plan_mode:
                     _prompt_html = HTML("<style fg='#FF00FF'><b>\u23f8 </b></style>")
                 else:
-                    _prompt_html = HTML("<style fg='#C79B7A'><b>\u276f </b></style>")
+                    _prompt_html = HTML("<style fg='#7C96FF'><b>\u276f </b></style>")
 
                 user_input = await session.prompt_async(_prompt_html)
             except KeyboardInterrupt:

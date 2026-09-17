@@ -191,11 +191,11 @@ class ProjectPanel(Vertical):
     ProjectPanel .project-header {
         height: 3;
         background: #0A0A0A;
-        color: #FFD700;
+        color: #7C96FF;
         text-align: center;
         padding: 1;
         text-style: bold;
-        border-bottom: double #1E1E1E;
+        border-bottom: double #29292C;
     }
 
     ProjectPanel .project-path {
@@ -210,9 +210,9 @@ class ProjectPanel(Vertical):
         height: 1fr;
         background: #0A0A0A;
         color: #8A8A8A;
-        scrollbar-color: #1E1E1E;
+        scrollbar-color: #29292C;
         scrollbar-color-hover: #00FF41;
-        scrollbar-color-active: #FFD700;
+        scrollbar-color-active: #7C96FF;
         padding: 0 1;
     }
 
@@ -226,11 +226,11 @@ class ProjectPanel(Vertical):
     }
 
     ProjectPanel FilteredDirectoryTree .tree--guides {
-        color: #1E1E1E;
+        color: #29292C;
     }
 
     ProjectPanel FilteredDirectoryTree .directory-tree--folder {
-        color: #FFD700;
+        color: #7C96FF;
         text-style: bold;
     }
 
@@ -243,7 +243,7 @@ class ProjectPanel(Vertical):
         background: #0E0E0E;
         color: #555555;
         padding: 0 1;
-        border-top: solid #1E1E1E;
+        border-top: solid #29292C;
     }
     """
 
@@ -347,11 +347,11 @@ class AgentPanel(Vertical):
     AgentPanel .agent-header {
         height: 3;
         background: #0A0A0A;
-        color: #FFD700;
+        color: #7C96FF;
         text-align: center;
         padding: 1;
         text-style: bold;
-        border-bottom: double #1E1E1E;
+        border-bottom: double #29292C;
     }
 
     AgentPanel .agent-section-title {
@@ -366,7 +366,7 @@ class AgentPanel(Vertical):
     }
 
     AgentPanel .agent-stat-value {
-        color: #E8E8E8;
+        color: #F4F4F4;
         text-style: bold;
     }
 
@@ -624,11 +624,11 @@ class StatsPanel(Vertical):
     StatsPanel .stats-header {
         height: 3;
         background: #0A0A0A;
-        color: #FFD700;
+        color: #7C96FF;
         text-align: center;
         padding: 1;
         text-style: bold;
-        border-bottom: double #1E1E1E;
+        border-bottom: double #29292C;
     }
 
     StatsPanel .stats-section-title {
@@ -652,7 +652,7 @@ class StatsPanel(Vertical):
     }
 
     StatsPanel .stats-bar-out {
-        color: #FF1744;
+        color: #ED9393;
     }
 
     StatsPanel .files-list {
@@ -827,7 +827,7 @@ class ExtensionRow(Horizontal):
 
     ExtensionRow .ext-status-dot {
         width: 3;
-        color: #FF1744;
+        color: #ED9393;
         padding: 0;
     }
 
@@ -895,11 +895,11 @@ class MCPPanel(Vertical):
     MCPPanel .mcp-header {
         height: 3;
         background: #0A0A0A;
-        color: #FFD700;
+        color: #7C96FF;
         text-align: center;
         padding: 1;
         text-style: bold;
-        border-bottom: double #1E1E1E;
+        border-bottom: double #29292C;
     }
 
     MCPPanel .mcp-section-title {
@@ -1069,11 +1069,11 @@ class TodoPanel(Vertical):
     TodoPanel .todo-header {
         height: 3;
         background: #0A0A0A;
-        color: #FFD700;
+        color: #7C96FF;
         text-align: center;
         padding: 1;
         text-style: bold;
-        border-bottom: double #1E1E1E;
+        border-bottom: double #29292C;
     }
     TodoPanel .todo-count {
         height: 1;
@@ -1175,11 +1175,11 @@ class CostPanel(Vertical):
     CostPanel .cost-header {
         height: 3;
         background: #0A0A0A;
-        color: #FFD700;
+        color: #7C96FF;
         text-align: center;
         padding: 1;
         text-style: bold;
-        border-bottom: double #1E1E1E;
+        border-bottom: double #29292C;
     }
     CostPanel .cost-section-title {
         color: #00FF41;
@@ -1191,7 +1191,7 @@ class CostPanel(Vertical):
         padding: 0 1;
     }
     CostPanel .cost-total {
-        color: #E8E8E8;
+        color: #F4F4F4;
         text-style: bold;
         padding: 1 1;
     }
@@ -1349,11 +1349,11 @@ class ArmyTabPanel(Vertical):
     ArmyTabPanel .army-header {
         height: 3;
         background: #0A0A0A;
-        color: #FFD700;
+        color: #7C96FF;
         text-align: center;
         padding: 1;
         text-style: bold;
-        border-bottom: double #1E1E1E;
+        border-bottom: double #29292C;
     }
 
     ArmyTabPanel .army-summary {
@@ -1475,11 +1475,11 @@ class IntelPanel(Vertical):
     IntelPanel .intel-header {
         height: 3;
         background: #0A0A0A;
-        color: #FFD700;
+        color: #7C96FF;
         text-align: center;
         padding: 1;
         text-style: bold;
-        border-bottom: double #1E1E1E;
+        border-bottom: double #29292C;
     }
 
     IntelPanel .intel-section {
@@ -1508,9 +1508,9 @@ class IntelPanel(Vertical):
         super().__init__(**kwargs)
         self._alerts: list[dict[str, str]] = []
         self._sentinel_colors = {
-            "Kavach": "#FF1744",
+            "Kavach": "#ED9393",
             "Varuna": "#FF6D00",
-            "Mitra": "#FF8C00",
+            "Mitra": "#D4B483",
             "Indra": "#D50000",
         }
 
@@ -1656,7 +1656,7 @@ class SidePanel(Vertical):
         width: 100%;
         height: 100%;
         background: #0A0A0A;
-        border-left: double #1E1E1E;
+        border-left: double #29292C;
     }
 
     SidePanel TabbedContent {
@@ -1678,7 +1678,7 @@ class SidePanel(Vertical):
     SidePanel Tabs {
         background: #0A0A0A;
         dock: top;
-        border-bottom: solid #1E1E1E;
+        border-bottom: solid #29292C;
     }
 
     SidePanel Tab {

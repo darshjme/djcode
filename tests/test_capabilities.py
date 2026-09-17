@@ -76,6 +76,8 @@ def test_real_daf_cancellation_cancels_python_handler(monkeypatch, tmp_path):
     monkeypatch.setattr(workflow, "CONFIG_DIR", tmp_path)
 
     async def run():
+        # Compilation is setup, not part of the handler cancellation deadline.
+        await workflow.engine_path()
         started = asyncio.Event()
         stopped = asyncio.Event()
 
@@ -435,6 +437,8 @@ def test_operator_cancel_completes_tool_protocol(monkeypatch, tmp_path):
                 yield {"choices": [{"delta": {"content": "Recovered"}, "finish_reason": "stop"}]}
 
     async def run():
+        # Compilation is setup, not part of the handler cancellation deadline.
+        await workflow.engine_path()
         started = asyncio.Event()
 
         async def hang(*args):

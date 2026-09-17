@@ -1,59 +1,60 @@
-"""Conversation-first terminal styling with a warm accent and quiet status controls."""
+"""Shared terminal styling derived from cli.darshj.ai’s workspace."""
 
 from __future__ import annotations
 
 # ── Color palette ─────────────────────────────────────────────────────────
 
 # Brand / Primary
-GOLD = "#C79B7A"
+ACCENT = "#7C96FF"
+GOLD = ACCENT  # Compatibility alias for existing widgets.
 DIM_GOLD = "#B8960F"
 DARK_GOLD = "#3D2E00"
-ELECTRIC_GOLD = "#C79B7A"
+ELECTRIC_GOLD = "#7C96FF"
 
 # Backgrounds (deep black layered depth)
-BG_PRIMARY = "#17191D"
-BG_SECONDARY = "#121212"
-BG_PANEL = "#1B1E23"
-BG_HEADER = "#17191D"
-BG_INPUT = "#202329"
+BG_PRIMARY = "#080808"
+BG_SECONDARY = "#111112"
+BG_PANEL = "#161617"
+BG_HEADER = "#080808"
+BG_INPUT = "#1E1E21"
 
 # Text hierarchy
-TEXT_STRONG = "#E8E8E8"
-TEXT_BASE = "#C2BFB8"
-TEXT_DIM = "#96928C"
+TEXT_STRONG = "#F4F4F4"
+TEXT_BASE = "#D4D4D8"
+TEXT_DIM = "#A0A0A5"
 DIM_TEXT = TEXT_DIM  # compat alias
 MUTED_TEXT = TEXT_BASE  # compat alias
 
 # Borders
-BORDER = "#1E1E1E"
-BORDER_FOCUS = "#C79B7A"
-BORDER_GLOW = "#C79B7A"
+BORDER = "#29292C"
+BORDER_FOCUS = "#7C96FF"
+BORDER_GLOW = "#7C96FF"
 BORDER_SUBTLE = "#1A1A1A"
 
 # Interactive
-LINK = "#2196F3"
+LINK = "#7C96FF"
 
 # Status — vibrant cyberpunk palette
 SUCCESS = "#A2BA9A"       # Matrix neon green
-ERROR = "#FF1744"         # Blood red
-WARNING = "#FF8C00"       # Amber
-INFO = "#2196F3"          # Electric blue
-THINKING = "#00BCD4"      # Cyan/teal for AI thinking
+ERROR = "#ED9393"         # Blood red
+WARNING = "#D4B483"       # Amber
+INFO = "#7C96FF"          # Electric blue
+THINKING = "#9AAFF0"      # Cyan/teal for AI thinking
 
 # Modes
-PLAN_MODE = "#9C27B0"     # Purple — architecture mode
+PLAN_MODE = "#B7A1D9"     # Purple — architecture mode
 ACT_MODE = "#A2BA9A"      # Neon green — execution mode
 
 # Agent tier accents
-TIER_4_CONTROL = "#C79B7A"   # Pure gold — Vyasa, Control tier
-TIER_3_ENTERPRISE = "#2196F3"  # Electric blue — Enterprise tier
-TIER_2_ARCHITECTURE = "#9C27B0"  # Purple — Architecture tier
+TIER_4_CONTROL = "#7C96FF"   # Pure gold — Vyasa, Control tier
+TIER_3_ENTERPRISE = "#7C96FF"  # Electric blue — Enterprise tier
+TIER_2_ARCHITECTURE = "#B7A1D9"  # Purple — Architecture tier
 TIER_1_EXECUTION = "#A2BA9A"   # Neon green — Execution tier
 
 # Threat agents
-THREAT_KAVACH = "#FF1744"
+THREAT_KAVACH = "#ED9393"
 THREAT_VARUNA = "#FF6D00"
-THREAT_MITRA = "#FF8C00"
+THREAT_MITRA = "#D4B483"
 THREAT_INDRA = "#D50000"
 
 # Syntax highlighting (tuned for dark bg)
@@ -62,8 +63,8 @@ SYN_PRIMITIVE = "#FFB74D"
 SYN_PROPERTY = "#F06292"
 SYN_TYPE = "#90CAF9"
 SYN_KEYWORD = "#CE93D8"
-SYN_COMMENT = "#96928C"
-SYN_FUNCTION = "#C79B7A"
+SYN_COMMENT = "#A0A0A5"
+SYN_FUNCTION = "#7C96FF"
 SYN_NUMBER = "#FF8A80"
 
 # HUD elements
@@ -76,21 +77,20 @@ MATRIX_GREEN = "#A2BA9A"
 # ── Main CSS ──────────────────────────────────────────────────────────────
 
 DJCODE_CSS = """
-#hacker-header { height: 1; border: none; background: #17191D; }
-#agent-status-bar { height: 1; border: none; background: #17191D; }
-#workflow-state { height: 1; padding: 0 2; color: #A2BA9A; background: #17191D; }
+#hacker-header { height: 1; border: none; background: #080808; }
+#agent-status-bar { height: 1; border: none; background: #080808; }
+#workflow-state { height: 1; padding: 0 2; color: #A2BA9A; background: #080808; }
 
 
 /* ================================================================
-   DJcode v4.0 — HACKER COMMAND CENTER THEME
-   Cyberpunk terminal | Matrix aesthetic | Military HUD
+   DJcode workspace — charcoal surfaces, quiet borders and cobalt focus
    ================================================================ */
 
 /* ── Screen ───────────────────────────────────────────────────── */
 
 Screen {
-    background: #17191D;
-    color: #C2BFB8;
+    background: #080808;
+    color: #D4D4D8;
 }
 
 /* Preserve the application beneath a tool permission dialog. */
@@ -108,36 +108,36 @@ ToolApprovalScreen {
 /* ── Header — Military HUD bar ────────────────────────────────── */
 
 Header {
-    background: #17191D;
-    color: #C79B7A;
+    background: #080808;
+    color: #7C96FF;
     dock: top;
     height: 1;
-    border-bottom: solid #1E1E1E;
+    border-bottom: solid #29292C;
 }
 
 HeaderTitle {
-    color: #C79B7A;
+    color: #7C96FF;
     text-style: bold;
 }
 
 /* ── Footer — Status telemetry strip ─────────────────────────── */
 
 Footer {
-    background: #17191D;
-    color: #96928C;
+    background: #080808;
+    color: #A0A0A5;
     dock: bottom;
     height: 1;
     border: none;
 }
 
 FooterKey {
-    background: #202329;
+    background: #1E1E21;
     color: #A2BA9A;
 }
 
 FooterKey:hover {
     background: #1A1A1A;
-    color: #C79B7A;
+    color: #7C96FF;
 }
 
 /* ── Status bar — system telemetry ───────────────────────────── */
@@ -145,7 +145,7 @@ FooterKey:hover {
 #status-bar {
     dock: none;
     height: 1;
-    background: #1B1E23;
+    background: #161617;
     color: #A1A1AA;
     padding: 0 1;
     border-top: none;
@@ -164,9 +164,9 @@ FooterKey:hover {
 #chat-panel {
     width: 65%;
     border: none;
-    border-title-color: #C79B7A;
+    border-title-color: #7C96FF;
     border-title-style: bold;
-    background: #17191D;
+    background: #080808;
 }
 
 #chat-panel:focus-within {
@@ -177,10 +177,10 @@ FooterKey:hover {
 
 #side-panel {
     width: 35%;
-    border: solid #1E1E1E;
+    border: solid #29292C;
     border-title-color: #A2BA9A;
     border-title-style: bold;
-    background: #1B1E23;
+    background: #161617;
     padding: 0;
 }
 
@@ -192,30 +192,30 @@ FooterKey:hover {
 
 SidePanel TabbedContent {
     height: 100%;
-    background: #1B1E23;
+    background: #161617;
 }
 
 SidePanel ContentSwitcher {
     height: 1fr;
-    background: #1B1E23;
+    background: #161617;
 }
 
 SidePanel TabPane {
     padding: 0;
     height: 1fr;
-    background: #1B1E23;
+    background: #161617;
 }
 
 SidePanel Tabs {
-    background: #17191D;
+    background: #080808;
     dock: top;
     height: 3;
-    border-bottom: solid #1E1E1E;
+    border-bottom: solid #29292C;
 }
 
 SidePanel Tab {
-    background: #202329;
-    color: #96928C;
+    background: #1E1E21;
+    color: #A0A0A5;
     padding: 0 2;
     text-style: bold;
     min-width: 8;
@@ -228,7 +228,7 @@ SidePanel Tab:hover {
 
 SidePanel Tab.-active {
     background: #A2BA9A;
-    color: #17191D;
+    color: #080808;
     text-style: bold;
 }
 
@@ -242,11 +242,11 @@ SidePanel Underline {
     height: 1fr;
     overflow-y: scroll;
     overflow-x: hidden;
-    background: #17191D;
-    color: #C2BFB8;
-    scrollbar-color: #1E1E1E;
+    background: #080808;
+    color: #D4D4D8;
+    scrollbar-color: #29292C;
     scrollbar-color-hover: #A2BA9A;
-    scrollbar-color-active: #C79B7A;
+    scrollbar-color-active: #7C96FF;
     padding: 1 2;
 }
 
@@ -254,30 +254,30 @@ SidePanel Underline {
 
 #agent-header {
     height: 3;
-    background: #1B1E23;
-    color: #C79B7A;
+    background: #161617;
+    color: #7C96FF;
     text-style: bold;
     padding: 0 1;
-    border-bottom: double #1E1E1E;
+    border-bottom: double #29292C;
     content-align: left middle;
 }
 
 #agent-log {
     height: 1fr;
-    background: #17191D;
-    color: #C2BFB8;
-    scrollbar-color: #1E1E1E;
+    background: #080808;
+    color: #D4D4D8;
+    scrollbar-color: #29292C;
     scrollbar-color-hover: #A2BA9A;
-    scrollbar-color-active: #C79B7A;
+    scrollbar-color-active: #7C96FF;
     padding: 0 1;
 }
 
 #stats-bar {
     height: 3;
-    background: #1B1E23;
-    color: #96928C;
+    background: #161617;
+    color: #A0A0A5;
     padding: 0 1;
-    border-top: solid #1E1E1E;
+    border-top: solid #29292C;
     content-align: left middle;
 }
 
@@ -287,9 +287,9 @@ SidePanel Underline {
     dock: none;
     height: auto;
     max-height: 7;
-    background: #1B1E23;
-    color: #E8E8E8;
-    border: solid #1E1E1E;
+    background: #161617;
+    color: #F4F4F4;
+    border: solid #29292C;
     margin: 0 1;
     display: none;
 }
@@ -310,15 +310,15 @@ SidePanel Underline {
 #prompt-input {
     dock: none;
     height: 3;
-    background: #202329;
-    color: #C79B7A;
+    background: #1E1E21;
+    color: #7C96FF;
     border: round #55514A;
     margin: 0 1;
     padding: 0 1;
 }
 
 #prompt-input:focus {
-    border: round #C79B7A;
+    border: round #7C96FF;
 }
 
 Input > .input--placeholder {
@@ -341,20 +341,20 @@ Input > .input--cursor {
     width: 72;
     height: auto;
     max-height: 85%;
-    background: #1B1E23;
-    border: solid #C79B7A;
+    background: #161617;
+    border: solid #7C96FF;
     padding: 1 2;
 }
 
 #help-title {
     text-style: bold;
-    color: #C79B7A;
+    color: #7C96FF;
     text-align: center;
     margin-bottom: 1;
 }
 
 #help-content {
-    color: #C2BFB8;
+    color: #D4D4D8;
     height: auto;
     max-height: 100%;
 }
@@ -370,8 +370,8 @@ Input > .input--cursor {
     width: 84;
     height: auto;
     max-height: 85%;
-    background: #1B1E23;
-    border: solid #C79B7A;
+    background: #161617;
+    border: solid #7C96FF;
     padding: 1 2;
 }
 
@@ -379,11 +379,11 @@ Input > .input--cursor {
 
 .hacker-header {
     height: 3;
-    background: #17191D;
-    color: #C79B7A;
+    background: #080808;
+    color: #7C96FF;
     text-style: bold;
     padding: 0 1;
-    border-bottom: double #1E1E1E;
+    border-bottom: double #29292C;
     content-align: center middle;
 }
 
@@ -394,8 +394,8 @@ Input > .input--cursor {
 }
 
 .hacker-border {
-    border: solid #1E1E1E;
-    background: #17191D;
+    border: solid #29292C;
+    background: #080808;
 }
 
 .hacker-border:focus {
@@ -406,9 +406,9 @@ Input > .input--cursor {
 
 .agent-status-bar {
     height: 3;
-    background: #17191D;
+    background: #080808;
     padding: 0 1;
-    border: solid #1E1E1E;
+    border: solid #29292C;
 }
 
 .agent-chip {
@@ -423,16 +423,16 @@ Input > .input--cursor {
 }
 
 .agent-chip-researching {
-    color: #C79B7A;
+    color: #7C96FF;
     text-style: italic;
 }
 
 .agent-chip-reviewing {
-    color: #00BCD4;
+    color: #9AAFF0;
 }
 
 .agent-chip-error {
-    color: #FF1744;
+    color: #ED9393;
     text-style: bold;
 }
 
@@ -444,8 +444,8 @@ Input > .input--cursor {
 
 .progress-hud {
     height: 3;
-    background: #1B1E23;
-    border: solid #1E1E1E;
+    background: #161617;
+    border: solid #29292C;
     padding: 0 1;
 }
 
@@ -458,14 +458,14 @@ Input > .input--cursor {
 .burn-rate {
     height: 1;
     color: #A2BA9A;
-    background: #17191D;
+    background: #080808;
     padding: 0 1;
 }
 
 /* Agent dashboard grid */
 
 .agent-dashboard {
-    background: #17191D;
+    background: #080808;
     padding: 1;
 }
 
@@ -473,8 +473,8 @@ Input > .input--cursor {
     height: auto;
     min-height: 6;
     width: 1fr;
-    background: #1B1E23;
-    border: solid #1E1E1E;
+    background: #161617;
+    border: solid #29292C;
     padding: 1;
     margin: 0 1 1 0;
 }
@@ -484,12 +484,12 @@ Input > .input--cursor {
 }
 
 .agent-card-name {
-    color: #C79B7A;
+    color: #7C96FF;
     text-style: bold;
 }
 
 .agent-card-title {
-    color: #96928C;
+    color: #A0A0A5;
     text-style: italic;
 }
 
@@ -514,16 +514,16 @@ Input > .input--cursor {
 }
 
 .threat-critical {
-    color: #FF1744;
+    color: #ED9393;
     text-style: bold;
 }
 
 .threat-warning {
-    color: #FF8C00;
+    color: #D4B483;
 }
 
 .threat-info {
-    color: #2196F3;
+    color: #7C96FF;
 }
 
 /* Context utilization bar */
@@ -531,7 +531,7 @@ Input > .input--cursor {
 .context-bar-container {
     height: 3;
     padding: 0 1;
-    background: #1B1E23;
+    background: #161617;
 }
 
 .context-bar-fill {
@@ -539,25 +539,25 @@ Input > .input--cursor {
 }
 
 .context-bar-fill-warning {
-    color: #FF8C00;
+    color: #D4B483;
 }
 
 .context-bar-fill-critical {
-    color: #FF1744;
+    color: #ED9393;
 }
 
 /* Army view grid */
 
 .army-grid {
-    background: #17191D;
+    background: #080808;
     padding: 1;
 }
 
 .army-cell {
     height: 3;
     width: 1fr;
-    background: #1B1E23;
-    border: solid #1E1E1E;
+    background: #161617;
+    border: solid #29292C;
     padding: 0 1;
     content-align: center middle;
 }
@@ -574,7 +574,7 @@ Input > .input--cursor {
 /* Matrix rain overlay */
 
 .matrix-rain {
-    background: #17191D;
+    background: #080808;
     color: #A2BA9A;
     overflow: hidden;
 }
@@ -582,23 +582,23 @@ Input > .input--cursor {
 /* ── Utility classes ──────────────────────────────────────────── */
 
 .gold {
-    color: #C79B7A;
+    color: #7C96FF;
 }
 
 .dim {
-    color: #96928C;
+    color: #A0A0A5;
 }
 
 .muted {
-    color: #C2BFB8;
+    color: #D4D4D8;
 }
 
 .strong {
-    color: #E8E8E8;
+    color: #F4F4F4;
 }
 
 .link {
-    color: #2196F3;
+    color: #7C96FF;
     text-style: underline;
 }
 
@@ -607,19 +607,19 @@ Input > .input--cursor {
 }
 
 .error {
-    color: #FF1744;
+    color: #ED9393;
 }
 
 .warning {
-    color: #FF8C00;
+    color: #D4B483;
 }
 
 .info {
-    color: #2196F3;
+    color: #7C96FF;
 }
 
 .thinking {
-    color: #00BCD4;
+    color: #9AAFF0;
     text-style: italic;
 }
 
@@ -629,24 +629,24 @@ Input > .input--cursor {
 }
 
 .cyber {
-    color: #00BCD4;
+    color: #9AAFF0;
 }
 
 .threat {
-    color: #FF1744;
+    color: #ED9393;
     text-style: bold;
 }
 
 .tier-4 {
-    color: #C79B7A;
+    color: #7C96FF;
 }
 
 .tier-3 {
-    color: #2196F3;
+    color: #7C96FF;
 }
 
 .tier-2 {
-    color: #9C27B0;
+    color: #B7A1D9;
 }
 
 .tier-1 {
@@ -654,25 +654,25 @@ Input > .input--cursor {
 }
 
 .tool-name {
-    color: #2196F3;
+    color: #7C96FF;
     text-style: bold;
 }
 
 .user-msg {
-    color: #C79B7A;
+    color: #7C96FF;
 }
 
 .assistant-msg {
-    color: #E8E8E8;
+    color: #F4F4F4;
 }
 
 .system-msg {
-    color: #96928C;
+    color: #A0A0A5;
     text-style: italic;
 }
 
 .separator {
-    color: #1E1E1E;
+    color: #29292C;
 }
 
 /* ── Syntax classes ───────────────────────────────────────────── */
@@ -698,11 +698,11 @@ Input > .input--cursor {
 }
 
 .syn-comment {
-    color: #96928C;
+    color: #A0A0A5;
 }
 
 .syn-function {
-    color: #C79B7A;
+    color: #7C96FF;
 }
 
 .syn-number {
@@ -771,3 +771,34 @@ __all__ = [
     "SCANLINE",
     "MATRIX_GREEN",
 ]
+
+# Workspace chrome stays compact; narrow terminals retain command access via F4.
+DJCODE_CSS += """
+#workspace-nav {
+    width: 25;
+    height: 1fr;
+    padding: 1;
+    background: #111112;
+    border-right: solid #29292C;
+    overflow-y: auto;
+}
+#workspace-nav .nav-heading { color: #A0A0A5; height: 2; padding-top: 1; }
+#workspace-nav Button {
+    width: 100%; min-width: 0; height: 1; min-height: 1;
+    border: none; background: transparent; color: #A0A0A5;
+    text-align: left; content-align: left middle; text-style: none; padding: 0 1; margin-bottom: 1;
+}
+#workspace-nav Button:hover, #workspace-nav Button:focus {
+    background: #242427; color: #F4F4F4;
+}
+#workspace-nav #nav-build { background: #242427; color: #F4F4F4; }
+#workspace-nav #nav-scout { color: #B7A1D9; }
+#workspace-nav #nav-architect { color: #7C96FF; }
+#workspace-nav #nav-build-agent { color: #D4B483; }
+#workspace-nav #nav-test { color: #A2BA9A; }
+#workspace-nav .nav-footnote { margin-top: 1; color: #A0A0A5; height: auto; }
+#workspace-title { height: 3; padding: 0 2; content-align: left middle; color: #A0A0A5; border-bottom: solid #29292C; background: #111112; }
+#prompt-input { border: round #29292C; background: #1E1E21; }
+#prompt-input:focus { border: round #7C96FF; }
+#chat-panel { width: 1fr; }
+"""

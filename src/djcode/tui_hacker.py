@@ -305,7 +305,7 @@ class HackerHeader(Widget):
     HackerHeader {
         height: 2;
         background: #0A0A0A;
-        border-bottom: solid #1E1E1E;
+        border-bottom: solid #29292C;
         padding: 0 1;
         content-align: center middle;
     }
@@ -421,7 +421,7 @@ class ProgressHUD(Widget):
     ProgressHUD {
         height: 2;
         background: #0E0E0E;
-        border: solid #1E1E1E;
+        border: solid #29292C;
         padding: 0 1;
         content-align: left middle;
     }
@@ -605,7 +605,7 @@ class ContextBar(Widget):
         height: 3;
         background: #0E0E0E;
         padding: 0 1;
-        border: solid #1E1E1E;
+        border: solid #29292C;
     }
     """
 
@@ -903,7 +903,7 @@ class AgentCard(Vertical):
         height: auto;
         min-height: 5;
         background: #0E0E0E;
-        border: solid #1E1E1E;
+        border: solid #29292C;
         padding: 1;
         margin: 0 0 1 0;
     }
@@ -913,7 +913,7 @@ class AgentCard(Vertical):
     }
 
     AgentCard .card-name {
-        color: #FFD700;
+        color: #7C96FF;
         text-style: bold;
     }
 

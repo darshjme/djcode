@@ -99,6 +99,7 @@ def redact_config(value, name=""):
 @click.option("--revision", is_flag=True, help="Show the installed version and managed build revision without network access.")
 @click.option("--scheduler", is_flag=True, help="Run the durable command scheduler until stopped (use on the workspace host).")
 @click.option("--setup", is_flag=True, help="Choose provider, supported authentication method and model.")
+@click.option("--doctor", "doctor_check", is_flag=True, help="Verify installation, memory restart and DAF/DDAL roundtrip.")
 @click.option("--check", "check_install", is_flag=True, help="Check installation syntax, registries and fatal lint.")
 @click.option("--lint", is_flag=True, help="Run the installation quality checks (alias for --check).")
 @click.option("--update", is_flag=True, help="Install the latest verified canonical build into a managed install.")
@@ -131,6 +132,7 @@ def main(
     design_pack: str | None,
     design_export,
     check_install: bool,
+    doctor_check: bool,
     lint: bool,
     update: bool,
     rollback: bool,
@@ -205,6 +207,13 @@ def main(
         provider = url
     if no_update:
         os.environ["DJCODE_NO_UPDATE_CHECK"] = "1"
+    if doctor_check:
+        from djcode.studio import doctor
+        checked = doctor(deep=True)
+        console.print_json(data=checked)
+        if not checked["ok"]:
+            raise click.ClickException("Doctor found failing checks")
+        return
     if check_install or lint:
         from djcode.maintenance import run_checks
         checked = run_checks()
