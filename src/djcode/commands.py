@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 from prompt_toolkit.completion import Completer, Completion
 
+from djcode import tui_theme
+
 
 @dataclass(frozen=True)
 class Command:
@@ -157,7 +159,7 @@ def command_groups(interface: str) -> dict[str, list[tuple[str, str]]]:
 def command_help(interface: str) -> str:
     sections = []
     for group, commands in command_groups(interface).items():
-        lines = [f"[bold #FFD700]{group}[/]"]
+        lines = [f"[bold {tui_theme.GOLD}]{group}[/]"]
         lines.extend(f"  [cyan]{name:<16}[/] {description}" for name, description in commands)
         sections.append("\n".join(lines))
     return "\n\n".join(sections)

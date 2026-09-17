@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 from pathlib import Path
@@ -314,19 +315,50 @@ def main(
     try:
         from djcode.startup import prepare
 
+        # W9 / DESIGN-CLI §3.1. The update check used to run SERIALLY behind a
+        # stderr spinner, before anything else happened, so every single launch
+        # paid a network round trip before the user saw a character. It now runs
+        # on a daemon thread that overlaps `prepare()` -- the other slow part of
+        # startup -- so the cost is max(update, prepare) instead of the sum, and
+        # there is no spinner to redraw. The re-exec still happens before the
+        # REPL starts, which is the property that actually mattered: an update
+        # must never land mid-session.
+        update_check = None
         if not setup and not os.environ.get("DJCODE_UPDATE_REEXEC"):
+            import concurrent.futures
+
             from djcode.updater import perform_update
 
-            status_console = Console(stderr=True)
-            with status_console.status("Checking validated DJcode updates…", spinner="dots"):
-                changed = perform_update(force=False)
-            if changed["status"] not in {"disabled", "manual_required", "manual"}:
-                status_console.print(changed["message"], markup=False)
-            if changed.get("updated") and changed.get("entrypoint"):
-                env = {**os.environ, "DJCODE_UPDATE_REEXEC": changed["commit"]}
-                os.execve(changed["entrypoint"], [changed["entrypoint"], *sys.argv[1:]], env)
+            update_pool = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="djcode-update"
+            )
+            update_check = update_pool.submit(perform_update, force=False)
+            update_pool.shutdown(wait=False)
         if setup or wave or prompt or not use_tui or not sys.stdin.isatty():
             provider, model = prepare(provider, model, force_setup=setup)
+        if update_check is not None:
+            import concurrent.futures
+
+            status_console = Console(stderr=True)
+            try:
+                # Already overlapped with prepare(); whatever is left is the
+                # part that genuinely had to wait. A check that has not
+                # finished by now is abandoned for this launch rather than
+                # holding the prompt hostage -- it will run again next time.
+                changed = update_check.result(timeout=8)
+            except concurrent.futures.TimeoutError:
+                changed = None
+            except Exception:  # pragma: no cover - a failed check is not fatal
+                logging.getLogger(__name__).debug("update check failed", exc_info=True)
+                changed = None
+            if changed is not None:
+                if changed["status"] not in {"disabled", "manual_required", "manual"}:
+                    status_console.print(changed["message"], markup=False)
+                if changed.get("updated") and changed.get("entrypoint"):
+                    env = {**os.environ, "DJCODE_UPDATE_REEXEC": changed["commit"]}
+                    os.execve(
+                        changed["entrypoint"], [changed["entrypoint"], *sys.argv[1:]], env
+                    )
         if setup:
             return
         if wave:

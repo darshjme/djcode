@@ -2,6 +2,16 @@
 
 Provides both a fixed bottom toolbar for prompt_toolkit and a Rich fallback.
 The fixed toolbar stays pinned at the terminal bottom at all times.
+
+Three changes in W9, all of them things a user can see:
+
+* The hardcoded ``bg="#111111"`` is gone. It painted a near-black strip across
+  the bottom of a light terminal and there was no way to turn it off.
+* There is a real context meter. ``ContextStats.utilization_pct`` has existed
+  since W1 and no surface read it, so the bar showed ``2.4k tokens`` with no
+  idea whether that filled an 8k window or 2% of a 200k one.
+* Segments are **dropped** from the end rather than truncated when the terminal
+  is narrow, because a bottom toolbar that wraps pushes the prompt off-screen.
 """
 
 from __future__ import annotations
@@ -11,7 +21,12 @@ from html import escape
 
 from prompt_toolkit.formatted_text import HTML
 
-GOLD = "#C79B7A"
+from djcode.frontends.repl import theme
+
+_PALETTE = theme.build()
+GOLD = _PALETTE.style("dj.accent")
+_DIM = _PALETTE.style("dj.dim")
+_GLYPHS = _PALETTE.glyphs
 
 
 def _shorten_cwd() -> str:
@@ -51,6 +66,10 @@ class StatusBar:
         self.auto_accept: bool = False
         self.uncensored: bool = False
         self.mode: str = "ACT"
+        #: Context-window utilisation, 0.0-1.0, or None when unknown. `None` is
+        #: not "0%" -- an empty meter and an unknown meter are different facts,
+        #: and the bar shows nothing rather than claiming the window is empty.
+        self.context_fraction: float | None = None
 
     def update(
         self,
@@ -62,6 +81,7 @@ class StatusBar:
         auto_accept: bool | None = None,
         uncensored: bool | None = None,
         mode: str | None = None,
+        context_fraction: float | None = None,
     ) -> None:
         """Update status bar values."""
         if model is not None:
@@ -78,48 +98,72 @@ class StatusBar:
             self.uncensored = uncensored
         if mode is not None:
             self.mode = mode
+        if context_fraction is not None:
+            self.context_fraction = context_fraction
 
-    def render(self) -> HTML:
-        """Render the bottom toolbar as prompt_toolkit HTML.
+    def context_segment(self) -> str:
+        """``▰▰▰▱▱▱▱▱▱▱ 31%`` -- or nothing at all when nobody has told us."""
+        if self.context_fraction is None:
+            return ""
+        fraction = max(0.0, min(1.0, self.context_fraction))
+        bar = theme.meter(fraction, width=10, glyph_map=_GLYPHS)
+        return f"{bar} {fraction * 100:.0f}%"
 
-        Clean single line:
-        ⏺ DJcode · ACT · gemma4 · ollama · ↓ 2.4k tokens · ~/project · Ctrl+? help
+    def segments(self) -> list[tuple[str, str]]:
+        """``(style, text)`` pairs, most important first.
+
+        Ordered so `render` can drop from the END when the terminal is narrow:
+        the model you are talking to and the mode you are in survive a
+        60-column window; the "Tab complete" hint does not.
         """
-        name = "DJcode"
-        cwd = escape(_shorten_cwd())
         tokens = ("~" if self.tokens_estimated else "") + _format_tokens(self.token_count)
+        items: list[tuple[str, str]] = [
+            ("brand", "DJcode"),
+            ("mode", self.mode),
+            ("strong", self.model or "no model"),
+            ("dim", self.provider),
+            ("dim", f"{_GLYPHS['down']} {tokens} tokens"),
+        ]
+        meter = self.context_segment()
+        if meter:
+            items.append(("dim", meter))
+        items.append(("dim", _shorten_cwd()))
+        items.append(("strong", f"Approvals: {'auto' if self.auto_accept else 'ask'}"))
+        items.append(("dim", f"/help {_GLYPHS['sep']} Tab complete"))
+        return items
 
-        model_display = escape(self.model or "no model")
+    def _styled(self, style: str, text: str) -> str:
+        safe = escape(text)
+        if style == "brand":
+            return f'<b><style fg="{GOLD}">{safe}</style></b>'
+        if style == "mode":
+            colour = _PALETTE.style("dj.plan" if self.mode == "PLAN" else "dj.ok")
+            body = f"<b>{safe}</b>" if self.mode == "PLAN" else safe
+            return f'<style fg="{colour}">{body}</style>'
+        if style == "strong":
+            return f'<style fg="#AAAAAA">{safe}</style>'
+        return f'<style fg="{_DIM}">{safe}</style>'
 
-        # Mode indicator: PLAN highlighted magenta, ACT normal
-        mode = self.mode
-        if mode == "PLAN":
-            mode_segment = '<style fg="#FF00FF"><b>PLAN</b></style>'
-        else:
-            mode_segment = '<style fg="#00FF00">ACT</style>'
+    def render(self, width: int | None = None) -> HTML:
+        """The bottom toolbar, fitted to the terminal."""
+        if width is None:
+            try:
+                width = os.get_terminal_size().columns
+            except OSError:
+                width = 200
 
-        sep = ' <style fg="#444444">\u00b7</style> '
+        sep_glyph = _GLYPHS["sep"]
+        bullet = _GLYPHS["bullet"]
+        items = self.segments()
+        while len(items) > 2:
+            plain = f"{bullet} " + f" {sep_glyph} ".join(text for _, text in items)
+            if len(plain) <= max(20, width - 1):
+                break
+            items.pop()
 
-        return HTML(
-            f'<style bg="#111111">'
-            f' <style fg="{GOLD}">\u23fa</style> '
-            f'<b><style fg="{GOLD}">{name}</style></b>'
-            f"{sep}"
-            f"{mode_segment}"
-            f"{sep}"
-            f'<style fg="#AAAAAA">{model_display}</style>'
-            f"{sep}"
-            f'<style fg="#666666">{escape(self.provider)}</style>'
-            f"{sep}"
-            f'<style fg="#666666">\u2193 {tokens} tokens</style>'
-            f"{sep}"
-            f'<style fg="#555555">{cwd}</style>'
-            f"{sep}"
-            f'<style fg="#AAAAAA">Approvals: {"auto" if self.auto_accept else "ask"}</style>'
-            f"{sep}"
-            f'<style fg="#888888">/help · Tab complete</style>'
-            f" </style>"
-        )
+        sep = f' <style fg="{_DIM}">{escape(sep_glyph)}</style> '
+        body = sep.join(self._styled(style, text) for style, text in items)
+        return HTML(f'<style fg="{GOLD}">{escape(bullet)}</style> {body}')
 
 
 def render_status_bar(
@@ -129,10 +173,9 @@ def render_status_bar(
     auto_accept: bool = False,
 ) -> None:
     """Legacy Rich-based inline status bar (kept for fallback/oneshot mode)."""
-    from rich.console import Console
     from rich.text import Text
 
-    console = Console()
+    console, _ = theme.make_console()
     cwd = _shorten_cwd()
     tokens_str = _format_tokens(token_count)
 

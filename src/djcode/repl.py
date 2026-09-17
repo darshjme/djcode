@@ -1212,6 +1212,28 @@ async def handle_slash_command(
     return True
 
 
+def _context_fraction(operator) -> float | None:
+    """How full the context window is, 0.0-1.0, or None when we cannot tell.
+
+    `ContextStats.utilization_pct` has been computed since W1 and no surface
+    ever read it, so the status bar showed a token count with no denominator --
+    `2.4k tokens` means something very different on an 8k model than on a 200k
+    one. None is returned rather than 0.0 when the manager cannot say, because
+    an empty meter and an unknown meter are different facts.
+    """
+    try:
+        stats = operator.context_manager.stats
+    except Exception:  # pragma: no cover - the status bar must never fail a turn
+        return None
+    pct = getattr(stats, "utilization_pct", None)
+    if pct is None:
+        return None
+    try:
+        return max(0.0, min(1.0, float(pct) / 100.0))
+    except (TypeError, ValueError):  # pragma: no cover
+        return None
+
+
 def _format_token_count(count: int) -> str:
     """Compact token count. Callers prepend `~` when the number is an estimate."""
     return f"{count / 1000:.1f}k" if count >= 1000 else str(count)
@@ -1635,6 +1657,7 @@ async def run_repl(
                         token_count=_context_tokens,
                         tokens_estimated=not _measured,
                         auto_accept=current_cfg.get("auto_accept", False),
+                        context_fraction=_context_fraction(operator),
                     )
 
                     # Dim separator after each response

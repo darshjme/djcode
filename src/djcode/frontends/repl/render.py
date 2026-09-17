@@ -19,12 +19,20 @@ import sys
 from datetime import datetime
 from typing import Any
 
-from rich.console import Console
-
 from djcode.core.events import CoreEvent, EventType
+from djcode.frontends.repl import theme
 from djcode.sessions import Session
 
-console = Console()
+console, PALETTE = theme.make_console()
+
+#: The REPL's accent, resolved once. Every literal gold in this module used to
+#: be its own decision; there were two different ones in this file alone.
+ACCENT = PALETTE.style("dj.accent")
+
+
+def glyph(name: str) -> str:
+    """One glyph, ASCII-safe. A cp1252 console cannot print U+23FA."""
+    return PALETTE.glyph(name)
 
 # Dimmed styling for thinking output, moved here from operator.py.
 THINK_PREFIX = "\033[2m\033[3m"  # dim + italic
@@ -82,10 +90,17 @@ def format_tool_args(name: str, args: dict[str, Any]) -> str:
 
 
 def render_tool_call(name: str, args: dict[str, Any]) -> None:
-    """Render a tool call as a clean one-liner."""
+    """Render a tool call as a clean one-liner.
+
+    This line used to hardcode `#FFD700` -- forty lines above a module-level
+    `GOLD = "#C79B7A"` in the same file. Both golds, one 286-line module. The
+    accent and the bullet now come from `theme`, which is also where the ASCII
+    fallback for a cp1252 console lives.
+    """
     display_name = TOOL_DISPLAY.get(name, name.title())
     console.print(
-        f"[#FFD700]⏺[/] [bold white]{display_name}[/][dim]({format_tool_args(name, args)})[/]"
+        f"[{ACCENT}]{glyph('bullet')}[/] [bold white]{display_name}[/]"
+        f"[dim]({format_tool_args(name, args)})[/]"
     )
 
 
@@ -110,7 +125,7 @@ def render_tool_result(content: str, details: dict[str, Any] | None = None) -> N
     total = len(lines)
     first = lines[0].strip().lower()
     if first.startswith("error") or first.startswith("traceback"):
-        console.print(f"  [dim]↳[/] [red]Error: {lines[0][:120]}[/]")
+        console.print(f"  [dim]{glyph('child')}[/] [dj.err]Error: {lines[0][:120]}[/]")
         return
 
     shown = lines if total <= 3 else lines[:3]
@@ -152,7 +167,9 @@ async def render_event(event: CoreEvent) -> None:
 # Icons and roster rendering moved out of orchestrator/engine.py in W2. The
 # engine supplies data; deciding what a role looks like is a front-end concern.
 
-GOLD = "#C79B7A"
+#: Kept as a name for the handful of call sites below; it is now the resolved
+#: palette accent rather than a second opinion about what gold is.
+GOLD = ACCENT
 
 AGENT_ICONS: dict[str, str] = {
     "orchestrator": "\U0001f3af",
