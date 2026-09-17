@@ -24,17 +24,26 @@ from djcode.session_commands import NAMES
 
 
 def _dispatched_literals() -> set[str]:
-    """Every "/..." string constant `handle_slash_command` compares against."""
+    """Every command `handle_slash_command` can reach.
+
+    Two sources, because dispatch has two shapes: the "/..." string constants
+    the if/elif chain compares against, and the keys of the PORTED table W9-7
+    added for the commands that used to be TUI-only. A command reached from a
+    table is just as dispatched as one reached from an elif -- and the table is
+    the shape the whole chain is meant to become.
+    """
     from djcode import repl
+    from djcode.frontends.repl.commands import PORTED
 
     tree = ast.parse(textwrap.dedent(inspect.getsource(repl.handle_slash_command)))
-    return {
+    literals = {
         node.value
         for node in ast.walk(tree)
         if isinstance(node, ast.Constant)
         and isinstance(node.value, str)
         and node.value.startswith("/")
     }
+    return literals | set(PORTED)
 
 
 def test_every_repl_command_reaches_a_handler():
@@ -60,19 +69,46 @@ def test_no_handler_dispatches_a_command_the_registry_does_not_list():
     assert not stray, f"dispatched but not in the registry: {sorted(stray)}"
 
 
-def test_repl_excluded_commands_are_the_tui_only_set():
-    """The port list for W9. If a row moves, this test is the record of it."""
+def test_the_only_commands_left_out_of_the_repl_are_the_two_with_reasons():
+    """W9-7 ported seven of the nine TUI-only rows. The two that remain are
+    deliberate, and this test is the record of why:
+
+    * `/queue` is superseded by W8's steer/queue on CoreSession -- porting the
+      TUI's version would ship a second, unrelated queue.
+    * `/cancel` is Ctrl+C, which as of W9 actually works on Windows. A cancel
+      button you have to finish typing is not a cancel button.
+    """
     assert {command.name for command in COMMANDS if not command.repl} == {
         "/cancel",
+        "/queue",
+    }
+
+
+def test_the_seven_ported_commands_are_all_registered_for_the_repl():
+    from djcode.frontends.repl.commands import PORTED
+
+    repl_names = {command.name for command in commands_for("repl")}
+    assert set(PORTED) <= repl_names
+    assert set(PORTED) == {
         "/context",
         "/cost",
-        "/queue",
         "/search",
         "/spawn",
         "/tasks",
         "/todo",
         "/waves",
     }
+
+
+def test_every_ported_handler_is_awaitable():
+    """They are dispatched with `await handler(...)`; a plain function there is
+    a TypeError the first time a user types the command."""
+    import inspect as _inspect
+
+    from djcode.frontends.repl.commands import PORTED
+
+    for name, handler in PORTED.items():
+        assert _inspect.iscoroutinefunction(handler), f"{name} is not async"
 
 
 @pytest.mark.parametrize(

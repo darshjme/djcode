@@ -145,7 +145,14 @@ def test_repl_help_and_picker_only_advertise_supported_commands():
 
     names = {command.name for command in commands_for("repl")}
     assert {"/check", "/lint", "/update", "/design", "/plan", "/thinking"} <= names
-    assert "/spawn" not in names
+    # W9-7 ported /spawn and six other TUI-only commands into the REPL, so the
+    # assertion that used to read `"/spawn" not in names` now reads the other
+    # way round. The INTENT of this test is unchanged: the help text and the
+    # picker may only advertise commands that actually have a handler, which
+    # `tests/test_repl_commands.py::test_every_repl_command_reaches_a_handler`
+    # is what enforces. /queue and /cancel remain TUI-only, deliberately.
+    assert {"/spawn", "/context", "/cost", "/search", "/tasks", "/todo", "/waves"} <= names
+    assert {"/queue", "/cancel"}.isdisjoint(names)
     assert names == {name for group in COMMAND_GROUPS.values() for name, _ in group}
     assert all(name in command_help("repl") for name in names)
 

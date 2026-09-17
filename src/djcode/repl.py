@@ -504,6 +504,20 @@ async def handle_slash_command(
     if command in NAMES:
         console.print(await handle(operator, command, arg), markup=False)
         return True
+
+    # W9-7: the seven commands that used to exist only in the Textual TUI.
+    # Dispatched from a table rather than added to the if/elif chain below --
+    # the chain is what W9's registry dispatcher replaces, and growing it
+    # further would make that conversion harder to verify.
+    from djcode.frontends.repl.commands import PORTED
+
+    if command in PORTED:
+        handler = PORTED[command]
+        if command == "/waves":
+            await handler(operator, arg, orchestrator=orchestrator)
+        else:
+            await handler(operator, arg)
+        return True
     if command == "/connect":
         from djcode.startup import setup
 
