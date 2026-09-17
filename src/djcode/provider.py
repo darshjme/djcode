@@ -69,7 +69,10 @@ class ProviderConfig:
         - URL-as-provider: passing a URL (http/https) as the provider name
         - base_url override via config or DJCODE_BASE_URL env var
         """
-        from djcode.auth import PROVIDERS, get_api_key, get_base_url
+        # W10: was ``from djcode.auth import ...``. See prompt.py's note -- the
+        # three names are pure registry reads and now live in core, so building a
+        # ProviderConfig no longer loads a terminal library.
+        from djcode.core.onboarding_flow import PROVIDERS, get_api_key, get_base_url
 
         cfg = load_config()
         provider = provider_override or cfg["provider"]

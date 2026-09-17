@@ -431,7 +431,7 @@ class CoreSession:
             derived = checkpoint_event(_CheckpointRef(summary))
             self._bus.emit_nowait(derived)
             out.append(derived)
-        for raw in details.get("diffs") or []:
+        for raw in self._diff_dicts(details):
             try:
                 restored = FileDiff.from_dict(raw)
             except Exception:  # pragma: no cover - defensive
@@ -440,6 +440,35 @@ class CoreSession:
             self._bus.emit_nowait(derived)
             out.append(derived)
         return out
+
+    @staticmethod
+    def _diff_dicts(details: dict[str, Any]) -> list[dict[str, Any]]:
+        """Every diff on a tool result, under whichever key put it there.
+
+        W10 bug fix, found by ``tests/test_core_contract.py``. There are two
+        producers and they do not agree on a key:
+
+        * ``tools/__init__.py::_finish_checkpoint`` sets ``details["diffs"]``
+          (a list) for the tools that cannot build their own -- ``notebook_edit``
+          and every path a ``bash``/``git`` command touched -- and ALSO mirrors
+          it to ``details["diff"]`` when there is exactly one.
+        * ``file_edit`` and ``file_write`` build a more accurate diff from the
+          text they already held and return it on ``details["diff"]`` alone
+          (``OUTCOME_TOOLS`` is skipped by ``_finish_checkpoint`` for exactly
+          that reason). Singular. No list.
+
+        Reading only ``diffs`` meant the two tools a user edits with ALL DAY
+        emitted no ``DIFF`` event at all, while `bash` did -- so the proof
+        obligation's DIFF was being satisfied by the wrong tools. Reading both
+        keys naively would double-emit whenever ``_finish_checkpoint`` mirrored
+        a single diff, so the list wins when it is present and the singular is
+        the fallback, never an addition.
+        """
+        listed = details.get("diffs")
+        if isinstance(listed, list) and listed:
+            return [raw for raw in listed if isinstance(raw, dict)]
+        single = details.get("diff")
+        return [single] if isinstance(single, dict) else []
 
     # ── undo, diffs, context ─────────────────────────────────────────────
 

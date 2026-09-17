@@ -15,6 +15,15 @@ def settings(monkeypatch):
     cfg = {'provider': 'ollama', 'model': 'unrelated-cloud-model', 'max_tokens': 9000}
     monkeypatch.setattr('djcode.provider.load_config', lambda: cfg)
     monkeypatch.setattr('djcode.auth.load_config', lambda: cfg)
+    # W10: `get_api_key` / `get_base_url` moved out of `djcode.auth` (which
+    # imports questionary at module level, so every turn dragged prompt_toolkit
+    # into a headless process) and into `djcode.core.onboarding_flow`, beside the
+    # PROVIDERS registry they read. `djcode.auth` re-exports both, so the import
+    # at the top of this file is unchanged -- but the config read they do now
+    # happens through onboarding_flow's own binding, which is what this patches.
+    # The `djcode.auth.load_config` line above is kept: auth still reads config
+    # for the interactive pickers.
+    monkeypatch.setattr('djcode.core.onboarding_flow._default_load', lambda: cfg)
     for variable in ('DJCODE_BASE_URL', 'DJCODE_COLIBRI_CONTEXT', 'DJCODE_COLIBRI_MAX_TOKENS', 'COLI_API_KEY'):
         monkeypatch.delenv(variable, raising=False)
     return cfg

@@ -6,8 +6,6 @@ Supports Ollama, OpenAI, Anthropic, NVIDIA NIM, Google AI, Groq, Together AI, Op
 
 from __future__ import annotations
 
-import os
-
 import questionary
 from rich.console import Console
 
@@ -17,70 +15,38 @@ console = Console()
 
 GOLD = "#FFD700"
 
-# ── Provider Registry ──────────────────────────────────────────────────────
+# ── Provider registry and its pure helpers ─────────────────────────
 
-# W8: the registry itself moved to ``djcode.core.onboarding_flow``. It is pure
+# W8 moved ``PROVIDERS`` itself to ``djcode.core.onboarding_flow``: it is pure
 # data, and this module -- which owns the interactive pickers and imports
 # questionary and rich at module level -- is one ``djcode.core`` may never
-# import. Re-exported here so every existing ``from djcode.auth import
-# PROVIDERS`` keeps working unchanged.
-from djcode.core.onboarding_flow import PROVIDERS  # noqa: E402
-
-# ── Uncensored model detection ─────────────────────────────────────────────
-
-UNCENSORED_KEYWORDS = {"dolphin", "abliterated", "uncensored", "wizard-vicuna", "nous-hermes"}
-
-
-def is_uncensored_model(model_name: str) -> bool:
-    """Check if a model name indicates an uncensored/unfiltered model."""
-    name_lower = model_name.lower()
-    return any(kw in name_lower for kw in UNCENSORED_KEYWORDS)
-
-
-# ── API key management ─────────────────────────────────────────────────────
-
-
-def get_api_key(provider_id: str) -> str:
-    """Get API key for a provider from config or environment."""
-    prov = PROVIDERS.get(provider_id)
-    if not prov or not (prov.get("needs_key") or prov.get("optional_key")):
-        return ""
-
-    cfg = load_config()
-    env_var = prov.get("env", "")
-
-    # Check config first
-    config_key = f"{provider_id}_api_key"
-    key = cfg.get(config_key, "")
-    if key:
-        return key
-
-    # Fall back to environment variable
-    if env_var:
-        key = os.environ.get(env_var, "")
-    return key
+# import.
+#
+# W10 moved the other four for the same reason plus one W8 missed.
+# ``ProviderConfig.from_config`` reached in here for ``get_api_key`` /
+# ``get_base_url`` and ``prompt.build_system_prompt`` for
+# ``is_uncensored_model``, both at CALL time -- so importing ``djcode.core``
+# stayed clean while RUNNING a single turn imported this module and, through its
+# ``import questionary`` above, loaded ``prompt_toolkit`` into a process that may
+# have no terminal at all. ``tests/test_core_contract.py`` measures the running
+# process rather than the import graph, which is how that was finally caught.
+#
+# All five are re-exported here, so ``from djcode.auth import get_api_key`` and
+# every ``monkeypatch.setattr(auth, "get_api_key", ...)`` keep working: these
+# ARE this module's globals, which is what the pickers below resolve against.
+from djcode.core.onboarding_flow import (  # noqa: E402, F401
+    PROVIDERS,
+    UNCENSORED_KEYWORDS,
+    get_api_key,
+    get_base_url,
+    is_uncensored_model,
+)
 
 
 def set_api_key(provider_id: str, key: str) -> None:
     """Store an API key in config."""
     config_key = f"{provider_id}_api_key"
     set_value(config_key, key)
-
-
-def get_base_url(provider_id: str) -> str:
-    """Get the base URL for a provider."""
-    prov = PROVIDERS.get(provider_id)
-    if not prov:
-        return "http://localhost:11434"
-
-    cfg = load_config()
-    # Check for user-overridden URL first
-    url_key = f"{provider_id}_url"
-    custom_url = cfg.get(url_key, "")
-    if custom_url:
-        return custom_url
-
-    return prov["base_url"]
 
 
 # ── Interactive auth flow ──────────────────────────────────────────────────

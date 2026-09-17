@@ -239,7 +239,10 @@ def build_system_prompt(*, bypass_rlhf: bool = False, model: str = "") -> str:
         bypass_rlhf: If True, add the bypass RLHF addendum.
         model: Current model name. Used to detect uncensored models.
     """
-    from djcode.auth import is_uncensored_model
+    # W10: was ``from djcode.auth import ...``. That module imports questionary
+    # at module level, so building a system prompt -- which every Operator does
+    # in its constructor -- pulled prompt_toolkit into a headless process.
+    from djcode.core.onboarding_flow import is_uncensored_model
 
     cwd = os.getcwd()
     # Never bind this to a local named `platform`: that shadows the module and

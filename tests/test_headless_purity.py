@@ -109,10 +109,20 @@ def test_core_closure_is_non_trivial():
 # caller reaches; importing djcode.core does not execute them, which
 # test_importing_core_loads_no_terminal_library proves empirically.
 #
-# This list must not grow. Each entry is a function to move into
-# djcode.frontends when its callers are refactored (its tests patch
-# djcode.auth directly today, so moving it now would mean rewriting them).
-ALLOWED_DEFERRED = {"djcode/auth.py"}
+# EMPTY AS OF W10, and the assertion below keeps it that way in BOTH directions:
+# a new entry fails the test, and so does a stale one.
+#
+# It held `djcode/auth.py` from W2 to W9. The entry was honest but it was hiding
+# something this static walk cannot see: `ProviderConfig.from_config` and
+# `prompt.build_system_prompt` called into auth.py at RUN time for three pure
+# registry reads, so importing djcode.core stayed clean while *running a single
+# turn* loaded questionary and, through it, prompt_toolkit into a process that
+# might have no terminal at all. tests/test_core_contract.py measures the running
+# process and caught it; W10 moved `get_api_key`, `get_base_url`,
+# `is_uncensored_model` and `UNCENSORED_KEYWORDS` into
+# `djcode.core.onboarding_flow` (which already owned `PROVIDERS`), with auth.py
+# re-exporting all five. auth.py is now unreachable from core by any path.
+ALLOWED_DEFERRED: set[str] = set()
 
 
 def enclosing_function(tree: ast.AST, lineno: int) -> str:
@@ -148,14 +158,13 @@ def test_core_closure_has_no_module_level_terminal_import():
 def test_core_closure_deferred_terminal_imports_do_not_grow():
     """Modules that reach core only through a lazy import are allowlisted.
 
-    ``provider.py`` imports ``djcode.auth`` inside a function, so auth never
-    loads on ``import djcode.core`` -- but it IS terminal code (it owns the
-    interactive provider/auth pickers), so it is recorded here rather than
-    hidden. W8 moves those pickers into ``core/onboarding_flow.py`` plus a
-    front-end, at which point this entry is deleted.
+    The allowlist is empty as of W10 -- see ``ALLOWED_DEFERRED`` above for what
+    was in it and why removing it took a dynamic test to force.
 
     The list must not grow: any NEW module that drags a terminal into core,
-    however lazily, fails here.
+    however lazily, fails here. And it must not go stale: an entry that is no
+    longer an offender fails too, so the allowlist can never quietly outlive the
+    coupling it documents.
     """
     hard = set(closure(deferred=False))
     offenders: dict[str, list[str]] = {}

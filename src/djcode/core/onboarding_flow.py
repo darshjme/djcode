@@ -168,6 +168,70 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 }
 
 
+# ── Registry helpers: pure reads over PROVIDERS and the config file ─────────
+#
+# W10. These three followed ``PROVIDERS`` here for the reason W8 gave above, and
+# for one it did not anticipate: they are the LAST things the engine still
+# reached into ``djcode.auth`` for. ``ProviderConfig.from_config`` called
+# ``auth.get_api_key`` / ``auth.get_base_url`` and ``prompt.build_system_prompt``
+# called ``auth.is_uncensored_model``, both inside a function -- so importing
+# ``djcode.core`` stayed clean (``test_headless_purity`` passed) while *running*
+# a single turn loaded ``questionary`` and, through it, ``prompt_toolkit`` into
+# the process. ``tests/test_core_contract.py`` measures the running case and
+# caught it; this move is the fix, and it is what let
+# ``test_headless_purity.ALLOWED_DEFERRED`` finally be emptied.
+#
+# ``djcode.auth`` re-exports all three, so every existing
+# ``from djcode.auth import get_api_key`` -- and every test that monkeypatches
+# ``auth.get_api_key`` -- keeps working unchanged.
+
+#: Substrings that mark a model as unfiltered. Matched case-insensitively.
+UNCENSORED_KEYWORDS = {"dolphin", "abliterated", "uncensored", "wizard-vicuna", "nous-hermes"}
+
+
+def is_uncensored_model(model_name: str) -> bool:
+    """Check if a model name indicates an uncensored/unfiltered model."""
+    name_lower = (model_name or "").lower()
+    return any(kw in name_lower for kw in UNCENSORED_KEYWORDS)
+
+
+def get_api_key(provider_id: str) -> str:
+    """Get API key for a provider from config or environment."""
+    prov = PROVIDERS.get(provider_id)
+    if not prov or not (prov.get("needs_key") or prov.get("optional_key")):
+        return ""
+
+    cfg = _default_load()
+    env_var = prov.get("env", "")
+
+    # Check config first
+    config_key = f"{provider_id}_api_key"
+    key = cfg.get(config_key, "")
+    if key:
+        return key
+
+    # Fall back to environment variable
+    if env_var:
+        key = os.environ.get(env_var, "")
+    return key
+
+
+def get_base_url(provider_id: str) -> str:
+    """Get the base URL for a provider."""
+    prov = PROVIDERS.get(provider_id)
+    if not prov:
+        return "http://localhost:11434"
+
+    cfg = _default_load()
+    # Check for user-overridden URL first
+    url_key = f"{provider_id}_url"
+    custom_url = cfg.get(url_key, "")
+    if custom_url:
+        return custom_url
+
+    return prov["base_url"]
+
+
 class OnboardingCancelled(Exception):  # noqa: N818 - a cancellation is not an error
     """The user abandoned setup. Nothing was written; the old config stands.
 

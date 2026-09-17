@@ -89,6 +89,21 @@ def redact_config(value, name=""):
 )
 @click.option("--repl", "use_repl", is_flag=True, help="(default) Use the line-oriented REPL.")
 @click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help=(
+        "One-shot, machine-readable: one JSON event per line on stderr, the final "
+        "answer alone on stdout. Requires a prompt."
+    ),
+)
+@click.option(
+    "--output-schema",
+    "output_schema",
+    is_flag=True,
+    help="Print the JSON Schema for the --json event stream and exit.",
+)
+@click.option(
     "--continue",
     "-c",
     "continue_session",
@@ -183,6 +198,8 @@ def main(
     show_config: bool,
     wave: str | None,
     use_repl: bool,
+    json_output: bool,
+    output_schema: bool,
     continue_session: bool,
     resume_session: str | None,
     use_tui: bool,
@@ -205,6 +222,21 @@ def main(
     """
     if vyasa_employee and not vyasa:
         raise click.UsageError("--vyasa-employee requires --vyasa")
+    if output_schema:
+        # W10-1. Deliberately the first thing handled: a consumer generating a
+        # client must be able to ask for the schema on a box with no provider
+        # configured, no network and no tty. Nothing below this line runs.
+        import json as _json
+
+        from djcode.frontends.headless import event_schema
+
+        click.echo(_json.dumps(event_schema(), indent=2, sort_keys=False))
+        return
+    if json_output and not prompt:
+        raise click.UsageError(
+            "--json is a one-shot output format and needs a prompt. "
+            "Use --output-schema to see the event schema."
+        )
     if vyasa:
         import httpx
 
@@ -281,7 +313,10 @@ def main(
     # --url / -u takes precedence; --provider with an http value also works
     if url:
         provider = url
-    if no_update:
+    if no_update or json_output:
+        # `--json` implies it: the update check's one status line goes to stderr,
+        # which under --json is the JSONL stream. A consumer doing
+        # `json.loads(line)` on every line would die on prose.
         os.environ["DJCODE_NO_UPDATE_CHECK"] = "1"
     if check_install or lint:
         from djcode.maintenance import run_checks
@@ -352,7 +387,19 @@ def main(
             update_check = update_pool.submit(perform_update, force=False)
             update_pool.shutdown(wait=False)
         if setup or wave or prompt or not use_tui or not sys.stdin.isatty():
-            provider, model = prepare(provider, model, force_setup=setup)
+            if json_output:
+                # `startup.prepare` prints a provider notice through a Rich
+                # Console, and a bare Console writes to stdout -- which under
+                # --json is reserved for the answer and nothing else. Rich
+                # resolves `sys.stdout` at write time, so redirecting here moves
+                # that notice onto stderr without touching startup.py (W9's
+                # file, and not this wave's to edit).
+                import contextlib
+
+                with contextlib.redirect_stdout(sys.stderr):
+                    provider, model = prepare(provider, model, force_setup=setup)
+            else:
+                provider, model = prepare(provider, model, force_setup=setup)
         if update_check is not None:
             import concurrent.futures
 
@@ -433,6 +480,24 @@ def main(
                     await prov.close()
 
             asyncio.run(_run_wave())
+        elif prompt and json_output:
+            # W10-1: the headless surface. Exit code comes back as an int rather
+            # than an exception -- a front-end owns its own convention and core
+            # never raises a CLI framework's type at it.
+            from djcode.frontends.headless import run_headless
+
+            status = asyncio.run(
+                run_headless(
+                    prompt,
+                    provider=provider,
+                    model=model,
+                    bypass_rlhf=bypass_rlhf,
+                    show_thinking=thinking,
+                    auto_accept=auto_accept,
+                )
+            )
+            if status:
+                sys.exit(status)
         elif prompt:
             # One-shot mode
             from djcode.repl import run_oneshot
