@@ -6,7 +6,7 @@ DJcode runs a model you choose — Ollama, MLX, or a hosted OpenAI-compatible pr
 
 [Website](https://cli.darshj.ai) · [Getting started](docs/INSTALLATION-AND-RECOVERY.md) · [Project studio](docs/PROJECT-STUDIO.md) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/darshjme/djcode/issues)
 
-![DJcode workspace](https://raw.githubusercontent.com/darshjme/djcode-site/main/public/screenshots/djcode-4.4-app.svg)
+![DJcode workspace](docs/images/workspace.svg)
 
 ## Build with your own team
 
