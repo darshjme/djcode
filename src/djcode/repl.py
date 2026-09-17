@@ -12,7 +12,6 @@ import logging
 import os
 import sys
 import uuid
-from pathlib import Path
 
 import questionary
 from prompt_toolkit import PromptSession
@@ -23,9 +22,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
-from djcode import __version__
 from djcode.agents.content_registry import ContentRole, get_content_spec, list_content_agents
 from djcode.agents.operator import Operator
 from djcode.agents.registry import AgentRole
@@ -91,19 +88,19 @@ Q_STYLE = questionary.Style(
 
 
 def print_banner(provider: Provider, *, auto_accept: bool = False) -> None:
-    """Keep the model, workspace and approval mode visible without a splash screen."""
-    cwd = str(Path.cwd())
-    try:
-        cwd = "~/" + str(Path.cwd().relative_to(Path.home()))
-    except ValueError:
-        pass
-    body = Text()
-    body.append(f"DJcode {__version__}", style=f"bold {GOLD}")
-    body.append(f"  {provider.config.name} · {provider.config.model}\n")
-    body.append(cwd + "\n", style="dim")
-    body.append(f"Approvals: {'auto' if auto_accept else 'ask'}", style="yellow")
-    body.append(" · /help commands · Tab complete · Ctrl+P plan", style="dim")
-    console.print(Panel(body, border_style=GOLD, padding=(0, 1)))
+    """Two lines and no box. See `frontends/repl/banner.py` for why.
+
+    Kept as a thin shim on this name because six tests and the TUI import it.
+    """
+    from djcode.frontends.repl.banner import print_banner as _print
+
+    mode = get_mode_state()
+    _print(
+        provider,
+        auto_accept=auto_accept,
+        mode=mode.mode_label if hasattr(mode, "mode_label") else "ACT",
+        thinking=getattr(mode, "verbose_thinking", True),
+    )
 
 
 HELP_TEXT = (
