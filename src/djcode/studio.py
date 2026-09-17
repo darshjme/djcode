@@ -282,7 +282,9 @@ def doctor(deep=False):
                 db = SessionDB(path)
                 sid = db.create_session("doctor", "offline")
                 db.save_message(sid, "user", "memory roundtrip")
-                assert SessionDB(path).load_conversation(sid)[0]["content"] == "memory roundtrip"
+                restored = SessionDB(path).load_conversation(sid)
+                if not restored or restored[0]["content"] != "memory roundtrip":
+                    raise RuntimeError("Session memory did not survive reopening")
             checks["checks"].append({"name": "Memory restart", "status": "passed"})
         except Exception:
             checks["checks"].append({"name": "Memory restart", "status": "failed"})
@@ -294,8 +296,10 @@ def doctor(deep=False):
                 return "doctor-ok"
 
             response = await engine.one("doctor_echo", {}, echo)
-            assert response == "doctor-ok"
-            assert any(e.get("event") == "wire" for e in engine.last_events)
+            if response != "doctor-ok":
+                raise RuntimeError("DAF echo returned an unexpected response")
+            if not any(event.get("event") == "wire" for event in engine.last_events):
+                raise RuntimeError("DAF completed without a DDAL wire event")
 
         try:
             asyncio.run(probe())

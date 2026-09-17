@@ -4,7 +4,31 @@ Local-first coding agent for the terminal. Version **4.4.0**. Python 3.12+. MIT.
 
 DJcode runs a model you choose — Ollama, MLX, or a hosted OpenAI-compatible provider — against your working tree. It can read and edit files, run shell and Git commands, call specialist profiles, and keep sessions on disk. Tool auto-accept starts off. The installer does not download model weights.
 
-Website: [cli.darshj.ai](https://cli.darshj.ai) · Source: [github.com/darshjme/djcode](https://github.com/darshjme/djcode)
+[Website](https://cli.darshj.ai) · [Getting started](docs/INSTALLATION-AND-RECOVERY.md) · [Project studio](docs/PROJECT-STUDIO.md) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/darshjme/djcode/issues)
+
+![DJcode workspace](https://raw.githubusercontent.com/darshjme/djcode-site/main/public/screenshots/djcode-4.4-app.svg)
+
+## Build with your own team
+
+Use the full-screen app or REPL to define agents, organise them into teams and run dependency workflows. Project studio saves definitions locally; the roadmap combines milestones with Git history and runtime events. `/finish` records completion only after doctor and your approved checks pass.
+
+| Capability | Entry point |
+| --- | --- |
+| Project and code inspection | `/project`, `/scout`, `/build` |
+| Custom agents and organisations | `/agent`, `/organisation`, Project studio |
+| DAF scheduling and DDAL transport | `/flow`, `/workflow` |
+| Persistent session memory and facts | `/memory`, `/remember`, `/recall` |
+| Roadmap and development history | `/roadmap`, `/timeline` |
+| Diagnostics and completion checks | `/doctor`, `/finish` |
+
+```mermaid
+flowchart LR
+  UI[App / REPL] --> Team[Agents and organisations]
+  Team --> DAF[DAF workflow scheduler]
+  DAF --> DDAL[DDAL transport]
+  DDAL --> Tools[Approved tools]
+  Tools --> Memory[Local memory and timeline]
+```
 
 ## Install
 
@@ -50,7 +74,7 @@ Config, memory and history: `~/.djcode/` (`DJCODE_CONFIG_DIR` overrides). Defaul
 
 ### Vyasa fleet
 
-DJcode 4.3 can talk to a [Vyasa](https://github.com/darshjme/vyasa-agent) fleet on loopback:
+DJcode can talk to a [Vyasa](https://github.com/darshjme/vyasa-agent) fleet on loopback:
 
 ```sh
 export VYASA_URL=http://127.0.0.1:19000
@@ -76,11 +100,14 @@ Optional extras: `computer` (Playwright / PyAutoGUI), `voice` (sounddevice), `to
 ```sh
 uv sync
 uv run python -m djcode --check
-uv run --with pytest pytest
-uv run ruff check src
+uv run --with pytest --with pytest-asyncio pytest -q
+uv run ruff check src/djcode --select E9,F63,F7,F82
+uv run python -m djcode --doctor
 ```
 
 See [docs/INSTALLATION-AND-RECOVERY.md](docs/INSTALLATION-AND-RECOVERY.md), [docs/AGENT-WORKSPACE.md](docs/AGENT-WORKSPACE.md), and [docs/ACCOUNT-AUTH.md](docs/ACCOUNT-AUTH.md).
+
+The 4.4 validation run passed 494 tests and 14 subtests, plus 12 release-helper tests. See [validation scope](docs/WEBSITE-PARITY.md) and [development timeline](docs/DEVELOPMENT-TIMELINE.md).
 
 ## Related
 
