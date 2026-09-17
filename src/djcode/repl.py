@@ -35,7 +35,7 @@ from djcode.auth import (
     interactive_provider_picker,
     is_uncensored_model,
 )
-from djcode.commands import SlashCompleter, command_help
+from djcode.commands import command_help
 from djcode.config import (
     HISTORY_FILE,
     ensure_dirs,
@@ -46,6 +46,7 @@ from djcode.context_file import save_context
 from djcode.errors import classify_error, format_error, get_fallback_model
 from djcode.extensions import ExtensionManager
 from djcode.frontends.repl import theme as _theme
+from djcode.frontends.repl.completer import DjcodeCompleter
 from djcode.frontends.repl.render import render_session_list
 from djcode.frontends.repl.stream import StreamSplitter
 from djcode.memory.manager import MemoryManager
@@ -67,12 +68,7 @@ from djcode.stats import (
     render_stats,
 )
 from djcode.status import StatusBar
-from djcode.tui import (
-    get_mode_state,
-    register_keybindings,
-    show_command_picker,
-    show_shortcuts,
-)
+from djcode.tui import get_mode_state, register_keybindings, show_shortcuts
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -1064,7 +1060,7 @@ async def handle_slash_command(
                 if missing:
                     console.print(f"[bold {GOLD}]Recipe: {recipe.name}[/] — {recipe.description}")
                     console.print("[dim]Fill in the required parameters:[/]")
-                    extra = recipe_mgr.collect_params_interactive(recipe)
+                    extra = await recipe_mgr.collect_params_async(recipe)
                     params.update(extra)
 
                 console.print(f"\n[bold {GOLD}]Running recipe:[/] {recipe.name}")
@@ -1089,11 +1085,20 @@ async def handle_slash_command(
         elif sub[0] == "create":
             console.print(f"[bold {GOLD}]Create a new recipe[/]")
             try:
-                name = input("  Name: ").strip()
-                desc = input("  Description: ").strip()
-                instructions = input("  System instructions: ").strip()
-                prompt = input("  Prompt template (use {{param}} for placeholders): ").strip()
-                param_keys = input("  Parameters (comma-separated keys): ").strip()
+                # B21: builtin input() blocks the thread it runs on, and here
+                # that thread is running the event loop -- so every background
+                # agent, stream and timer stopped dead until the user finished
+                # typing. questionary reads through prompt_toolkit, which
+                # awaits the terminal instead of blocking on it.
+                async def _ask(label: str) -> str:
+                    answer = await questionary.text(label, style=Q_STYLE).ask_async()
+                    return (answer or "").strip()
+
+                name = await _ask("Name:")
+                desc = await _ask("Description:")
+                instructions = await _ask("System instructions:")
+                prompt = await _ask("Prompt template (use {{param}} for placeholders):")
+                param_keys = await _ask("Parameters (comma-separated keys):")
 
                 from djcode.recipes import Recipe, RecipeParam
 
@@ -1101,7 +1106,7 @@ async def handle_slash_command(
                 for key in param_keys.split(","):
                     key = key.strip()
                     if key:
-                        param_desc = input(f"    {key} description: ").strip()
+                        param_desc = await _ask(f"{key} description:")
                         params.append(RecipeParam(key=key, description=param_desc))
 
                 recipe = Recipe(
@@ -1459,7 +1464,11 @@ async def run_repl(
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(HISTORY_FILE)),
         auto_suggest=AutoSuggestFromHistory(),
-        completer=SlashCompleter(),
+        # Four layers instead of one: command, subcommand, argument, @path.
+        # SlashCompleter completed names and stopped, so `/diff ` offered
+        # nothing and its three modes were discoverable only by reading the
+        # source.
+        completer=DjcodeCompleter(),
         complete_while_typing=True,
         # Up/Down filter history by what is already typed instead of walking
         # every line ever entered. FileHistory itself is unchanged -- SSOT
@@ -1497,21 +1506,13 @@ async def run_repl(
             if not user_input:
                 continue
 
-            # Interactive command picker: bare "/" triggers fuzzy picker
-            if user_input == "/":
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    picked = await asyncio.get_event_loop().run_in_executor(
-                        pool, show_command_picker
-                    )
-                if picked:
-                    should_continue = await _run_repl_command(
-                        picked, operator, memory, status_bar, orchestrator
-                    )
-                    if not should_continue:
-                        break
-                continue
+            # The bare-"/" fuzzy picker used to live here. It ran
+            # `questionary.select(...).ask()` on a thread-pool thread while
+            # this PromptSession was still alive -- two readers on one stdin,
+            # which is GAP B22, and the reason a Ctrl+C at the wrong moment
+            # left the terminal in a broken state. The completer now offers the
+            # same list inline as soon as "/" is typed, so there is nothing
+            # left for the picker to do and no second reader to contend with.
 
             # Slash commands
             if user_input.startswith("/"):

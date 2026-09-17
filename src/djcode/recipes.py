@@ -384,36 +384,59 @@ class RecipeManager:
 
         return params
 
-    def collect_params_interactive(self, recipe: Recipe) -> dict[str, str]:
-        """Interactively prompt for missing parameter values.
+    @staticmethod
+    def _prompt_text(p: RecipeParam) -> str:
+        text = f"  {p.key}"
+        if p.description:
+            text += f" ({p.description})"
+        if p.default:
+            text += f" [{p.default}]"
+        if not p.required:
+            text += " (optional)"
+        return text + ": "
 
-        Uses simple input() — no extra dependencies.
+    def _accept(self, params: dict[str, str], p: RecipeParam, value: str) -> None:
+        value = (value or "").strip() or (p.default or "")
+        if value:
+            params[p.key] = value
+        elif p.required:
+            raise ValueError(f"Required parameter '{p.key}' was not provided")
+
+    def collect_params_interactive(self, recipe: Recipe) -> dict[str, str]:
+        """Prompt for missing parameter values. **Synchronous; not for the REPL.**
+
+        Kept for non-async callers and for tests. Builtin ``input()`` blocks the
+        thread it runs on, and on the REPL that thread is running the event
+        loop -- which is GAP B21: every background agent, every stream and
+        every timer stops dead until the user finishes typing. The REPL calls
+        :meth:`collect_params_async` instead.
         """
         params: dict[str, str] = {}
-
         for p in recipe.parameters:
-            prompt_text = f"  {p.key}"
-            if p.description:
-                prompt_text += f" ({p.description})"
-            if p.default:
-                prompt_text += f" [{p.default}]"
-            if not p.required:
-                prompt_text += " (optional)"
-            prompt_text += ": "
-
             try:
-                value = input(prompt_text).strip()
+                value = input(self._prompt_text(p))
             except (EOFError, KeyboardInterrupt):
                 value = ""
+            self._accept(params, p, value)
+        return params
 
-            if not value and p.default:
-                value = p.default
+    async def collect_params_async(self, recipe: Recipe) -> dict[str, str]:
+        """The same prompts, off the event loop (B21).
 
-            if value:
-                params[p.key] = value
-            elif p.required:
-                raise ValueError(f"Required parameter '{p.key}' was not provided")
+        ``questionary`` reads through prompt_toolkit, which awaits the terminal
+        rather than blocking on it, so the loop keeps turning while the user
+        types.
+        """
+        import questionary
 
+        params: dict[str, str] = {}
+        for p in recipe.parameters:
+            answer = await questionary.text(
+                self._prompt_text(p).strip(), default=p.default or ""
+            ).ask_async()
+            if answer is None:  # Ctrl+C / Esc
+                answer = ""
+            self._accept(params, p, answer)
         return params
 
     async def execute(
