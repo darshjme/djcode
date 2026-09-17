@@ -45,7 +45,9 @@ from djcode.config import (
 from djcode.context_file import save_context
 from djcode.errors import classify_error, format_error, get_fallback_model
 from djcode.extensions import ExtensionManager
+from djcode.frontends.repl import theme as _theme
 from djcode.frontends.repl.render import render_session_list
+from djcode.frontends.repl.stream import StreamSplitter
 from djcode.memory.manager import MemoryManager
 from djcode.orchestrator import Orchestrator
 from djcode.prompt_enhancer import describe_enhancement, enhance_prompt
@@ -75,7 +77,11 @@ from djcode.tui import (
 logger = logging.getLogger(__name__)
 console = Console()
 
-GOLD = "#C79B7A"
+_PALETTE = _theme.build()
+#: The REPL's accent, from the one palette. There were four definitions of gold
+#: in the tree that a REPL user could see; this is the only one left here.
+GOLD = _PALETTE.style("dj.accent")
+_CODE_THEME = _PALETTE.code_theme
 
 Q_STYLE = questionary.Style(
     [
@@ -1551,23 +1557,33 @@ async def run_repl(
                     sys.stdout.write("\033[33m\u23fa\033[0m \033[2mThinking...\033[0m")
                     sys.stdout.flush()
 
-                    async for token in operator.send(send_text):
-                        _token_count += 1
+                    # W9: the answer is rendered as markdown, block by block,
+                    # instead of written to stdout one raw token at a time. The
+                    # splitter decides which prefix of the reply can never
+                    # change again -- a closed fence, a finished table, a
+                    # paragraph ended by a blank line -- and only that prefix is
+                    # committed. Rendering half a fence is not merely ugly: the
+                    # lines get committed to scrollback as a paragraph and then
+                    # the closing fence arrives and wants them to be a
+                    # highlighted block.
+                    splitter = StreamSplitter()
 
+                    def _commit(block: str) -> None:
+                        nonlocal first_token
                         if first_token:
-                            # Clear the thinking indicator line
                             sys.stdout.write("\r\033[K")
                             first_token = False
-                        else:
-                            # Update thinking indicator while waiting (every 5 tokens)
-                            pass
+                        console.print(Markdown(block, code_theme=_CODE_THEME))
 
-                        sys.stdout.write(token)
-                        sys.stdout.flush()
-
+                    async for token in operator.send(send_text):
+                        _token_count += 1
                         full_response += token
+                        for block in splitter.feed(token):
+                            _commit(block)
 
-                        # Periodically update thinking line if we haven't started output yet
+                        # Keep the waiting indicator alive until the first
+                        # block lands, so a long first paragraph does not look
+                        # like a hang.
                         if first_token and _token_count % 3 == 0:
                             elapsed = _time.monotonic() - _start_time
                             sys.stdout.write(
@@ -1575,6 +1591,9 @@ async def run_repl(
                                 f"\u00b7 \u2193 {_token_count} tokens)\033[0m"
                             )
                             sys.stdout.flush()
+
+                    for block in splitter.finish():
+                        _commit(block)
 
                     if first_token:
                         # Never got a token -- clear thinking indicator
