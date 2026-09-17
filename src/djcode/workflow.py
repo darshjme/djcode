@@ -29,6 +29,17 @@ _BUILD_LOCK = None
 #: that runs a hundred tools does not print the same paragraph a hundred times.
 _FALLBACK_ANNOUNCED = False
 
+#: Drained by `drain_engine_notices`. A list rather than a print, because this
+#: module is reachable from `djcode.core`, which may never touch a terminal.
+_FALLBACK_NOTICES: list[str] = []
+
+
+def drain_engine_notices() -> list[str]:
+    """Take anything the engine needs the user to know, and forget it."""
+    notices = list(_FALLBACK_NOTICES)
+    _FALLBACK_NOTICES.clear()
+    return notices
+
 _ERROR_PREFIXES = ("error", "traceback", "[exit code", "command timed out")
 
 DEPENDENCY_SKIPPED = "Error: dependency failed; tool was not executed"
@@ -197,11 +208,19 @@ class WorkflowEngine:
         self._record({"event": "engine_fallback", "engine": "native", "reason": str(error)})
         if not _FALLBACK_ANNOUNCED:
             _FALLBACK_ANNOUNCED = True
-            logger.warning(
+            notice = (
                 "No Rust toolchain found; running the native workflow engine instead of DAF. "
                 "Tools still run one at a time with the same approvals. "
                 "Install Rust/Cargo or set DJCODE_DAF_ENGINE to restore parallel scheduling."
             )
+            logger.warning(notice)
+            # The REPL configures no logging handler, so this warning went
+            # nowhere: a user on a machine without cargo silently got a
+            # degraded scheduler and no way to find out. The engine still may
+            # not print -- `core` is terminal-free and this module is imported
+            # by it -- so the notice is QUEUED and the front-end drains it,
+            # exactly as W5's checkpoint notices already do.
+            _FALLBACK_NOTICES.append(notice)
 
     async def _execute_native(self, nodes, dispatch):
         """Run the graph in-process, one node at a time, in dependency order.

@@ -123,14 +123,23 @@ def register_keybindings(
             buf.text = _mode.last_user_input
             buf.cursor_position = len(buf.text)
 
-    # Ctrl+T — Toggle auto-accept tools
+    # Ctrl+T — Toggle auto-accept tools, FOR THIS PROCESS ONLY.
     @kb.add("c-t")
     def _toggle_auto_accept(event: Any) -> None:
-        from djcode.config import set_value
-
+        # W6 established that `--auto-accept` must not rewrite config.json:
+        # a flag that silently changes the default for every future session is
+        # how a machine ends up permanently unattended with nobody having
+        # decided that. Ctrl+T was still doing exactly that via
+        # `set_value("auto_accept", True)` -- the same bug behind a different
+        # trigger. The toggle is now session-scoped, and the permission engine
+        # is moved with it so the chokepoint's own `resolve` agrees.
         new_val = not operator.auto_accept
-        set_value("auto_accept", new_val)
         operator.auto_accept = new_val
+        permissions = getattr(operator, "permissions", None)
+        if permissions is not None:
+            from djcode.core.permissions import Mode
+
+            permissions.mode = Mode.AUTO if new_val else Mode.MANUAL
         if orchestrator is not None:
             orchestrator.auto_accept = new_val
             orchestrator._shadow.auto_accept = new_val
@@ -322,19 +331,27 @@ class ProgressTracker:
 # Help overlay / shortcuts card
 # ---------------------------------------------------------------------------
 
+#: What the keys ACTUALLY do. Every row here was checked against
+#: `register_keybindings` above and against the prompt session repl.py builds;
+#: `tests/test_repl_shortcuts.py` re-checks the ones it can. The card used to
+#: advertise a bare-"/" command picker that W9 deleted, and described Ctrl+C as
+#: cancelling "the current response" at a time when Ctrl+C on Windows quit the
+#: program instead. A shortcuts card that is wrong is worse than none: it is
+#: the one place a user goes to find out what is true.
 SHORTCUTS_TABLE = [
-    ("Ctrl+O", "Toggle thinking verbose"),
-    ("Ctrl+L", "Clear screen"),
-    ("Ctrl+T", "Toggle auto-accept"),
+    ("Ctrl+O", "Toggle thinking output"),
+    ("Ctrl+L", "Clear the screen, keep the conversation"),
+    ("Ctrl+T", "Toggle auto-accept for this session only"),
     ("Ctrl+P", "Toggle plan/act mode"),
-    ("Ctrl+R", "Recall last prompt for editing"),
+    ("Ctrl+R", "Put the last prompt back in the buffer"),
     ("Ctrl+K", "Delete input after the cursor"),
-    ("Ctrl+C", "Cancel input or the current response"),
+    ("Ctrl+C", "Cancel the running turn, or clear the input"),
     ("Ctrl+D", "Exit at an empty prompt"),
-    ("Tab", "Complete a slash command"),
-    ("Up / Down", "Browse prompt history"),
-    ("Escape", "Cancel current input"),
-    ("/", "Interactive command picker"),
+    ("Tab", "Complete commands, subcommands, arguments and @paths"),
+    ("Up / Down", "History, filtered by what is already typed"),
+    ("Escape", "Clear the input"),
+    ("@", "Complete a file path, anywhere in the line"),
+    ("/", "Show the command list inline"),
 ]
 
 

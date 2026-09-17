@@ -43,7 +43,7 @@ from djcode.config import (
     set_value,
 )
 from djcode.context_file import save_context
-from djcode.errors import classify_error, format_error, get_fallback_model
+from djcode.errors import classify_error, get_fallback_model
 from djcode.extensions import ExtensionManager
 from djcode.frontends.repl import theme as _theme
 from djcode.frontends.repl.completer import DjcodeCompleter
@@ -1336,7 +1336,9 @@ async def _run_repl_command(command, operator, memory, status_bar, orchestrator)
             console.print("[yellow]Command cancelled. Ready for another prompt.[/]")
         return result is not False
     except Exception as error:
-        console.print(format_error(classify_error(error)))
+        from djcode.frontends.repl.errors import render_error
+
+        render_error(error, console=console)
         return True
 
 
@@ -1651,6 +1653,15 @@ async def run_repl(
                     # not left for /undo to disclose after the damage.
                     drain_checkpoint_notices(operator)
 
+                    # The workflow engine's "no Rust toolchain, running the
+                    # native scheduler" warning went to a logger with no
+                    # handler attached, so a user on a machine without cargo
+                    # was silently downgraded and never told.
+                    from djcode.workflow import drain_engine_notices
+
+                    for notice in drain_engine_notices():
+                        console.print(f"  [dim]{notice}[/]")
+
                     # W9: the turn's accounting, and whether it is the
                     # provider's own numbers or our arithmetic. `received` is
                     # False when the provider reported nothing, and every
@@ -1717,11 +1728,14 @@ async def run_repl(
                         _context_tokens = _usage.last.input_tokens
                     else:
                         _context_tokens = _estimate_tokens(operator.messages)
-                    current_cfg = load_config()
                     status_bar.update(
                         token_count=_context_tokens,
                         tokens_estimated=not _measured,
-                        auto_accept=current_cfg.get("auto_accept", False),
+                        # The operator's live value, not config.json. Ctrl+T is
+                        # session-scoped now, and reading the file back would
+                        # make the toolbar revert to the saved default one turn
+                        # after the user toggled it.
+                        auto_accept=bool(operator.auto_accept),
                         context_fraction=_context_fraction(operator),
                     )
 
@@ -1736,9 +1750,21 @@ async def run_repl(
                 except KeyboardInterrupt:
                     console.print("\n[yellow]Interrupted.[/]")
                 except Exception as e:
+                    from djcode.frontends.repl.errors import render_error
+
+                    # The one thing a user most wants to know when a turn dies
+                    # mid-flight is whether anything reached disk before it
+                    # did. A failure after three file_edits and a failure
+                    # before any of them used to look identical.
+                    render_error(
+                        e,
+                        console=console,
+                        provider=llm.config.name,
+                        model=llm.config.model,
+                        checkpoints=getattr(operator.dispatch_ctx, "checkpoints", None),
+                        session_id=getattr(operator, "session_id", None),
+                    )
                     err = classify_error(e)
-                    console.print(f"\n{format_error(err)}")
-                    # Auto-fallback: suggest smaller model on OOM/timeout
                     if err.fallback == "retry_with_smaller_model":
                         fb = get_fallback_model(llm.config.model)
                         if fb:
