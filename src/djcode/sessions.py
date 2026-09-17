@@ -685,6 +685,69 @@ class SessionDB:
         finally:
             conn.close()
 
+    def sessions_for_cwd(self, cwd: str, limit: int = 20) -> list[Session]:
+        """Sessions started in this directory, most recently touched first.
+
+        `list_sessions` had no cwd filter and ordered by `start_time`, so
+        "resume what I was doing here" could not be asked at all: a user with
+        forty sessions across ten projects had to read UUIDs out of `/history`
+        and paste one in. Ordering is by last interaction rather than start,
+        because the session you want back is the one you last spoke to, not the
+        one you opened first.
+        """
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM sessions
+                   WHERE cwd = ?
+                   ORDER BY COALESCE(last_interaction_at, updated_at, start_time) DESC
+                   LIMIT ?""",
+                (cwd, limit),
+            ).fetchall()
+            return [self._row_to_session(r) for r in rows]
+        except sqlite3.Error as e:
+            logger.error("Failed to list sessions for %s: %s", cwd, e)
+            return []
+        finally:
+            conn.close()
+
+    def resolve_session_id(self, prefix: str) -> str | None:
+        """Turn a unique id PREFIX into a full id.
+
+        A session id is a uuid4. Typing one out is not a thing anyone does, and
+        `/resume` accepted nothing else. Returns None when the prefix matches
+        no session, and also when it matches more than one -- resuming the
+        wrong conversation because two ids shared four characters would be a
+        silent, confusing loss.
+        """
+        prefix = (prefix or "").strip()
+        if not prefix:
+            return None
+        # `%` and `_` are LIKE metacharacters, and session ids legitimately
+        # CONTAIN `_` ("s_4bc2..."), so they have to be escaped rather than
+        # rejected -- otherwise `/resume s_4bc` matches by luck and `/resume %`
+        # matches an arbitrary session and opens somebody else's conversation.
+        escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT id FROM sessions WHERE id LIKE ? ESCAPE '\\' LIMIT 2",
+                (escaped + "%",),
+            ).fetchall()
+        except sqlite3.Error as e:
+            logger.error("Failed to resolve session prefix %s: %s", prefix, e)
+            return None
+        finally:
+            conn.close()
+        if len(rows) != 1:
+            return None
+        return rows[0]["id"]
+
+    def most_recent_session(self, cwd: str | None = None) -> Session | None:
+        """The session `--continue` should reopen."""
+        candidates = self.sessions_for_cwd(cwd, limit=1) if cwd else self.list_sessions(limit=1)
+        return candidates[0] if candidates else None
+
     def search_sessions(self, query: str, limit: int = 20) -> list[Session]:
         """Full-text search across conversation content. Returns matching sessions."""
         conn = self._connect()

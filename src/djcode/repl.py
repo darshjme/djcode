@@ -1179,56 +1179,34 @@ async def handle_slash_command(
         await _handle_diff(arg, operator)
 
     elif command == "/resume":
+        from djcode.frontends.repl.sessions_ui import pick_session, resolve, restore_into
+
+        sdb = SessionDB()
+        target_id: str | None
         if not arg.strip():
-            console.print("[dim]Usage: /resume <session_id>[/]")
-            console.print("[dim]Use /history to find session IDs[/]")
+            # No argument is the common case, and it used to print a usage
+            # line. It now opens the picker, with this folder's sessions first.
+            target_id = await pick_session(sdb)
+            if not target_id:
+                console.print("[dim]Nothing resumed.[/]")
+                return True
         else:
-            sdb = SessionDB()
-            target_id = arg.strip()
-            session = sdb.get_session(target_id)
-            if not session:
-                console.print(f"[yellow]Session not found:[/] {target_id}")
-            else:
-                messages = sdb.load_conversation(target_id)
-                if not messages:
-                    console.print(f"[yellow]No conversation data for session {target_id}[/]")
-                else:
-                    # Restore messages into operator
-                    from djcode.provider import Message as _Msg
+            # A unique PREFIX is enough. Nobody retypes a uuid4.
+            target_id, reason = resolve(arg.strip(), sdb)
+            if not target_id:
+                console.print(f"[yellow]{reason}[/]")
+                return True
 
-                    # Keep the current system prompt, replace the rest
-                    system_msg = operator.messages[0] if operator.messages else None
-                    operator.messages.clear()
-                    if system_msg:
-                        operator.messages.append(system_msg)
-
-                    restored = 0
-                    for m in messages:
-                        role = m.get("role", "")
-                        if role == "system":
-                            continue  # Keep our own system prompt
-                        content = m.get("content", "")
-                        tc = m.get("tool_calls")
-                        operator.messages.append(
-                            _Msg(
-                                role=role,
-                                content=content,
-                                tool_calls=tc or [],
-                                tool_call_id=m.get("tool_call_id"),
-                                name=m.get("name"),
-                                images=m.get("images", []),
-                            )
-                        )
-                        restored += 1
-
-                    operator.session_id = target_id
-                    console.print(
-                        f"[green]Resumed session {target_id}[/] "
-                        f"({session.model}, {restored} messages)"
-                    )
-                    console.print(
-                        "[dim]Conversation context restored. Continue where you left off.[/]"
-                    )
+        session = sdb.get_session(target_id)
+        restored = restore_into(operator, target_id, sdb)
+        if not restored:
+            console.print(f"[yellow]No conversation data for session {target_id}[/]")
+        else:
+            model = getattr(session, "model", "") or "?"
+            console.print(
+                f"[green]Resumed {target_id[:8]}[/] [dim]({model}, {restored} messages)[/]"
+            )
+            console.print("[dim]Conversation context restored.[/]")
 
     else:
         console.print(f"[yellow]Unknown command:[/] {command}")
@@ -1362,14 +1340,60 @@ async def _run_repl_command(command, operator, memory, status_bar, orchestrator)
         return True
 
 
+async def _resume_at_startup(
+    operator, session_db, resume: str | None, continue_last: bool
+) -> None:
+    """Reopen a past conversation before the first prompt is drawn."""
+    from djcode.frontends.repl.sessions_ui import (
+        describe,
+        pick_session,
+        resolve,
+        restore_into,
+    )
+
+    target: str | None = None
+    if continue_last:
+        latest = session_db.most_recent_session(os.getcwd())
+        if latest is None:
+            console.print("[dim]No previous session in this directory. Starting fresh.[/]")
+            return
+        target = latest.id
+        console.print(f"[dim]{_PALETTE.glyph('resume')} {describe(latest)}[/]")
+    elif resume:
+        target, reason = resolve(resume, session_db)
+        if target is None:
+            console.print(f"[yellow]{reason}[/] [dim]Starting fresh.[/]")
+            return
+    else:
+        target = await pick_session(session_db)
+        if not target:
+            console.print("[dim]Starting fresh.[/]")
+            return
+
+    restored = restore_into(operator, target, session_db)
+    if restored:
+        console.print(
+            f"[green]Resumed {target[:8]}[/] [dim]({restored} messages)[/]\n"
+        )
+    else:
+        console.print(f"[yellow]Session {target[:8]} has no stored conversation.[/]\n")
+
+
 async def run_repl(
     provider: str | None = None,
     model: str | None = None,
     bypass_rlhf: bool = False,
     auto_accept: bool = False,
     show_thinking: bool = True,
+    resume: str | None = None,
+    continue_last: bool = False,
 ) -> None:
-    """Run the interactive REPL."""
+    """Run the interactive REPL.
+
+    ``resume`` is a session id, a unique prefix of one, or ``""`` meaning "show
+    me a picker". ``continue_last`` reopens the most recent session started in
+    this directory without asking anything.
+    """
     ensure_dirs()
 
     # Provider setup is handled once by the CLI startup flow.
@@ -1473,6 +1497,13 @@ async def run_repl(
 
     # Compact startup summary, including the effective approval mode.
     print_banner(llm, auto_accept=effective_auto_accept)
+
+    # `--continue` / `--resume`, before the first prompt. Restoring after the
+    # banner rather than before it means the user sees which build and model
+    # they are resuming INTO, which is the thing most likely to have changed
+    # since they left.
+    if continue_last or resume is not None:
+        await _resume_at_startup(operator, session_db, resume, continue_last)
 
     # Set up prompt toolkit session with FIXED bottom toolbar
     session: PromptSession[str] = PromptSession(

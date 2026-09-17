@@ -89,6 +89,21 @@ def redact_config(value, name=""):
 )
 @click.option("--repl", "use_repl", is_flag=True, help="(default) Use the line-oriented REPL.")
 @click.option(
+    "--continue",
+    "-c",
+    "continue_session",
+    is_flag=True,
+    help="Reopen the most recent session started in this directory.",
+)
+@click.option(
+    "--resume",
+    "resume_session",
+    is_flag=False,
+    flag_value="",
+    default=None,
+    help="Resume a session by id or unique prefix; with no value, pick one.",
+)
+@click.option(
     "--tui",
     "use_tui",
     is_flag=True,
@@ -168,6 +183,8 @@ def main(
     show_config: bool,
     wave: str | None,
     use_repl: bool,
+    continue_session: bool,
+    resume_session: str | None,
     use_tui: bool,
     setup: bool,
     scheduler: bool,
@@ -452,6 +469,8 @@ def main(
                     bypass_rlhf=bypass_rlhf,
                     auto_accept=auto_accept,
                     show_thinking=thinking,
+                    resume=resume_session,
+                    continue_last=continue_session,
                 )
             )
     except KeyboardInterrupt:
