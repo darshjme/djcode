@@ -204,7 +204,8 @@ class TestTools:
 
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "test.txt")
-            result = asyncio.run(execute_file_write(path, "hello world"))
+            # W7-2: the handler returns a ToolOutcome whose __str__ is content.
+            result = str(asyncio.run(execute_file_write(path, "hello world")))
             assert "Wrote" in result
             assert Path(path).read_text() == "hello world"
 
@@ -217,7 +218,7 @@ class TestTools:
             path = f.name
 
         try:
-            result = asyncio.run(execute_file_edit(path, "hello", "goodbye"))
+            result = str(asyncio.run(execute_file_edit(path, "hello", "goodbye")))
             assert "replaced" in result.lower() or "Edited" in result
             assert Path(path).read_text() == "goodbye world"
         finally:

@@ -428,6 +428,59 @@ class CheckpointStore:
         row = conn.execute("SELECT body FROM blobs WHERE sha256 = ?", (sha,)).fetchone()
         return bytes(row[0]) if row is not None else None
 
+    def blob(self, sha: str | None) -> bytes | None:
+        """The stored bytes for a content hash, or ``None`` (W7).
+
+        The public face of ``_load_blob``, which needs a live connection and so
+        is unusable from outside. W7's ``/diff session`` needs the pre-image
+        bytes this store already captured at ``_before_file`` -- reading them
+        back here is what stops the diff builder taking a SECOND snapshot of
+        every file the agent touches.
+
+        ``None`` has one meaning and it is not "empty file": the body was never
+        stored (over ``max_file_bytes``) or ``enforce_budget`` has since evicted
+        it. Callers must report that, not diff against ``b""``.
+        """
+        if not sha:
+            return None
+        conn = self._connect()
+        try:
+            return self._load_blob(conn, sha)
+        finally:
+            conn.close()
+
+    def baseline(
+        self, session_id: str, *, limit: int = 5000
+    ) -> tuple[dict[str, tuple[str | None, bool, str | None]], str]:
+        """Per path: the state this session started from. ``(baseline, note)``.
+
+        The public face of ``_collapse``, whose docstring already describes
+        exactly this fold -- the OLDEST checkpoint touching a path owns the
+        content, the NEWEST owns the ``post_sha``. ``/diff session`` is that
+        fold plus a read of the file on disk.
+
+        ``limit`` is 5000, not ``checkpoints()``'s default 200: a long session
+        capped at 200 would produce a PARTIAL baseline with nothing saying so,
+        which is the failure mode W5's own coverage rule exists to prevent. When
+        the cap does trip, the note says it and the caller must surface it.
+
+        Restore checkpoints stay excluded (``include_restores=False``). After an
+        ``/undo`` the baseline is still the original pre-image and the disk
+        already reflects the undo, so the diff comes out right.
+        """
+        rows = self.checkpoints(session_id, limit=limit)
+        targets, _dirs = _collapse(rows)
+        out = {
+            path: (pre, existed, post) for pre, existed, post, path in targets.values()
+        }
+        note = ""
+        if len(rows) >= limit:
+            note = (
+                f"only the newest {limit} checkpoints were folded into this baseline; "
+                "earlier changes in this session are not shown"
+            )
+        return out, note
+
     def total_blob_bytes(self) -> int:
         with self._connect() as conn:
             row = conn.execute("SELECT COALESCE(SUM(size), 0) FROM blobs").fetchone()

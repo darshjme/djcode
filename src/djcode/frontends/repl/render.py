@@ -89,8 +89,20 @@ def render_tool_call(name: str, args: dict[str, Any]) -> None:
     )
 
 
-def render_tool_result(content: str) -> None:
-    """Render a tool result as an indented dim summary."""
+def render_tool_result(content: str, details: dict[str, Any] | None = None) -> None:
+    """Render a tool result as an indented dim summary, plus its diff (W7).
+
+    The diff comes first and the text summary second, because "Edited
+    <path>: replaced 1 occurrence" is the sentence the diff makes
+    redundant. ``details`` carries the bounded ``FileDiff.as_dict()`` that
+    ``file_edit``/``file_write`` build and that ``dispatch_tool``'s step-5
+    checkpoint half builds for every other tool that changed a file.
+    """
+    if details:
+        from djcode.frontends.repl.diffview import render_outcome_diff
+
+        render_outcome_diff(console, details)
+
     lines = content.strip().splitlines()
     if not lines:
         return
@@ -133,7 +145,7 @@ async def render_event(event: CoreEvent) -> None:
     elif event.event_type == EventType.TOOL_CALL:
         render_tool_call(event.data.get("name", ""), event.data.get("args", {}))
     elif event.event_type == EventType.TOOL_RESULT:
-        render_tool_result(event.data.get("content", ""))
+        render_tool_result(event.data.get("content", ""), event.data.get("details"))
 
 
 # ── Agent presentation ──────────────────────────────────────────────────────

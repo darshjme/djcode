@@ -16,9 +16,7 @@ import questionary
 from prompt_toolkit.key_binding import KeyBindings
 from rich.console import Console
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
-from rich.text import Text
 
 from djcode.commands import command_groups
 
@@ -306,67 +304,18 @@ class ProgressTracker:
 
 
 # ---------------------------------------------------------------------------
-# Diff display
+# Diff display -- moved to djcode.frontends.repl.diffview in W7
 # ---------------------------------------------------------------------------
-
-
-def render_diff(
-    file_path: str,
-    old_text: str,
-    new_text: str,
-    *,
-    context_lines: int = 3,
-) -> None:
-    """Render a colored diff of old_text vs new_text for a file.
-
-    Uses Rich Syntax with the diff lexer for proper coloring.
-    """
-    import difflib
-
-    old_lines = old_text.splitlines(keepends=True)
-    new_lines = new_text.splitlines(keepends=True)
-
-    diff_lines = list(
-        difflib.unified_diff(
-            old_lines,
-            new_lines,
-            fromfile=f"a/{file_path}",
-            tofile=f"b/{file_path}",
-            n=context_lines,
-        )
-    )
-
-    if not diff_lines:
-        console.print(f"[dim]  {file_path}: no changes[/]")
-        return
-
-    diff_text = "".join(diff_lines)
-
-    console.print()
-    console.print(
-        Panel(
-            Syntax(diff_text, "diff", theme="monokai", line_numbers=False),
-            title=f"[bold white]{file_path}[/]",
-            border_style=GOLD,
-            padding=(0, 1),
-        )
-    )
-
-
-def render_inline_diff(file_path: str, old_string: str, new_string: str) -> None:
-    """Render a compact inline diff (for tool results).
-
-    Shows removed lines in red and added lines in green.
-    """
-    text = Text()
-    text.append(f"  {file_path}\n", style="bold white")
-
-    for line in old_string.splitlines():
-        text.append(f"  - {line}\n", style="red")
-    for line in new_string.splitlines():
-        text.append(f"  + {line}\n", style="green")
-
-    console.print(text)
+#
+# `render_diff` and `render_inline_diff` lived here and were DEAD: W0's
+# `9874316` removed the last import (`repl.py`), after which the only four
+# references in `src/` and `tests/` were the two definitions and their two
+# `__all__` entries. Neither could satisfy the W7 green gate -- `render_diff`
+# lexed the unified-diff text with the `diff` lexer and printed no line numbers
+# at all, and `render_inline_diff` printed every old line red then every new
+# line green, which is not a diff. `BLUEPRINT-CLI.md` W7-3's "do not rewrite
+# them, adapt their signatures" rests on the claim that `repl.py` imports them,
+# which is false; the deviation is recorded in `diffview.py`'s module docstring.
 
 
 # ---------------------------------------------------------------------------
@@ -424,8 +373,6 @@ __all__ = [
     "ProgressTracker",
     "get_mode_state",
     "register_keybindings",
-    "render_diff",
-    "render_inline_diff",
     "show_command_picker",
     "show_shortcuts",
     "COMMAND_GROUPS",

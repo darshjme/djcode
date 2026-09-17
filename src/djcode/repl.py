@@ -320,6 +320,42 @@ def _tell_the_model(operator: Operator, report) -> None:
     operator.messages.append(_Msg(role="user", content="\n".join(lines)))
 
 
+async def _handle_diff(arg: str, operator: Operator) -> None:
+    """`/diff [session|uncommitted|branch [ref]]` (W7-5).
+
+    Presentation only; the three bases live in `djcode.core.diff`, which is
+    terminal-free. `session` is the default and the only one that needs no git
+    at all -- it folds the checkpoint pre-images W5 already captured against the
+    files on disk, so it works in a directory that is not a repository, which is
+    SSOT's stated reason for rejecting shadow-git in the first place.
+    """
+    from djcode.core.diff import diff_paths
+    from djcode.frontends.repl.diffview import render_diffs
+
+    parts = arg.strip().split(maxsplit=1)
+    base = (parts[0] or "session").lower() if parts else "session"
+    ref = parts[1].strip() if len(parts) > 1 else ""
+    if base not in {"session", "uncommitted", "branch"}:
+        console.print("[dim]Usage: /diff [session|uncommitted|branch [ref]][/]")
+        return
+
+    store = _checkpoint_store(operator) if base == "session" else None
+    if base == "session" and store is None:
+        console.print("[yellow]Checkpoints are not active, so /diff session has no base.[/]")
+        console.print("[dim]Try /diff uncommitted or /diff branch.[/]")
+        return
+
+    diffs = await diff_paths(
+        base,
+        store,
+        session_id=getattr(operator, "session_id", "") or "",
+        cwd=os.getcwd(),
+        ref=ref,
+    )
+    console.print(f"\n[bold {GOLD}]Diff · {base}[/]")
+    render_diffs(console, diffs)
+
+
 async def _handle_undo_family(command: str, arg: str, operator: Operator) -> None:
     """`/undo`, `/redo`, `/rewind`.
 
@@ -1111,6 +1147,12 @@ async def handle_slash_command(
     elif command in ("/undo", "/redo", "/rewind"):
         await _handle_undo_family(command, arg, operator)
 
+    # W7 (P0-3). Also deliberately NOT in plan_blocks_command: plan mode stops
+    # the model changing the tree, and /diff is a read-only inspection of what
+    # already changed.
+    elif command == "/diff":
+        await _handle_diff(arg, operator)
+
     elif command == "/resume":
         if not arg.strip():
             console.print("[dim]Usage: /resume <session_id>[/]")
@@ -1176,11 +1218,52 @@ def _estimate_tokens(messages: list) -> int:
     return total_chars // 4
 
 
+def _render_approval_preview(name: str, arguments: dict) -> bool:
+    """Show what the edit WILL do, before it does it. Returns True if it drew.
+
+    This is GAP M1: the approval card printed ``json.dumps(arguments)``, so
+    approving a `file_edit` meant reading two escaped strings and imagining the
+    result. W7-3's third surface.
+
+    Nothing has run at this point, so there is no checkpoint and no post image.
+    ``preview_edit`` simulates one using ``file_edit``'s OWN matching -- and when
+    the match is ambiguous, absent, or already applied it says so instead of
+    drawing a diff, because a diff for an edit the tool is about to refuse is
+    worse than no diff at all.
+    """
+    from djcode.core.diff import preview_edit, preview_write
+    from djcode.frontends.repl.diffview import render_file_diff
+
+    path = arguments.get("path")
+    if not isinstance(path, str) or not path.strip():
+        return False
+    try:
+        if name == "file_edit":
+            preview = preview_edit(
+                path, str(arguments.get("old_string", "")), str(arguments.get("new_string", ""))
+            )
+            if preview.diff is not None:
+                render_file_diff(console, preview.diff, max_lines=40)
+                return True
+            if preview.message:
+                console.print(f"  [yellow]{preview.message}[/]")
+                return True
+            return False
+        if name == "file_write":
+            diff = preview_write(path, str(arguments.get("content", "")))
+            render_file_diff(console, diff, max_lines=40)
+            return True
+    except Exception:  # pragma: no cover - a preview must never block approval
+        logger.debug("diff preview failed for %s", name, exc_info=True)
+    return False
+
+
 async def _approve_repl_tool(name: str, arguments: dict) -> bool:
     import json
 
-    body = Text(f"Tool: {name}\n{json.dumps(arguments, indent=2)[:2000]}")
-    console.print(Panel(body, title="Approve tool"))
+    if not _render_approval_preview(name, arguments):
+        body = Text(f"Tool: {name}\n{json.dumps(arguments, indent=2)[:2000]}")
+        console.print(Panel(body, title="Approve tool"))
     return bool(await questionary.confirm("Execute this tool?", default=False).ask_async())
 
 

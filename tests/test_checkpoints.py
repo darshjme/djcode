@@ -136,14 +136,21 @@ async def test_file_edit_no_op_paths_take_no_checkpoint(tmp_path):
     """file_edit has five return paths and only two of them write. One of the
     no-ops ("Already applied: ...") is success-shaped and says nothing about an
     error; another ("Error: old_string found 2 times") writes nothing while
-    looking like a failure. Neither the string nor `ok` may decide this."""
+    looking like a failure. Neither the string nor `ok` may decide this.
+
+    W7-2 changed `ok_source` here from "unverified" to "handler": the tool now
+    returns its own ToolOutcome, so the verdict is real. The point of this test
+    is unchanged and if anything sharper -- `ok is True` on a call that wrote
+    NOTHING is now a *verified* True, which makes it an even worse thing to
+    decide a checkpoint by. `_after_file`'s sha comparison still decides, and
+    the row count below is what proves it."""
     db, store, ctx, root = make(tmp_path)
 
     applied = root / "a.txt"
     applied.write_bytes(b"NEW\n")
     outcome = await run(ctx, "file_edit", path=str(applied), old_string="OLD", new_string="NEW")
     assert "Already applied" in str(outcome)
-    assert outcome.ok is True and outcome.details["ok_source"] == "unverified"
+    assert outcome.ok is True and outcome.details["ok_source"] == "handler"
 
     dup = root / "d.txt"
     dup.write_bytes(b"dup\ndup\n")

@@ -20,8 +20,13 @@ it here -- never to reach into ``djcode.repl`` or ``djcode.app``.
 WHAT IS NOT HERE YET
 --------------------
 ``SSOT.md`` section 2.3 specifies a larger contract than this file exports:
-``CoreSession``/``SessionOptions`` (W8), ``FileDiff``/``Hunk`` (W7) and
-``OnboardingFlow`` (W8). Those modules do not exist yet.
+``CoreSession``/``SessionOptions`` (W8) and ``OnboardingFlow`` (W8). Those
+modules do not exist yet.
+``FileDiff``/``Hunk``/``DiffLine`` were on that list until W7 and are exported
+below, along with the four builders. ``djcode.core.diff`` is pure data -- it
+imports ``difflib``, ``re`` and ``asyncio`` and nothing else; the rich renderer
+that draws these lives in ``djcode.frontends.repl.diffview``, where it cannot
+follow them back into core.
 ``PermissionEngine``/``Decision`` were on that list until W6 and are exported
 below; note the module is pure data and logic, with no Rich anywhere -- the old
 top-level ``permissions.py`` instantiated a ``Console()`` at import time, which
@@ -55,6 +60,17 @@ from djcode.core.checkpoints import (
     CheckpointStore,
     FileChange,
     RestoreReport,
+)
+from djcode.core.diff import (
+    DiffLine,
+    EditPreview,
+    FileDiff,
+    Hunk,
+    diff_bytes,
+    diff_paths,
+    diff_text,
+    preview_edit,
+    preview_write,
 )
 from djcode.core.dispatch import DispatchContext, dispatch_context
 from djcode.core.events import (
@@ -108,13 +124,17 @@ __all__ = [
     "Checkpoint",
     "CheckpointStore",
     "CoreEvent",
+    "DiffLine",
     "DispatchContext",
+    "EditPreview",
     "EventBus",
     "EventType",
     "FileChange",
+    "FileDiff",
     "HookBus",
     "HookEvent",
     "HookResult",
+    "Hunk",
     "InjectedContext",
     "Message",
     "OrchestratorEvent",
@@ -127,10 +147,15 @@ __all__ = [
     "checkpoint_event",
     "classify_error",
     "complete_event",
+    "diff_bytes",
     "diff_event",
+    "diff_paths",
+    "diff_text",
     "dispatch_context",
     "error_event",
     "load_config",
+    "preview_edit",
+    "preview_write",
     "save_config",
     "set_value",
     "thinking_event",

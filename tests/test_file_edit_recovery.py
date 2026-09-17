@@ -13,7 +13,11 @@ from djcode.tools.file_edit import execute_file_edit
 
 
 def edit(path, old, new) -> str:
-    return asyncio.run(execute_file_edit(str(path), old, new))
+    # W7-2 changed the contract: the handler returns a ToolOutcome, not a str.
+    # `ToolOutcome.__str__` is `content`, so every assertion below is unchanged
+    # -- only this one conversion moved. `test_diff.py` pins the new `ok` flag
+    # on all eight return paths.
+    return str(asyncio.run(execute_file_edit(str(path), old, new)))
 
 
 def write(path, text: str) -> None:

@@ -15,14 +15,39 @@ On a miss the tool checks, in order:
 On an ambiguous match it reports every occurrence with the context that tells
 them apart, so the next attempt is informed rather than lucky.
 
-The tool returns plain strings; W3 moves the whole tool surface to
-`ToolOutcome` in one pass.
+W7-2 converts this tool from a plain string to a `ToolOutcome`, for two
+reasons: the user could not see what the edit did, and `ok` was "unverified" on
+all eight of its return paths.
+
+**READ THIS BEFORE TOUCHING A RETURN STATEMENT.** The moment a handler returns a
+`ToolOutcome`, `_build_outcome` stamps `ok_source="handler"` and
+`workflow._result_ok` treats `ok` as AUTHORITATIVE on the DAF wire -- a wrong
+`False` skips every dependent node, a wrong `True` runs them all on a failed
+edit. `ToolOutcome.ok` also DEFAULTS to True, so an error path that forgets the
+flag ships a *verified* false green. That is the exact regression class
+`W3-VERIFICATION.md` documents. The eight paths and their verdicts:
+
+    file not found                        -> False
+    replaced 1 occurrence                 -> True
+    old_string found N times (ambiguous)  -> False
+    "Already applied: ..."                -> True   (a success that never says "Edited")
+    ambiguous after normalising           -> False
+    replaced after normalising            -> True
+    old_string not found                  -> False
+    exception                             -> False
+
+Every one of them goes through `_ok` or `_err` below, which exist so the flag
+cannot be omitted by accident.
 """
 
 from __future__ import annotations
 
 import difflib
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from djcode.core.outcome import ToolOutcome
 
 #: How many ambiguous occurrences to describe before summarising the rest.
 _MAX_OCCURRENCES_SHOWN = 5
@@ -38,25 +63,74 @@ _CLOSE_MATCH_CUTOFF = 0.6
 _MAX_WINDOWS = 20000
 
 
-async def execute_file_edit(path: str, old_string: str, new_string: str) -> str:
+def _outcome(text: str, *, ok: bool, diff: object | None = None) -> ToolOutcome:
+    """The only place this module builds a result. See the module docstring.
+
+    A diff goes into ``details`` as ``FileDiff.as_dict()`` -- hunks and counts,
+    bounded at ``MAX_DETAIL_LINES``, never the file body.
+    ``tools/__init__.py::_finish_checkpoint`` states that rule and the reason
+    (``details`` rides ``tool_result_event`` into W10's JSONL on every edit),
+    and W7 keeps it: the renderer reads the hunks, not the file.
+    """
+    from djcode.core.outcome import ToolOutcome as _Outcome
+
+    details: dict[str, object] = {}
+    if diff is not None:
+        details["diff"] = diff.as_dict()  # type: ignore[attr-defined]
+        details["diff_stat"] = {
+            "path": diff.path,  # type: ignore[attr-defined]
+            "added": diff.added,  # type: ignore[attr-defined]
+            "removed": diff.removed,  # type: ignore[attr-defined]
+            "hunks": len(diff.hunks),  # type: ignore[attr-defined]
+        }
+    return _Outcome(content=text, ok=ok, details=details)
+
+
+def _ok(text: str, diff: object | None = None) -> ToolOutcome:
+    return _outcome(text, ok=True, diff=diff)
+
+
+def _err(text: str) -> ToolOutcome:
+    return _outcome(text, ok=False)
+
+
+async def execute_file_edit(path: str, old_string: str, new_string: str) -> ToolOutcome:
     """Replace old_string with new_string in a file. The old_string must be unique."""
     try:
         p = Path(path).expanduser().resolve()
         if not p.exists():
-            return f"Error: File not found: {path}"
+            return _err(f"Error: File not found: {path}")
 
         content = _read(p)
 
         count = content.count(old_string)
         if count == 1:
-            _write(p, content.replace(old_string, new_string, 1))
-            return f"Edited {p}: replaced 1 occurrence"
+            after = content.replace(old_string, new_string, 1)
+            _write(p, after)
+            return _ok(f"Edited {p}: replaced 1 occurrence", _diff_of(p, content, after))
         if count > 1:
-            return _report_ambiguous(p, content, old_string, count)
+            return _err(_report_ambiguous(p, content, old_string, count))
         return _recover(p, content, old_string, new_string)
 
     except Exception as e:
-        return f"Error editing {path}: {e}"
+        return _err(f"Error editing {path}: {e}")
+
+
+def _diff_of(p: Path, before: str, after: str):
+    """The change this call made, as data a front-end can draw.
+
+    Deferred import: ``djcode.tools`` sits inside ``djcode.core``'s import
+    closure (core -> provider -> capabilities -> tools), so importing
+    ``djcode.core.diff`` at module level here would close the cycle at start-up.
+
+    Both sides are ``str`` read and written with ``newline=""``, so they carry
+    the file's real line endings and ``diff_text`` normalises them out of the
+    comparison -- an LF file edited on Windows shows one changed line, not all
+    of them.
+    """
+    from djcode.core.diff import diff_text
+
+    return diff_text(str(p), before, after)
 
 
 # -- I/O ---------------------------------------------------------------------
@@ -83,34 +157,40 @@ def _write(p: Path, content: str) -> None:
 # -- Recovery ladder (count == 0) --------------------------------------------
 
 
-def _recover(p: Path, content: str, old_string: str, new_string: str) -> str:
+def _recover(p: Path, content: str, old_string: str, new_string: str) -> ToolOutcome:
     # 1. Already applied. A model that retries after a write that did land
     #    should be told it succeeded, not sent hunting for a string that this
-    #    tool itself removed.
+    #    tool itself removed. ok=True: nothing failed and nothing was written,
+    #    so there is no diff either.
     if new_string and new_string in content and old_string != new_string:
-        return f"Already applied: {p} already contains new_string"
+        return _ok(f"Already applied: {p} already contains new_string")
 
     # 2. Whitespace- and line-ending-insensitive match. If exactly one region
     #    of the file says the same thing, the edit was right and the quoting
     #    was not; apply it to the real bytes.
     span = _normalised_span(content, old_string)
     if span == "ambiguous":
-        return (
+        return _err(
             f"Error: old_string is not in {p} byte for byte, and ignoring whitespace it "
             "matches more than one place. Quote the region exactly, including indentation."
         )
     if span is not None:
         start, end = span
-        _write(p, content[:start] + new_string + content[end:])
+        after = content[:start] + new_string + content[end:]
+        _write(p, after)
         line = content.count("\n", 0, start) + 1
-        return (
+        # The diff is against the span that was ACTUALLY replaced, which is not
+        # the span `old_string` describes -- that is the whole point of this
+        # branch, and a preview built from `old_string` would point elsewhere.
+        return _ok(
             f"Edited {p}: replaced 1 occurrence at line {line} "
             "(matched after normalising whitespace and line endings; "
-            "old_string did not match the file byte for byte)"
+            "old_string did not match the file byte for byte)",
+            _diff_of(p, content, after),
         )
 
     # 3. Nearest candidate, with its line number and the bytes that differ.
-    return f"Error: old_string not found in {p}.\n" + _nearest_report(content, old_string)
+    return _err(f"Error: old_string not found in {p}.\n" + _nearest_report(content, old_string))
 
 
 def _normalise(text: str) -> tuple[str, list[int]]:

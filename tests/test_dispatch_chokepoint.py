@@ -35,6 +35,7 @@ from djcode.core.dispatch import (
 from djcode.core.hooks import HookBus, HookEvent, HookResult
 from djcode.core.outcome import ToolOutcome
 from djcode.tools import (
+    OUTCOME_TOOLS,
     STRUCTURED_FAILURE_TOOLS,
     TOOL_DISPATCH,
     UNVERIFIED_FAILURE_TOOLS,
@@ -179,12 +180,17 @@ def test_ok_is_verified_for_a_tool_that_raises_on_failure(fake_tool):
 
 def test_ok_source_inventory_is_complete_and_only_shrinks():
     assert STRUCTURED_FAILURE_TOOLS <= set(TOOL_DISPATCH)
-    assert STRUCTURED_FAILURE_TOOLS | UNVERIFIED_FAILURE_TOOLS == set(TOOL_DISPATCH)
+    assert (
+        STRUCTURED_FAILURE_TOOLS | OUTCOME_TOOLS | UNVERIFIED_FAILURE_TOOLS
+        == set(TOOL_DISPATCH)
+    )
     assert not STRUCTURED_FAILURE_TOOLS & UNVERIFIED_FAILURE_TOOLS
-    # 17 tools still report failure as text. Lower this number when a handler
-    # is converted to return a ToolOutcome (W7-2 converts the first two).
-    # It must never go up.
-    assert len(UNVERIFIED_FAILURE_TOOLS) <= 17
+    assert not OUTCOME_TOOLS & UNVERIFIED_FAILURE_TOOLS
+    assert not OUTCOME_TOOLS & STRUCTURED_FAILURE_TOOLS
+    # 15 tools still report failure as text. Lower this number when a handler
+    # is converted to return a ToolOutcome (W7-2 converted the first two:
+    # file_edit and file_write, now in OUTCOME_TOOLS). It must never go up.
+    assert len(UNVERIFIED_FAILURE_TOOLS) <= 15
 
 
 # ── CancelledError propagates ──────────────────────────────────────────────

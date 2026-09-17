@@ -17,6 +17,7 @@ import inspect
 import time
 from collections.abc import Mapping
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 from djcode.capabilities import dispatch_capability
@@ -86,23 +87,27 @@ for _name in ("skill", "mcp", "process", "browser", "computer", "workflow"):
 #   SEVEN of the 24 tools raise on failure. For those, returning normally is a
 #   VERIFIED success and ``ok=True`` means what it says.
 #
-#   SEVENTEEN of the 24 signal failure ONLY by returning a string, and three of
-#   those do not even use the word "Error" when they fail:
+#   TWO return a ``ToolOutcome`` with an explicit ``ok`` on every path
+#   (``file_edit``/``file_write``, converted in W7-2). Verified too.
+#
+#   FIFTEEN of the 24 still signal failure ONLY by returning a string, and three
+#   of those do not even use the word "Error" when they fail:
 #       tools/grep.py    -> "Search timed out after 30s"
 #       tools/git.py     -> "Warning: '<cmd>' is a destructive operation..."  (a refusal)
 #       tools/bash.py    -> "[exit code 1]\n..."
-#   while two lie the other way -- ``web_search``'s "Error: No results from
-#   Brave Search" is an empty result used as internal control flow, and
-#   ``file_edit``'s "Already applied: ..." is a SUCCESS that never says "Edited".
+#   while ``web_search``'s "Error: No results from Brave Search" lies the other
+#   way -- an empty result used as internal control flow. (``file_edit``'s
+#   "Already applied: ..." used to be the second such liar: a SUCCESS that never
+#   says "Edited". It now returns ``ok=True`` and says so structurally.)
 #
-# So for those seventeen the dispatcher has no failure signal at all, and there
+# So for those fifteen the dispatcher has no failure signal at all, and there
 # are only two honest options: guess, or say so. This file says so.
 # ``details["ok_source"]`` carries which one you got:
 #
 #   "handler"     the handler's own verdict -- either it raises on failure and
 #                 did not raise, or it returned a ``ToolOutcome`` itself.
 #   "unverified"  ``ok=True`` means "dispatch observed no failure", NOT "the
-#                 tool succeeded". Seventeen tools are here today.
+#                 tool succeeded". Fifteen tools are here today.
 #   "raised"      the handler raised; ``ok=False`` is a real verdict.
 #   "dispatch"    the chokepoint itself refused (unknown tool, hook veto,
 #                 doom loop); ``ok=False`` is a real verdict.
@@ -114,10 +119,12 @@ for _name in ("skill", "mcp", "process", "browser", "computer", "workflow"):
 # policy ``core/events.py::tool_result_event`` already documents. Every such
 # interim sniff left in the tree is marked ``W3 interim``.
 #
-# The fix is per-handler and it is not W3's: each of the seventeen has to return
-# a ``ToolOutcome`` (or raise) instead of an "Error: ..." string. W7-2 already
-# schedules the first two (``file_edit``/``file_write`` must return pre/post in
-# ``details``). ``UNVERIFIED_FAILURE_TOOLS`` below is the counter for that work
+# The fix is per-handler and it is not W3's: each of the remaining fifteen has to
+# return a ``ToolOutcome`` (or raise) instead of an "Error: ..." string. W7-2 did
+# the first two. Note the one deviation from the blueprint's plan for them: the
+# pre/post IMAGES do not go in ``details`` -- ``_finish_checkpoint`` below
+# forbids file bodies there and gives the reason -- a bounded ``FileDiff``
+# does. ``UNVERIFIED_FAILURE_TOOLS`` below is the counter for the remaining work
 # and ``tests/test_dispatch_chokepoint.py`` asserts it only ever shrinks.
 
 #: Tools whose handler RAISES on failure, so a normal return is a verified
@@ -129,9 +136,21 @@ STRUCTURED_FAILURE_TOOLS = frozenset(
     {"browser", "computer", "mcp", "process", "schedule", "skill", "workflow"}
 )
 
-#: The seventeen tools that still report failure as text. This set must only
-#: ever get smaller.
-UNVERIFIED_FAILURE_TOOLS = frozenset(TOOL_DISPATCH) - STRUCTURED_FAILURE_TOOLS
+#: Tools whose handler RETURNS a ``ToolOutcome`` with an explicit ``ok``. A
+#: third set, not an addition to ``STRUCTURED_FAILURE_TOOLS``, because that one
+#: means something specific -- "raises on failure" -- and these two do not
+#: raise; they decide. Both kinds give a VERIFIED verdict, which is what the
+#: counter below is actually counting, so both are subtracted from it.
+#:
+#: W7-2 converted the first two. ``file_edit.py``'s module docstring carries the
+#: eight-path table that makes its ``ok`` honest; read it before adding a third.
+OUTCOME_TOOLS = frozenset({"file_edit", "file_write"})
+
+#: The tools that still report failure as text and nothing else. Seventeen at
+#: the end of W3, fifteen after W7-2. This set must only ever get smaller.
+UNVERIFIED_FAILURE_TOOLS = (
+    frozenset(TOOL_DISPATCH) - STRUCTURED_FAILURE_TOOLS - OUTCOME_TOOLS
+)
 
 
 def _is_bind_error(handler: Any, arguments: Mapping[str, Any]) -> bool:
@@ -163,9 +182,16 @@ def _build_outcome(
 ) -> ToolOutcome:
     """Step 8: turn whatever the handler returned into one ``ToolOutcome``.
 
-    A handler may already return a ``ToolOutcome`` -- nothing does today, and
-    that is the seam W7-2 uses to put a file's pre/post image into ``details``
-    without touching this function.
+    A handler may already return a ``ToolOutcome``. ``file_edit`` and
+    ``file_write`` do since W7-2 -- that is the seam, used exactly as planned
+    and with no change to this function: their diff arrives in ``details``
+    without the chokepoint knowing what a diff is.
+
+    Note what the first branch means and do not weaken it: an outcome a handler
+    built is stamped ``ok_source="handler"``, which makes its ``ok`` flag
+    AUTHORITATIVE for ``workflow._result_ok`` on the DAF wire. A handler that
+    returns an outcome has therefore taken responsibility for that flag on every
+    one of its return paths, including the error ones.
     """
     if isinstance(raw, ToolOutcome):
         outcome = raw
@@ -185,14 +211,79 @@ def _build_outcome(
     return outcome
 
 
+#: Files one checkpoint will render a diff for. A `bash` command that rewrote
+#: two hundred paths gets five diffs and a count, not two hundred payloads.
+MAX_CHECKPOINT_DIFF_FILES = 5
+
+
+async def _checkpoint_diffs(store: Any, checkpoint: Any) -> list[dict[str, Any]]:
+    """The W7 half of step 5: what the tool actually changed, as data.
+
+    Reuses the images W5 ALREADY captured -- ``CheckpointStore._before_file``
+    stored the pre-image bytes in the blob table, keyed by ``pre_sha``, before
+    the handler ran, and the post image is the file on disk. Nothing is
+    snapshotted a second time.
+
+    This covers the tools that cannot build their own diff: ``notebook_edit``,
+    and every file a ``bash`` or ``git`` command wrote, which the ledger
+    captured. ``file_edit``/``file_write`` return their own and are skipped by
+    the caller.
+
+    A missing blob is NOT an empty file. It means the body was over
+    ``max_file_bytes`` at capture time or ``enforce_budget`` evicted it, and it
+    is reported as unavailable -- rendering "the whole file was added" instead
+    would be a lie the size of the file.
+    """
+    from djcode.core.diff import FileDiff, diff_bytes
+
+    blob = getattr(store, "blob", None)
+    if checkpoint is None or not callable(blob):
+        return []
+    out: list[dict[str, Any]] = []
+    for change in list(getattr(checkpoint, "files", []))[:MAX_CHECKPOINT_DIFF_FILES]:
+        if getattr(change, "kind", "file") != "file":
+            continue
+        path = Path(change.path)
+        before: bytes | None = None
+        if change.existed:
+            before = await asyncio.to_thread(blob, change.pre_sha)
+            if before is None:
+                out.append(
+                    FileDiff(
+                        path=change.path,
+                        unavailable="its previous contents were never saved (size/budget)",
+                    ).as_dict()
+                )
+                continue
+        after = await asyncio.to_thread(_read_bytes, path)
+        if before is None and after is None:
+            continue
+        out.append(diff_bytes(change.path, before, after, context=2).as_dict())
+    return out
+
+
+def _read_bytes(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes() if path.is_file() else None
+    except OSError:
+        return None
+
+
 async def _finish_checkpoint(store: Any, pending: Any) -> dict[str, Any]:
     """Close a capture window and summarise it for ``ToolOutcome.details``.
 
-    Only shas, paths and counts go into ``details`` -- never a file body.
-    ``details`` rides on ``tool_result_event``, which W10 serialises to JSONL,
-    so a 4 MB pre-image in there would be written to the event stream on every
-    edit. ``apply_output_policy`` bounds ``.content`` only; it never looks at
-    ``details``.
+    Only shas, paths, counts and BOUNDED DIFF HUNKS go into ``details`` -- never
+    a file body. ``details`` rides on ``tool_result_event``, which W10
+    serialises to JSONL, so a 4 MB pre-image in there would be written to the
+    event stream on every edit. ``apply_output_policy`` bounds ``.content``
+    only; it never looks at ``details``.
+
+    W7 widened that rule by exactly one clause, deliberately and not silently:
+    a diff's *hunks* may ride along, because they are what makes the change
+    visible and they are bounded twice over -- ``MAX_CHECKPOINT_DIFF_FILES``
+    files, and ``FileDiff.as_dict``'s ``MAX_DETAIL_LINES`` lines each, with a
+    note when either cap trips. Whole files still may not, and
+    ``as_dict`` drops ``before_text``/``after_text`` for that reason.
 
     A checkpoint failure must never turn into a tool failure, so everything
     here is swallowed and logged.
@@ -205,12 +296,25 @@ async def _finish_checkpoint(store: Any, pending: Any) -> dict[str, Any]:
     summary: dict[str, Any] = {"covered": covered}
     if not covered and getattr(pending, "reason", ""):
         summary["reason"] = pending.reason
+    diffs: list[dict[str, Any]] = []
     if checkpoint is not None:
         summary["id"] = checkpoint.id
         summary["seq"] = checkpoint.seq
         summary["files"] = len(checkpoint.files)
         summary["paths"] = [f.path for f in checkpoint.files[:20]]
-    return {"checkpoint": summary}
+        # file_edit/file_write build their own diff from the text they held in
+        # memory, which is more accurate than a re-read and costs no I/O.
+        if getattr(pending, "tool_name", "") not in OUTCOME_TOOLS:
+            try:
+                diffs = await _checkpoint_diffs(store, checkpoint)
+            except Exception:  # pragma: no cover - defensive
+                diffs = []
+    details: dict[str, Any] = {"checkpoint": summary}
+    if diffs:
+        details["diffs"] = diffs
+        if len(diffs) == 1:
+            details["diff"] = diffs[0]
+    return details
 
 
 async def dispatch_tool(
@@ -403,7 +507,10 @@ async def dispatch_tool(
         #    may both have written bytes already. Skipping the post-image there
         #    would leave a pre-image with nothing to compare it to -- and, for
         #    the ledger tools, would leak the capture lock. The diff half of
-        #    this step (P0-3) is W7's and is still a stub.
+        #    this step (P0-3) is W7's and is now live: `_finish_checkpoint`
+        #    turns the captured pre-image and the file on disk into bounded
+        #    FileDiff dicts on `details`, for every checkpointed tool that does
+        #    not already build its own.
         if pending is not None and store is not None:
             checkpoint_details = await _finish_checkpoint(store, pending)
 

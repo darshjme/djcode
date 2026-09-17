@@ -94,6 +94,16 @@ COMMANDS = (
         tui=False,
     ),
     Command("/redo", "Re-apply the most recent /undo", "Session", tui=False),
+    # W7 (P0-3). Same reason as the undo family above: a row added only to
+    # repl.py's if/elif chain is a row W9 silently drops, and this list is what
+    # SlashCompleter and /help read. tui=False because the Textual TUI has no
+    # handler for it and test_registry_has_dispatch_for_every_command checks.
+    Command(
+        "/diff",
+        "Show what changed (session | uncommitted | branch [ref])",
+        "Session",
+        tui=False,
+    ),
     Command(
         "/rewind",
         "Pick a past turn and roll the files back to before it",

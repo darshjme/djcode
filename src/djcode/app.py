@@ -103,13 +103,59 @@ border: round #C79B7A; background: #111111; padding: 1 2; }
         self.tool_name = name
         self.arguments = arguments
 
+    def _preview(self) -> str:
+        """A plain-text diff of what the edit will do, or "" (W7-3).
+
+        Textual's second approval surface. It gets the SAME `preview_edit` /
+        `preview_write` from `djcode.core.diff` that the REPL card uses -- core
+        supplies the data, each front-end draws it -- so the two surfaces can
+        never disagree about what a pending edit is going to change. Text here
+        rather than rich markup: this Static renders with `markup=False`.
+        """
+        path = self.arguments.get("path")
+        if self.tool_name not in {"file_edit", "file_write"} or not isinstance(path, str):
+            return ""
+        try:
+            from djcode.core.diff import preview_edit, preview_write
+
+            if self.tool_name == "file_edit":
+                preview = preview_edit(
+                    path,
+                    str(self.arguments.get("old_string", "")),
+                    str(self.arguments.get("new_string", "")),
+                )
+                if preview.diff is None:
+                    return preview.message
+                diff = preview.diff
+            else:
+                diff = preview_write(path, str(self.arguments.get("content", "")))
+            if diff.unavailable:
+                return diff.unavailable
+            if diff.binary:
+                return f"{diff.path} · binary"
+            rows = [f"{diff.path}  +{diff.added} -{diff.removed}"]
+            for hunk in diff.hunks:
+                for line in hunk.lines[:200]:
+                    sign = {"add": "+", "del": "-", "ctx": " ", "meta": " "}[line.kind]
+                    number = line.old_no if line.kind != "add" else line.new_no
+                    rows.append(f"{sign} {number or '':>5} | {line.text}")
+            return "\n".join(rows[:200])
+        except Exception:  # pragma: no cover - a preview never blocks approval
+            return ""
+
     def compose(self) -> ComposeResult:
         import json
 
         with Vertical(id="approval-box"):
             yield Static(f"Approve tool: {self.tool_name}", markup=False)
             with ScrollableContainer(id="approval-details"):
-                yield Static(json.dumps(self.arguments, indent=2, ensure_ascii=False), markup=False)
+                preview = self._preview()
+                if preview:
+                    yield Static(preview, markup=False)
+                else:
+                    yield Static(
+                        json.dumps(self.arguments, indent=2, ensure_ascii=False), markup=False
+                    )
             with Horizontal(id="approval-actions"):
                 yield Button("Deny", id="deny-tool")
                 yield Button("Allow once", id="allow-tool", variant="warning")

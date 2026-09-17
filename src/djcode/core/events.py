@@ -551,15 +551,28 @@ def tool_result_event(
 def diff_event(diff: Any, *, agent: str | None = None) -> CoreEvent:
     """Emitted when a tool call changed a file.
 
-    ``diff`` is a ``FileDiff`` from W7 (``djcode.core.diff``), which does not
-    exist yet -- so this stays duck-typed rather than importing a module that is
-    not written. ``data["diff"]`` carries the object itself for in-process
-    renderers; ``data["path"]`` is the serialisable summary W10 needs.
+    ``diff`` is a ``FileDiff`` (``djcode.core.diff``), which exists since W7.
+    Still duck-typed rather than imported: this module sits underneath
+    ``core.diff`` in the import order and a hard dependency here would put a
+    cycle between the event factory and the data it carries, for no gain.
+
+    ``data["diff"]`` carries the object itself, so an in-process renderer gets
+    ``before_text``/``after_text`` and can lex a hunk with the leading context
+    it needs. ``data["summary"]`` is the same thing through ``as_dict()``:
+    bounded, body-free and JSON-serialisable, which is what W10 writes to JSONL
+    and what a socket-attached GUI receives. ``data["path"]`` stays for the
+    callers written against the original shape.
     """
+    as_dict = getattr(diff, "as_dict", None)
+    summary = as_dict() if callable(as_dict) else {}
     return CoreEvent(
         event_type=EventType.DIFF,
         agent_name=agent or "",
-        data={"path": str(getattr(diff, "path", "") or ""), "diff": diff},
+        data={
+            "path": str(getattr(diff, "path", "") or ""),
+            "diff": diff,
+            "summary": summary,
+        },
     )
 
 
