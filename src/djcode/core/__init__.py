@@ -17,11 +17,12 @@ a CLI framework's exceptions, so errors leave core as ``djcode.errors`` types.
 If a front-end needs something that is not exported here, the answer is to export
 it here -- never to reach into ``djcode.repl`` or ``djcode.app``.
 
-WHAT IS NOT HERE YET
---------------------
-``SSOT.md`` section 2.3 specifies a larger contract than this file exports:
-``CoreSession``/``SessionOptions`` (W8) and ``OnboardingFlow`` (W8). Those
-modules do not exist yet.
+WHAT IS HERE NOW
+----------------
+``SSOT.md`` section 2.3's contract is complete as of W8:
+``CoreSession``/``SessionOptions``/``ContextItem`` live in ``core.session`` and
+``OnboardingFlow`` in ``core.onboarding_flow``, both exported below. W2's rule
+-- export only what exists -- is satisfied because they now do.
 ``FileDiff``/``Hunk``/``DiffLine`` were on that list until W7 and are exported
 below, along with the four builders. ``djcode.core.diff`` is pure data -- it
 imports ``difflib``, ``re`` and ``asyncio`` and nothing else; the rich renderer
@@ -82,12 +83,25 @@ from djcode.core.events import (
     complete_event,
     diff_event,
     error_event,
+    permission_decided_event,
+    permission_request_event,
+    queue_event,
+    steer_event,
     thinking_event,
     token_event,
     tool_call_event,
     tool_result_event,
 )
 from djcode.core.hooks import HookBus, HookEvent, HookResult
+from djcode.core.onboarding_flow import (
+    PROVIDERS,
+    OnboardingCancelled,
+    OnboardingError,
+    OnboardingFlow,
+    Prompt,
+    connection,
+    probe_async,
+)
 from djcode.core.outcome import ToolOutcome
 from djcode.core.permissions import (
     Decision,
@@ -101,6 +115,7 @@ from djcode.core.permissions import (
     ToolRequest,
     Verdict,
 )
+from djcode.core.session import ContextItem, CoreSession, SessionOptions
 from djcode.errors import classify_error
 from djcode.provider import TOOL_DEFINITIONS, Message, Provider, ProviderConfig
 from djcode.sessions import Session, SessionDB
@@ -117,13 +132,16 @@ __all__ = [
     "Rule",
     "ToolRequest",
     "Verdict",
+    "PROVIDERS",
     "AgentRole",
     "AgentSpec",
+    "ContextItem",
     "ContextStats",
     "ContextWindowManager",
     "Checkpoint",
     "CheckpointStore",
     "CoreEvent",
+    "CoreSession",
     "DiffLine",
     "DispatchContext",
     "EditPreview",
@@ -137,15 +155,21 @@ __all__ = [
     "Hunk",
     "InjectedContext",
     "Message",
+    "OnboardingCancelled",
+    "OnboardingError",
+    "OnboardingFlow",
     "OrchestratorEvent",
+    "Prompt",
     "Provider",
     "ProviderConfig",
     "RestoreReport",
     "Session",
+    "SessionOptions",
     "SessionDB",
     "ToolOutcome",
     "checkpoint_event",
     "classify_error",
+    "connection",
     "complete_event",
     "diff_bytes",
     "diff_event",
@@ -154,10 +178,15 @@ __all__ = [
     "dispatch_context",
     "error_event",
     "load_config",
+    "permission_decided_event",
+    "permission_request_event",
     "preview_edit",
     "preview_write",
+    "probe_async",
+    "queue_event",
     "save_config",
     "set_value",
+    "steer_event",
     "thinking_event",
     "token_event",
     "tool_call_event",

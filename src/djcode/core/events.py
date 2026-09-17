@@ -631,6 +631,82 @@ def error_event(
     )
 
 
+def steer_event(text: str, *, agent: str | None = None, delivered: bool = False) -> CoreEvent:
+    """Emitted when steer text is accepted, and again when it reaches the model.
+
+    W8 (P0-5). ``delivered=False`` is the front-end saying "the user typed this
+    mid-turn"; ``delivered=True`` is ``Operator._drain_steer`` saying "it is now
+    a ``user`` message at a round boundary". Two events rather than one because
+    the gap between them is the whole point -- a steer typed during a
+    forty-minute tool call sits undelivered for forty minutes, and a UI that
+    cannot say so is lying about what the model has been told.
+    """
+    return CoreEvent(
+        event_type=EventType.STEER,
+        agent_name=agent or "",
+        data={"text": text, "delivered": bool(delivered)},
+    )
+
+
+def queue_event(
+    text: str,
+    *,
+    agent: str | None = None,
+    action: str = "queued",
+    depth: int = 0,
+) -> CoreEvent:
+    """Emitted when text is queued for after the turn, or leaves the queue.
+
+    ``action`` is ``"queued"``, ``"delivered"`` (it became the next turn) or
+    ``"returned"`` (a cancel handed it back to the editor -- P0-5's whole
+    contract). ``depth`` is how many items remain queued afterwards.
+    """
+    return CoreEvent(
+        event_type=EventType.QUEUE,
+        agent_name=agent or "",
+        data={"text": text, "action": action, "depth": int(depth)},
+    )
+
+
+def permission_request_event(request: Any, *, agent: str | None = None) -> CoreEvent:
+    """Emitted before a front-end is asked to approve a tool call.
+
+    ``request`` is a ``djcode.core.permissions.ToolRequest``; duck-typed for the
+    same reason as :func:`diff_event`, so this module keeps importing nothing
+    but the standard library.
+    """
+    return CoreEvent(
+        event_type=EventType.PERMISSION_REQUEST,
+        agent_name=agent or "",
+        data={
+            "tool": str(getattr(request, "tool", "") or ""),
+            "arguments": dict(getattr(request, "arguments", None) or {}),
+            "command": str(getattr(request, "command", "") or ""),
+            "path": str(getattr(request, "path", "") or ""),
+            "request": request,
+        },
+    )
+
+
+def permission_decided_event(
+    request: Any, decision: Any, *, agent: str | None = None
+) -> CoreEvent:
+    """Emitted with the answer a front-end gave. ``allowed`` is the Decision's own
+    ``__bool__``, which fails closed -- never a re-derivation from its fields."""
+    action = getattr(decision, "action", None)
+    return CoreEvent(
+        event_type=EventType.PERMISSION_DECIDED,
+        agent_name=agent or "",
+        data={
+            "tool": str(getattr(request, "tool", "") or ""),
+            "action": str(getattr(action, "value", action) or ""),
+            "allowed": bool(decision),
+            "comment": str(getattr(decision, "comment", "") or ""),
+            "decision": decision,
+        },
+    )
+
+
 # -- Event Bus -----------------------------------------------------------------
 
 EventCallback = Callable[[CoreEvent], Coroutine[Any, Any, None]]

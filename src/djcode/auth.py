@@ -7,7 +7,6 @@ Supports Ollama, OpenAI, Anthropic, NVIDIA NIM, Google AI, Groq, Together AI, Op
 from __future__ import annotations
 
 import os
-from typing import Any
 
 import questionary
 from rich.console import Console
@@ -20,98 +19,12 @@ GOLD = "#FFD700"
 
 # ── Provider Registry ──────────────────────────────────────────────────────
 
-PROVIDERS: dict[str, dict[str, Any]] = {
-    "ollama": {
-        "name": "Ollama (Local)",
-        "needs_key": False,
-        "base_url": "http://localhost:11434",
-        "description": "Local inference, no API key needed",
-    },
-    "openai": {
-        "name": "OpenAI",
-        "needs_key": True,
-        "env": "OPENAI_API_KEY",
-        "base_url": "https://api.openai.com/v1",
-        "description": "GPT-4o, o1, o3 models",
-    },
-    "xai": {
-        "name": "xAI (Grok)",
-        "needs_key": True,
-        "env": "XAI_API_KEY",
-        "base_url": "https://api.x.ai/v1",
-        "description": "Grok via xAI API; distinct from Groq",
-    },
-    "anthropic": {
-        "name": "Anthropic",
-        "needs_key": True,
-        "env": "ANTHROPIC_API_KEY",
-        "base_url": "https://api.anthropic.com",
-        "description": "Sonnet, Opus, Haiku models",
-    },
-    "nvidia": {
-        "name": "NVIDIA NIM",
-        "needs_key": True,
-        "env": "NVIDIA_API_KEY",
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "description": "DeepSeek, Kimik2, GLM models via NIM",
-    },
-    "google": {
-        "name": "Google AI",
-        "needs_key": True,
-        "env": "GOOGLE_API_KEY",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "description": "Gemini models",
-    },
-    "groq": {
-        "name": "Groq",
-        "needs_key": True,
-        "env": "GROQ_API_KEY",
-        "base_url": "https://api.groq.com/openai/v1",
-        "description": "Ultra-fast inference",
-    },
-    "together": {
-        "name": "Together AI",
-        "needs_key": True,
-        "env": "TOGETHER_API_KEY",
-        "base_url": "https://api.together.xyz/v1",
-        "description": "Open-source model hosting",
-    },
-    "openrouter": {
-        "name": "OpenRouter",
-        "needs_key": True,
-        "env": "OPENROUTER_API_KEY",
-        "base_url": "https://openrouter.ai/api/v1",
-        "description": "Multi-provider router",
-    },
-    "mlx": {
-        "name": "MLX-LM (Local)",
-        "needs_key": False,
-        "base_url": "http://localhost:8899",
-        "description": "Apple Silicon native inference",
-    },
-    "colibri": {
-        "name": "Colibri (Local)",
-        "needs_key": False,
-        "optional_key": True,
-        "env": "COLI_API_KEY",
-        "base_url": "http://127.0.0.1:8000/v1",
-        "description": "Opt-in existing Colibri server; no model downloads",
-    },
-    "featherless": {
-        "name": "Featherless AI",
-        "needs_key": True,
-        "env": "FEATHERLESS_API_KEY",
-        "base_url": "https://api.featherless.ai/v1",
-        "description": "Hosted open models via OpenAI-compatible API",
-    },
-    "custom": {
-        "name": "Custom (OpenAI-compatible)",
-        "needs_key": True,
-        "env": "DJCODE_API_KEY",
-        "base_url": "",
-        "description": "Any OpenAI-compatible endpoint",
-    },
-}
+# W8: the registry itself moved to ``djcode.core.onboarding_flow``. It is pure
+# data, and this module -- which owns the interactive pickers and imports
+# questionary and rich at module level -- is one ``djcode.core`` may never
+# import. Re-exported here so every existing ``from djcode.auth import
+# PROVIDERS`` keeps working unchanged.
+from djcode.core.onboarding_flow import PROVIDERS  # noqa: E402
 
 # ── Uncensored model detection ─────────────────────────────────────────────
 

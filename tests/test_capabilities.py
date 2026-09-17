@@ -255,11 +255,13 @@ def test_connect_transaction_cancel_and_success(monkeypatch, tmp_path):
         lambda: {"provider": "openai", "model": "old", "openai_api_key": "existing"},
     )
     monkeypatch.setattr(connect, "save_config", lambda value: saved.append(dict(value)))
-    monkeypatch.setattr(
-        connect,
-        "probe",
-        lambda cfg: {"status": "ready", "models": ["fixture-model"], "message": "Ready"},
-    )
+    # W8: ConnectScreen is a view over core.OnboardingFlow and awaits the probe
+    # on its own loop instead of `asyncio.to_thread(probe, ...)` around a probe
+    # that called `asyncio.run`. The seam is the coroutine now.
+    async def ready(cfg):
+        return {"status": "ready", "models": ["fixture-model"], "message": "Ready"}
+
+    monkeypatch.setattr(connect, "probe_async", ready)
 
     async def run():
         app = App()

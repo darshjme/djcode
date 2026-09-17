@@ -183,9 +183,13 @@ def test_setup_reuses_account_and_defaults_current_method(monkeypatch):
     monkeypatch.setattr(account_auth, "has_account", lambda provider: True)
     login = Mock(side_effect=AssertionError("connected account must not log in again"))
     monkeypatch.setattr(account_auth, "authenticate_account", login)
-    monkeypatch.setattr(
-        startup, "probe", lambda *a: {"status": "ready", "models": [{"name": "grok", "size": 0}]}
-    )
+    # W8: setup() is an async view over core.OnboardingFlow, so the seam it
+    # probes through is the coroutine, not the blocking wrapper (which now
+    # refuses inside the loop setup() runs on, exactly as W1-7 specified).
+    async def ready(*args, **kwargs):
+        return {"status": "ready", "models": [{"name": "grok", "size": 0}]}
+
+    monkeypatch.setattr(startup, "probe_async", ready)
     saved = Mock()
     monkeypatch.setattr(startup, "save_config", saved)
     result = startup.setup(config)
@@ -202,11 +206,10 @@ def test_cancel_after_new_key_does_not_save_or_mutate(monkeypatch, cfg):
     monkeypatch.setattr(startup.questionary, "select", lambda *a, **kw: Mock(ask=lambda: next(selections)))
     monkeypatch.setattr(startup.questionary, "password", lambda *a, **kw: Mock(ask=lambda: "replacement-key"))
     monkeypatch.setattr(startup.questionary, "autocomplete", lambda *a, **kw: Mock(ask=lambda: None))
-    monkeypatch.setattr(
-        startup,
-        "probe",
-        lambda *a: {"status": "ready", "models": [{"name": "chosen-model", "size": 0}]},
-    )
+    async def ready(*args, **kwargs):
+        return {"status": "ready", "models": [{"name": "chosen-model", "size": 0}]}
+
+    monkeypatch.setattr(startup, "probe_async", ready)  # W8: async seam
     saved = Mock()
     monkeypatch.setattr(startup, "save_config", saved)
     with pytest.raises(KeyboardInterrupt):

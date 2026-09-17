@@ -1,10 +1,26 @@
-"""Transactional provider → authentication → model onboarding in the terminal."""
+"""Transactional provider → authentication → model onboarding in the terminal.
+
+W8-3: the state machine this screen used to own moved to
+``djcode.core.onboarding_flow``. What is left here is a **view** — it draws the
+prompt the flow hands it, routes keystrokes back into the flow, and knows
+nothing about providers, auth methods, discovery or config files. The
+questionary wizard in ``djcode.startup`` is the same flow with a different view,
+and W9's REPL wizard will be a third.
+
+Two things that were wrong here and are now structurally impossible:
+
+* ``await asyncio.to_thread(probe, self.candidate)`` — a thread hop around a
+  ``probe`` that itself called ``asyncio.run``. The flow is async, so
+  ``await flow.discover()`` runs on this screen's own loop.
+* ``self.models`` held whatever the probe returned and was indexed as
+  ``m["name"]``; a probe that answered with bare strings crashed the screen.
+  The flow normalises the catalogue and hands back ready-made options.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import webbrowser
-from copy import deepcopy
 
 from textual import on
 from textual.app import ComposeResult
@@ -13,10 +29,9 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 
-from djcode.account_auth import auth_methods, begin_xai_login, finish_xai_login
-from djcode.auth import PROVIDERS
 from djcode.config import load_config, save_config
-from djcode.startup import connection, probe
+from djcode.core.onboarding_flow import PROVIDERS, OnboardingFlow
+from djcode.startup import probe_async
 
 
 class ConnectScreen(ModalScreen[dict | None]):
@@ -36,13 +51,38 @@ class ConnectScreen(ModalScreen[dict | None]):
 
     def __init__(self):
         super().__init__()
-        self.candidate = deepcopy(load_config())
-        self.stage = "provider"
-        self.provider = ""
-        self.verifier = ""
-        self.models = []
+        # Every port is resolved from THIS module's globals on each call, so the
+        # regression suite can still replace `connect.load_config`,
+        # `connect.save_config` and `connect.probe_async`.
+        self.flow = OnboardingFlow(
+            load=lambda: load_config(),
+            save=lambda config: save_config(config),
+            probe=lambda config: probe_async(config),
+        )
         self.busy = False
-        self.cancelled = False
+
+    # The flow owns this state; these stay as properties because the screen's
+    # tests and `app.py` read them, and because a second copy would be a second
+    # truth.
+    @property
+    def candidate(self) -> dict:
+        return self.flow.candidate
+
+    @property
+    def stage(self) -> str:
+        return self.flow.stage
+
+    @property
+    def provider(self) -> str:
+        return self.flow.provider
+
+    @property
+    def models(self) -> list[dict]:
+        return self.flow.models
+
+    @property
+    def cancelled(self) -> bool:
+        return self.flow.cancelled
 
     def compose(self) -> ComposeResult:
         with Vertical(id="connect-box"):
@@ -53,6 +93,7 @@ class ConnectScreen(ModalScreen[dict | None]):
             yield Button("Cancel", id="connect-cancel")
 
     def on_mount(self):
+        self.flow.start()
         self._providers("")
         self.query_one(Input).focus()
 
@@ -91,14 +132,24 @@ class ConnectScreen(ModalScreen[dict | None]):
             ]
         )
 
-    def _field(self, stage, detail, placeholder, password=False):
-        self.stage = stage
-        self.query_one("#connect-detail", Static).update(detail)
+    def _show(self, prompt) -> None:
+        """Draw whatever the flow just asked for.
+
+        Named ``_show`` and not ``_render``: ``textual.Widget._render`` exists
+        and is called by the compositor with no arguments.
+        """
+        self.query_one("#connect-detail", Static).update(prompt.detail)
         field = self.query_one(Input)
-        field.password = password
-        field.placeholder = placeholder
+        field.password = prompt.password
+        field.placeholder = prompt.placeholder
         field.value = ""
         field.focus()
+        if prompt.stage == "provider":
+            self._providers("")
+        elif prompt.stage == "unverified":
+            self._options([("yes", "Save this setup anyway"), ("no", "Cancel")])
+        else:
+            self._options(prompt.options)
 
     @on(Input.Changed, "#connect-input")
     def filter(self, event):
@@ -106,7 +157,8 @@ class ConnectScreen(ModalScreen[dict | None]):
             self._providers(event.value)
         elif self.stage == "model":
             query = event.value.lower()
-            matched = [m["name"] for m in self.models if query in m["name"].lower()]
+            names = [m["name"] for m in self.models if isinstance(m, dict) and "name" in m]
+            matched = [name for name in names if query in name.lower()]
             self._options([(name, name) for name in matched[:100]])
 
     @on(OptionList.OptionSelected)
@@ -115,68 +167,48 @@ class ConnectScreen(ModalScreen[dict | None]):
             await self._choose(event.option.id)
 
     async def _choose(self, value):
-        if self.stage == "provider":
-            self.provider = value
-            if self.candidate.get("provider") != value:
-                self.candidate.update(provider=value, model="", base_url="")
-            info = PROVIDERS.get(value, {})
-            if info.get("needs_key", True):
-                self._field(
-                    "auth",
-                    f"Connect {value}: choose how to authenticate.",
-                    "Choose an option above",
-                )
-                self._options(
-                    [(m["id"], m["label"]) for m in auth_methods(value) if m["available"]]
-                )
-            elif not connection(self.candidate)["base"]:
-                self._options([])
-                self._field("url", "Enter your server URL.", "http://localhost:8000/v1")
+        try:
+            stage = self.flow.stage
+            if stage == "provider":
+                prompt = await self.flow.choose_provider(value)
+            elif stage == "auth":
+                prompt = await self.flow.choose_auth(value)
+                if prompt.stage == "browser":
+                    self._show(prompt)
+                    await asyncio.to_thread(webbrowser.open, prompt.url)
+                    return
+                if prompt.stage == "account":
+                    self._show(prompt)
+                    self.run_worker(self._device_login(), group="connect", exclusive=True)
+                    return
+            elif stage == "model":
+                prompt = await self.flow.choose_model(value)
+            elif stage == "unverified":
+                prompt = self.flow.confirm_unverified(value == "yes")
             else:
-                await self._discover()
-        elif self.stage == "auth":
-            self.candidate[f"{self.provider}_auth_method"] = (
-                "api_key" if value == "browser" else value
-            )
-            self._options([])
-            if value == "browser":
-                from djcode.openrouter_auth import begin
+                return
+            self._settle(prompt)
+        except Exception as error:
+            self.query_one("#connect-detail", Static).update(str(error))
 
-                self.verifier, url = begin()
-                self._field(
-                    "browser",
-                    f"Authorize DJcode in your browser, then paste the one-time code.\n{url}",
-                    "One-time authorization code",
-                    True,
-                )
-                await asyncio.to_thread(webbrowser.open, url)
-            elif value == "account":
-                self.run_worker(self._device_login(), group="connect", exclusive=True)
-            else:
-                self._field(
-                    "key",
-                    (
-                        "API key stays in your local DJcode configuration. Blank keeps an "
-                        "existing key."
-                    ),
-                    "API key",
-                    True,
-                )
-        elif self.stage == "model":
-            self.candidate["model"] = value
-            await self._finish()
+    def _settle(self, prompt) -> None:
+        if prompt.stage == "done":
+            self.dismiss(self.flow.candidate)
+            return
+        self._show(prompt)
 
     async def _device_login(self):
         self.busy = True
         try:
-            device = await begin_xai_login()
-            self.query_one("#connect-detail", Static).update(
-                f"Open {device.verification_url}\n"
-                f"Enter {device.user_code}. Waiting for authorization…"
-            )
-            await asyncio.to_thread(webbrowser.open, device.verification_url)
-            await finish_xai_login(device)
-            await self._discover()
+
+            def announce(device):
+                self.query_one("#connect-detail", Static).update(
+                    f"Open {device.verification_url}\n"
+                    f"Enter {device.user_code}. Waiting for authorization…"
+                )
+                return asyncio.to_thread(webbrowser.open, device.verification_url)
+
+            self._settle(await self.flow.device_login(announce))
         except Exception as error:
             self.query_one("#connect-detail", Static).update(str(error))
         finally:
@@ -188,64 +220,23 @@ class ConnectScreen(ModalScreen[dict | None]):
             return
         value = event.value.strip()
         try:
-            if self.stage in {"provider", "auth"}:
+            stage = self.flow.stage
+            if stage in {"provider", "auth", "unverified"}:
                 options = self.query_one(OptionList)
                 if options.highlighted is not None:
                     await self._choose(options.get_option_at_index(options.highlighted).id)
-            elif self.stage == "browser":
-                from djcode.openrouter_auth import exchange
-
-                self.busy = True
-                self.candidate[f"{self.provider}_api_key"] = await exchange(value, self.verifier)
-                self.verifier = ""
-                await self._discover()
-            elif self.stage == "key":
-                if value:
-                    self.candidate[f"{self.provider}_api_key"] = value
-                if not connection(self.candidate)["key"]:
-                    raise ValueError("An API key is required")
-                if not connection(self.candidate)["base"]:
-                    self._field("url", "Enter the provider endpoint.", "https://server.example/v1")
-                else:
-                    await self._discover()
-            elif self.stage == "url":
-                self.candidate[f"{self.provider}_url"] = value
-                await self._discover()
-            elif self.stage == "model" and value:
-                self.candidate["model"] = value
-                await self._finish()
+                return
+            self.busy = True
+            if stage == "browser":
+                self._settle(await self.flow.submit_browser_code(value))
+            elif stage == "key":
+                self._settle(await self.flow.submit_key(value))
+            elif stage == "url":
+                self._settle(await self.flow.submit_url(value))
+            elif stage == "model" and value:
+                self._settle(await self.flow.choose_model(value))
         except Exception as error:
             self.query_one("#connect-detail", Static).update(str(error))
-        finally:
-            self.busy = False
-
-    async def _discover(self):
-        self.query_one(Input).value = ""
-        self.query_one("#connect-detail", Static).update("Discovering models…")
-        found = await asyncio.to_thread(probe, self.candidate)
-        if self.cancelled:
-            return
-        self.models = found.get("models", [])
-        self._field(
-            "model",
-            f"Choose a model from {self.provider}, or enter its exact ID.\n{found['message']}",
-            "Search or enter model ID",
-        )
-        self._options([(m["name"], m["name"]) for m in self.models[:100]])
-
-    async def _finish(self):
-        self.busy = True
-        try:
-            checked = await asyncio.to_thread(probe, self.candidate)
-            if self.cancelled:
-                return
-            if checked["status"] != "ready":
-                raise ValueError(
-                    checked["message"] + " Setup has not been saved; retry when reachable."
-                )
-            self.candidate["setup_complete"] = True
-            save_config(self.candidate)
-            self.dismiss(self.candidate)
         finally:
             self.busy = False
 
@@ -254,7 +245,6 @@ class ConnectScreen(ModalScreen[dict | None]):
         self.action_cancel()
 
     def action_cancel(self):
-        self.cancelled = True
+        self.flow.cancel()
         self.workers.cancel_all()
-        self.verifier = ""
         self.dismiss(None)

@@ -16,6 +16,7 @@ from typing import Any
 from djcode.core.dispatch import DispatchContext, dispatch_context
 from djcode.core.events import (
     EventBus,
+    steer_event,
     thinking_event,
     token_event,
     tool_call_event,
@@ -194,6 +195,14 @@ class Operator:
         self.max_tool_rounds = int(_load_config().get("max_tool_rounds", 200))
         self.last_had_thinking = False  # Track if last response had thinking
         self.last_had_tool_calls = False  # Track if last response used native tool calling
+        self.last_tool_rounds = 0  # W8: rounds the last turn actually ran
+        # W8 (P0-5). Steer text the user typed WHILE this turn is running. It is
+        # a plain list and nothing else may touch `self.messages` on its behalf:
+        # `steer()` appends here and returns, and the ONLY place the text
+        # becomes a message is `_drain_steer()` at the top of the tool-round
+        # loop. That separation is the whole safety property -- see the comment
+        # on `_drain_steer`.
+        self._steer: list[str] = []
 
     def _emit(self, event: Any) -> None:
         """Publish an event if a front-end attached a bus. Never blocks.
@@ -282,8 +291,13 @@ class Operator:
         extracted_seen = set()
         native_tools_used = False
         self.last_had_tool_calls = False
+        self.last_tool_rounds = 0
 
         for _round in range(self.max_tool_rounds):
+            self.last_tool_rounds = _round + 1
+            # W8 (P0-5): the ONE safe drain point for steer text. See
+            # `_drain_steer` for why it is here and nowhere else.
+            self._drain_steer()
             self.context_manager.replace_messages(self.messages)
             if self.context_manager.needs_compression():
                 # W4-3: auto-compaction fires here, without any user command, so
@@ -650,6 +664,82 @@ class Operator:
     def _display_tool_result(self, name: str, result: Any, *, call_id: str = "") -> None:
         """Publish a tool result as an event."""
         self._emit(tool_result_event(call_id, result, name=name))
+
+    # ── Steering (W8, P0-5) ────────────────────────────────────────────────
+
+    def steer(self, text: str) -> None:
+        """Queue a correction for the running turn. Appends to a list, nothing else.
+
+        This method must never touch ``self.messages``. It is called from a
+        front-end's input handler on the SAME event loop the tool round is
+        running on, which means it fires while ``_send`` is parked on one of its
+        two long awaits -- ``_approve_tool`` (the approval prompt, the single
+        most likely moment a human types a correction) or ``workflow.one``
+        (which on a Rust-equipped box is a DAF subprocess that can run for an
+        hour). Appending a ``user`` message from here would land it *between*
+        an ``assistant(tool_calls)`` message and the ``tool`` messages that
+        answer it, which OpenAI and Anthropic reject outright and which Ollama
+        -- whose pairing is positional, ``provider.py::_msg_to_ollama`` never
+        sends ``tool_call_id`` -- silently mis-associates instead.
+        """
+        text = str(text or "").strip()
+        if text:
+            self._steer.append(text)
+
+    @property
+    def pending_steer(self) -> list[str]:
+        """Steer text typed but not yet delivered to the model."""
+        return list(self._steer)
+
+    def take_steer(self) -> list[str]:
+        """Remove and return undelivered steer text. Idempotent: twice gives []."""
+        pending, self._steer = self._steer, []
+        return pending
+
+    def _drain_steer(self) -> None:
+        """Turn queued steer text into a ``user`` message. The one safe point.
+
+        Called as the first statement of the tool-round loop body, before
+        ``context_manager.replace_messages``. Four properties hold here and
+        nowhere else:
+
+        1. **Every path returns here.** The ``if tool_calls:`` branch, the
+           extraction-router branch and the first round of a turn all re-enter
+           the loop at this line. Draining after the per-call loop instead would
+           strand a steer for as long as the model happens not to call a tool --
+           which, when the user is steering *because* the model is going wrong,
+           can be forever.
+        2. **Pairing is intact.** Whatever the previous round did, every
+           ``tool_call`` id it opened has already been answered by a ``tool``
+           message, and W6's ``denial_notes`` has already been flushed as its
+           own ``user`` message. ``assistant(tool_calls) -> tool -> tool ->
+           user`` is a shape this codebase already ships.
+        3. **It is inside the token count.** Line ``replace_messages`` +
+           ``needs_compression`` runs immediately after, so the round that
+           carries the steer is budgeted with it.
+        4. **Compaction stays safe.** ``context/compressor.py::_partition``
+           attaches a ``tool`` message to the previous group only when that
+           group's FIRST message has ``tool_calls``. A ``user`` message drained
+           here opens its own group and can never split an assistant/tool pair;
+           one injected mid-round permanently would.
+
+        There is no ``await`` between the pop and the append, so a cancellation
+        racing the drain can neither lose the text nor deliver it twice.
+        """
+        if not self._steer:
+            return
+        pending, self._steer = self._steer, []
+        text = "\n\n".join(pending)
+        last = self.messages[-1] if self.messages else None
+        if last is not None and last.role == "user":
+            # Never emit two consecutive `user` messages: round 0 would produce
+            # user(prompt) -> user(steer), and after a denial note the previous
+            # message is already a `user`. Merging keeps the transcript in a
+            # shape every provider adapter in `providers/` already handles.
+            last.content = f"{last.content}\n\n{text}" if last.content else text
+        else:
+            self.messages.append(Message(role="user", content=text))
+        self._emit(steer_event(text, delivered=True))
 
     def reset(self) -> None:
         """Clear conversation history, keeping system prompt."""
