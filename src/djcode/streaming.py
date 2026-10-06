@@ -15,6 +15,10 @@ async def stream_turn(provider: Provider, messages: list[Message]) -> AsyncItera
     ended = False
     async with aclosing(provider.chat(messages, stream=True)) as response:
         async for chunk in response:
+            if ended:
+                if chunk.get("message") or chunk.get("choices"):
+                    raise ValueError("Provider emitted data after completion.")
+                continue
             if chunk.get("error"):
                 raise ConnectionError(str(chunk["error"]))
             if "message" in chunk:  # Ollama NDJSON
@@ -38,6 +42,8 @@ async def stream_turn(provider: Provider, messages: list[Message]) -> AsyncItera
                 yield delta["content"], []
             for part in delta.get("tool_calls", []):
                 idx = part.get("index", 0)
+                if not isinstance(idx, int) or isinstance(idx, bool) or idx < 0:
+                    raise ValueError("Invalid tool call index.")
                 tc = calls.setdefault(idx, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
                 if part.get("id"):
                     tc["id"] = part["id"]
@@ -55,7 +61,7 @@ async def stream_turn(provider: Provider, messages: list[Message]) -> AsyncItera
     if not ended:
         raise ConnectionError("Provider stream ended without a completion marker; retry the request.")
     normalized = []
-    for tc in calls.values():
+    for _, tc in sorted(calls.items()):
         fn = tc.get("function", {})
         if not fn.get("name"):
             raise ValueError("Provider returned a tool call without a name.")

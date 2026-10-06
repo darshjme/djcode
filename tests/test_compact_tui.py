@@ -19,10 +19,13 @@ def test_responsive_layout_palette_and_approval(monkeypatch, tmp_path, width):
             assert not side.display
             assert app.query_one('#prompt-input').region.bottom < 28
             assert app.query_one('#chat-log').size.height >= 12
-            await pilot.press('ctrl+p')
+            await pilot.press('ctrl+g')
             assert app._plan_mode
-            await pilot.press('ctrl+p')
+            await pilot.press('ctrl+g')
             assert not app._plan_mode
+            await pilot.press('ctrl+p')
+            assert isinstance(app.screen, CommandPalette)
+            await pilot.press('escape')
             await pilot.press('ctrl+b')
             assert side.display
             await pilot.press('ctrl+b')
@@ -63,20 +66,29 @@ def test_maintenance_commands_keep_ui_responsive(monkeypatch, tmp_path):
         assert threading.current_thread() is not threading.main_thread()
         return {'ok': True, 'summary': 'Checks passed', 'checks': [{'name': 'runtime', 'status': 'pass', 'detail': 'available'}]}
     maintenance.run_checks = check
+    maintenance.run_lint = lambda path=None: {"ok": True, "summary": "Fatal lint passed", "diagnostics": []}
     monkeypatch.setitem(sys.modules, 'djcode.maintenance', maintenance)
     def update(force):
         assert force is True
         assert threading.current_thread() is not threading.main_thread()
         return {'ok': True, 'status': 'updated', 'message': 'Updated fixture', 'updated': True}
     monkeypatch.setattr(updater, 'perform_update', update, raising=False)
+    calls = []
+    def status(**kwargs):
+        assert threading.current_thread() is not threading.main_thread()
+        calls.append(kwargs)
+        return {'ok': True, 'message': 'Update status fixture', 'current_version': 'fixture', 'installation': {'kind': 'source'}}
+    monkeypatch.setattr(updater, 'get_update_status', status)
     async def run():
         app = DJcodeApp()
         async with app.run_test(size=(80, 28)) as pilot:
-            for cmd in ['/check', '/lint', '/update']:
+            for cmd in ['/check', '/lint', '/update', '/update check', '/update install']:
                 await app._handle_slash_command(cmd)
             await pilot.pause()
             text = '\n'.join(line.text for line in app.query_one('#chat-log', RichLog).lines)
             assert 'Checks passed' in text and 'runtime: pass' in text
             assert 'Updated fixture' in text and 'Restart DJcode' in text
+            assert 'Fatal lint passed' in text and 'Update status fixture' in text
+            assert calls == [{'check': False}, {'check': True}]
             assert app.is_running
     asyncio.run(run())

@@ -7,8 +7,10 @@ Zero telemetry. Everything stays local.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -51,11 +53,20 @@ def load_config() -> dict[str, Any]:
         try:
             with open(CONFIG_FILE) as f:
                 user_config = json.load(f)
-            merged = {**DEFAULT_CONFIG, **user_config}
+            if not isinstance(user_config, dict):
+                logging.getLogger(__name__).warning(
+                    "Configuration at %s must be a JSON object; using defaults without changing the file",
+                    CONFIG_FILE,
+                )
+                return deepcopy(DEFAULT_CONFIG)
+            merged = {**deepcopy(DEFAULT_CONFIG), **user_config}
             return merged
         except (json.JSONDecodeError, OSError):
-            pass
-    return dict(DEFAULT_CONFIG)
+            logging.getLogger(__name__).warning(
+                "Cannot read configuration at %s; using defaults without changing the file",
+                CONFIG_FILE,
+            )
+    return deepcopy(DEFAULT_CONFIG)
 
 
 def save_config(config: dict[str, Any]) -> None:
@@ -73,6 +84,23 @@ def save_config(config: dict[str, Any]) -> None:
             os.unlink(temporary)
 
 
+def load_config_for_write() -> dict[str, Any]:
+    """Read mutation input without replacing damaged settings with defaults."""
+    try:
+        raw = CONFIG_FILE.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return deepcopy(DEFAULT_CONFIG)
+    except (OSError, UnicodeError):
+        raise ValueError("Cannot read DJcode settings. Repair the configuration before changing settings.") from None
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        raise ValueError("DJcode settings contain invalid JSON. Repair the configuration before changing settings.") from None
+    if not isinstance(value, dict) or not isinstance(value.get("custom_providers", {}), dict):
+        raise ValueError("DJcode settings require a JSON object and valid custom providers. Repair the configuration first.")
+    return {**deepcopy(DEFAULT_CONFIG), **value}
+
+
 def get(key: str, default: Any = None) -> Any:
     """Get a single config value."""
     config = load_config()
@@ -81,6 +109,6 @@ def get(key: str, default: Any = None) -> Any:
 
 def set_value(key: str, value: Any) -> None:
     """Set a single config value and persist."""
-    config = load_config()
+    config = load_config_for_write()
     config[key] = value
     save_config(config)

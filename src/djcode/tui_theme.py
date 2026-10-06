@@ -801,4 +801,26 @@ DJCODE_CSS += """
 #prompt-input { border: round #29292C; background: #1E1E21; }
 #prompt-input:focus { border: round #7C96FF; }
 #chat-panel { width: 1fr; }
+
+/* Detail views remain readable and keyboard scrollable in short terminals. */
+AgentPanel, StatsPanel, CostPanel, IntelPanel {
+    overflow-y: auto;
+    scrollbar-color: #29292C;
+    scrollbar-color-hover: #7C96FF;
+    scrollbar-color-active: #7C96FF;
+}
+.panel-empty { color: #A0A0A5; height: auto; padding: 0 1; }
+AgentPanel .agent-header, StatsPanel .stats-header, MCPPanel .mcp-header,
+TodoPanel .todo-header, CostPanel .cost-header, IntelPanel .intel-header,
+ArmyTabPanel .army-header, ProjectPanel .project-header {
+    height: 2;
+    padding: 0 1;
+    text-align: left;
+    border-bottom: solid #29292C;
+}
+SidePanel Tab { padding: 0 1; min-width: 6; }
+SidePanel .mcp-empty, SidePanel .todo-empty, SidePanel .project-path,
+SidePanel .memory-stats, SidePanel .mcp-summary, SidePanel .todo-count,
+SidePanel .army-summary { color: #A0A0A5; }
+IntelPanel .threat-area { min-height: 4; }
 """

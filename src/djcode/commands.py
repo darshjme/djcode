@@ -32,6 +32,7 @@ COMMANDS = (
     Command("/features", "Browse website capabilities and their commands", "Session"),
     Command("/project", "Inspect workspace, branch, changes and diff summary", "Context & tools"),
     Command("/fleet", "List or message an authenticated Vyasa fleet", "Specialists"),
+    Command("/studio", "Open project studio and available operations", "Project studio", repl=False),
     Command("/agent", "Define your own specialist agents", "Project studio"),
     Command("/organisation", "Define teams of custom agents", "Project studio"),
     Command("/flow", "Save and run dependency workflows", "Project studio"),
@@ -41,13 +42,13 @@ COMMANDS = (
     Command("/finish", "Run approved completion checks", "Project studio"),
     Command("/help", "Browse commands and keyboard shortcuts", "Session"),
     Command("/check", "Run runtime and source checks", "Models & setup"),
-    Command("/lint", "Run runtime and source checks", "Models & setup"),
-    Command("/update", "Update a managed installation", "Models & setup"),
+    Command("/lint", "Run fatal Python lint [PATH]", "Models & setup"),
+    Command("/update", "Show update status; check or explicitly install", "Models & setup"),
     Command("/design", "List/select an original design reference; off clears", "Context & tools"),
-    Command("/model", "Switch model (fuzzy match)", "Models & setup"),
-    Command("/models", "Browse available models", "Models & setup"),
+    Command("/model", "Verify and switch exact provider/model ID", "Models & setup"),
+    Command("/models", "Search live models [PROVIDER]", "Models & setup"),
     Command("/provider", "Switch LLM provider", "Models & setup"),
-    Command("/auth", "Choose provider and supported authentication", "Models & setup"),
+    Command("/auth", "List authentication or status [PROVIDER]", "Models & setup"),
     Command("/clear", "Clear conversation history", "Session"),
     Command("/save", "Save conversation to disk", "Session"),
     Command("/config", "Show current configuration", "Models & setup"),
@@ -82,6 +83,7 @@ COMMANDS = (
     Command("/resume", "Resume a past session by ID", "Session"),
     Command("/uncensored", "Show uncensored model info", "Models & setup"),
     Command("/raw", "Toggle raw output mode", "Session"),
+    Command("/hotkeys", "Show keyboard shortcuts", "Session"),
     Command("/shortcuts", "Show keyboard shortcuts", "Session"),
     Command("/todo", "Manage session todos (add/done/rm/list)", "Context & tools", repl=False),
     Command("/cost", "Show token cost estimates", "Context & tools", repl=False),
@@ -137,6 +139,8 @@ def plan_blocks_command(command: str, argument: str) -> bool:
     """Keep task dispatch from bypassing the no-execution Plan mode."""
     if command in {"/agent", "/organisation", "/flow", "/roadmap"}:
         return argument.split(maxsplit=1)[:1] in (["save"], ["run"])
+    if command == "/update":
+        return argument.strip() == "install"
     if command == "/finish":
         return True
     if command == "/fleet":

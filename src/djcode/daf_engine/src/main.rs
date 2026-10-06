@@ -87,10 +87,11 @@ async fn main() -> Result<()> {
             let Ok(value) = serde_json::from_str::<Value>(&line) else {
                 break;
             };
-            if let Some(id) = value["id"].as_str() {
-                if let Some(sender) = replies.lock().await.remove(id) {
-                    let _ = sender.send(value);
-                }
+            let Some(id) = value["id"].as_str() else {
+                continue;
+            };
+            if let Some(sender) = replies.lock().await.remove(id) {
+                let _ = sender.send(value);
             }
         }
         replies.lock().await.clear();

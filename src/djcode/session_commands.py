@@ -67,13 +67,21 @@ async def handle(operator, command, argument=""):
         if db and current:
             db.save_conversation(current, operator.messages)
             db.end_session(current)
+        manager = getattr(operator, "context_manager", None)
         if command == "/new":
             operator.reset()
+            if manager is not None:
+                manager.clear_messages()
+        if manager is not None:
+            manager.replace_messages(operator.messages)
         if db:
             operator.session_id = db.create_session(
                 operator.provider.config.model, operator.provider.config.name, cwd=str(Path.cwd())
             )
             db.save_conversation(operator.session_id, operator.messages)
+        checkpoint = getattr(operator, "on_checkpoint", None)
+        if checkpoint:
+            checkpoint(operator.messages)
         label = "Forked" if command == "/fork" else "New"
         return f"{label} session: {getattr(operator, 'session_id', None) or 'in memory'}"
     if command == "/compact":
@@ -81,8 +89,9 @@ async def handle(operator, command, argument=""):
         manager.replace_messages(operator.messages)
         await manager.auto_compress()
         operator.messages = manager.get_messages()
-        if operator.on_checkpoint:
-            operator.on_checkpoint(operator.messages)
+        checkpoint = getattr(operator, "on_checkpoint", None)
+        if checkpoint:
+            checkpoint(operator.messages)
         return "Context compacted; saved session checkpoint updated"
     if command in {"/skills", "/skill"}:
         result = await operator.capabilities.skill("load" if argument else "list", argument)

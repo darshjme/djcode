@@ -41,6 +41,15 @@ djcode-colibri = "djcode.colibri:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+exclude = ["**/target/**", "**/__pycache__/**", "**/*.pyc"]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src/djcode", "tests", "docs", "scripts", "README.md", "CHANGELOG.md",
+    "LICENSE", "PROJECT.md", "pyproject.toml", "uv.lock", "install.sh",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/djcode"]
 

@@ -1,3 +1,14 @@
+# Unreleased — 2026-10-06
+
+- Add inference-free `auth`, `models`, `update`, `lint` and `doctor` commands with structured failures and private credential status.
+- Add hidden/stdin API-key login, provider-scoped logout, supported account/PKCE flows and rollback on failed settings changes.
+- Validate exact model IDs before switching; preserve the active conversation and previous provider when selection fails.
+- Add Ctrl+P command discovery, Ctrl+G Plan/Act, searchable model selection, `/hotkeys` and keyboard access to Project studio and sidebar tabs.
+- Distinguish offline update status, cached checks and explicit installation; report installation ownership and safe rollback failures.
+- Bound workflow admission, validate recovery before tool effects, propagate approvals and cancellation, and reject malformed DDAL frames early.
+- Repair narrow terminal layouts and session recovery; document actual interface captures and local acceptance.
+- Exclude build output from source distributions and verify packaged sources, bundled Rust contracts and documentation against the checkout.
+
 # 4.4.0 — 2026-09-17
 
 - Add persistent project agents, organisations and dependency workflows through shared TUI/REPL commands and a visual Project studio.
@@ -48,7 +59,7 @@
 - Preserve account authentication across provider switching and specialist permission policy in classic commands. Account sign-in availability remains provider-specific; see docs/ACCOUNT-AUTH.md.
 - Distinguish 15 model-callable tool schemas from 2 additional internal dispatch helpers.
 
-project by Darshan Kumar Joshi
+project by Darshankumar Joshi
 
 ## 4.1.0 — 2026-09-09
 

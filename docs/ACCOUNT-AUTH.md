@@ -4,6 +4,13 @@ DJcode supports API-key providers and local endpoints. Its account selector show
 which methods are available and explains restrictions before attempting login.
 It does not read Codex, Claude Code, OpenCode, or Grok credential files.
 
+Use `djcode auth list`, `auth status PROVIDER`, `auth login PROVIDER` and
+`auth logout PROVIDER`. Login defaults to a hidden key prompt; automation can
+use `--key-stdin`. OpenRouter offers explicit `--method browser` PKCE sign-in.
+Status identifies stored/environment/account/local sources without tokens or keys.
+Logout removes only the chosen provider's saved credentials and explains any
+remaining environment key. See [the maintenance guide](AUTH-MODELS-MAINTENANCE.md).
+
 xAI account sign-in is an opt-in integration for an **xAI-approved public client
 registration**. Set `DJCODE_XAI_OAUTH_CLIENT_ID` only to a client ID that xAI has
 approved for your DJcode integration and the requested scopes. DJcode does not
@@ -29,7 +36,7 @@ nor a Codex Responses account backend. Its OpenAI integration uses API keys.
 Anthropic explicitly prohibits Claude.ai subscription OAuth in third-party
 products, so DJcode offers Anthropic API keys, not Claude subscription login.
 
-Reviewed primary sources, 2026-09-09:
+Primary sources reviewed again on 2026-10-06:
 
 - [OpenAI authentication](https://learn.chatgpt.com/docs/auth) documents official
   Codex browser/device login. It does not establish a DJcode OAuth registration.
@@ -45,6 +52,8 @@ Reviewed primary sources, 2026-09-09:
   (blob `a455121d6aedfac1ee9f68bd4f6d455ce5a86eba`) were inspected for protocol
   behavior. Its reused Grok client identity was deliberately not adopted.
   DJcode's implementation is original Python; no OpenCode code was copied.
+- [OpenRouter OAuth/PKCE](https://openrouter.ai/docs/guides/overview/auth/oauth)
+  documents browser authorization and code exchange for a user-controlled API key.
 
 Mock-transport tests exercise grants and backend routing without browser consent,
 live account login, paid inference, or model downloads. A successful real account

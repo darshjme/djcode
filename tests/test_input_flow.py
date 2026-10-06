@@ -63,7 +63,7 @@ def test_repl_plan_shortcut_sets_operator_gate():
         keys = tui.register_keybindings(SimpleNamespace(), operator, status)
         output = SimpleNamespace(write=lambda _: None, flush=lambda: None)
         event = SimpleNamespace(app=SimpleNamespace(output=output))
-        binding = next(binding for binding in keys.bindings if binding.keys == ("c-p",))
+        binding = next(binding for binding in keys.bindings if binding.keys == ("c-g",))
         binding.handler(event)
         assert operator.plan_mode is True
         assert status.mode == "PLAN"

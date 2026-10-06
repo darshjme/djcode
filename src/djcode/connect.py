@@ -12,6 +12,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
+from rich.text import Text
 
 from djcode.account_auth import auth_methods, begin_xai_login, finish_xai_login
 from djcode.auth import PROVIDERS
@@ -22,19 +23,19 @@ from djcode.startup import connection, probe
 class ConnectScreen(ModalScreen[dict | None]):
     DEFAULT_CSS = """
     ConnectScreen { align: center middle; background: rgba(0,0,0,0.65); }
-    #connect-box { width: 76; max-width: 95%; height: auto; max-height: 95%;
-        border: round #7C96FF; background: #080808; padding: 1 2; }
-    #connect-title { height: 2; color: #EEEAE3; text-style: bold; }
-    #connect-detail { height: auto; max-height: 5; color: #A6A4A0; margin-bottom: 1; }
-    #connect-options { height: 10; max-height: 40%; border: none; }
-    #connect-input { height: 3; margin-top: 1; border: round #55514A; color: #EEEAE3; }
+    #connect-box { width: 76; max-width: 95%; height: 90%; max-height: 26;
+        border: round #7C96FF; background: #080808; padding: 0 1; }
+    #connect-title { height: 1; color: #EEEAE3; text-style: bold; }
+    #connect-detail { height: auto; max-height: 3; color: #A6A4A0; }
+    #connect-options { height: 1fr; min-height: 1; border: none; }
+    #connect-input { height: 3; border: round #55514A; color: #EEEAE3; }
     #connect-input:focus { border: round #7C96FF; }
     #connect-options > .option-list--option-highlighted { background: #A2BA9A 15%; color: #A2BA9A; }
-    #connect-cancel { height: 3; margin-top: 1; }
+    #connect-cancel { height: 3; }
     """
     BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self):
+    def __init__(self, provider: str | None = None):
         super().__init__()
         self.candidate = deepcopy(load_config())
         self.stage = "provider"
@@ -43,6 +44,7 @@ class ConnectScreen(ModalScreen[dict | None]):
         self.models = []
         self.busy = False
         self.cancelled = False
+        self.initial_provider = provider
 
     def compose(self) -> ComposeResult:
         with Vertical(id="connect-box"):
@@ -55,6 +57,8 @@ class ConnectScreen(ModalScreen[dict | None]):
     def on_mount(self):
         self._providers("")
         self.query_one(Input).focus()
+        if self.initial_provider:
+            self.run_worker(self._choose(self.initial_provider), group="connect", exclusive=True)
 
     def on_key(self, event):
         if event.key in {"up", "down"}:
@@ -67,7 +71,7 @@ class ConnectScreen(ModalScreen[dict | None]):
     def _options(self, items):
         options = self.query_one(OptionList)
         options.clear_options()
-        options.add_options([Option(label, id=ident) for ident, label in items])
+        options.add_options([Option(Text(label), id=ident) for ident, label in items])
         if options.option_count:
             options.highlighted = 0
 
@@ -87,7 +91,7 @@ class ConnectScreen(ModalScreen[dict | None]):
             [
                 (name, f"{PROVIDERS.get(name, {}).get('name', name)} · {name}")
                 for name in names
-                if query.lower() in name.lower()
+                if query.casefold() in f"{name} {PROVIDERS.get(name, {}).get('name', '')}".casefold()
             ]
         )
 
@@ -110,22 +114,30 @@ class ConnectScreen(ModalScreen[dict | None]):
     @on(OptionList.OptionSelected)
     async def choose(self, event):
         if not self.busy:
-            await self._choose(event.option.id)
+            try:
+                await self._choose(event.option.id)
+            except Exception as error:
+                self.query_one("#connect-detail", Static).update(str(error))
 
     async def _choose(self, value):
         if self.stage == "provider":
             self.provider = value
-            if self.candidate.get("provider") != value:
-                self.candidate.update(provider=value, model="", base_url="")
+            from djcode.model_selection import candidate_config
+            self.candidate = candidate_config(self.candidate, value)
             info = PROVIDERS.get(value, {})
             if info.get("needs_key", True):
+                methods = auth_methods(value)
+                unavailable = [m for m in methods if not m["available"]]
+                detail = f"Connect {value}: choose how to authenticate."
+                if unavailable:
+                    detail += "\n" + "; ".join(f"{m['label']}: {m['reason']}" for m in unavailable)
                 self._field(
                     "auth",
-                    f"Connect {value}: choose how to authenticate.",
+                    detail,
                     "Choose an option above",
                 )
                 self._options(
-                    [(m["id"], m["label"]) for m in auth_methods(value) if m["available"]]
+                    [(m["id"], m["label"]) for m in methods if m["available"]]
                 )
             elif not connection(self.candidate)["base"]:
                 self._options([])
@@ -161,7 +173,8 @@ class ConnectScreen(ModalScreen[dict | None]):
                     True,
                 )
         elif self.stage == "model":
-            self.candidate["model"] = value
+            from djcode.model_selection import candidate_config
+            self.candidate = candidate_config(self.candidate, self.provider, value)
             await self._finish()
 
     async def _device_login(self):
@@ -210,7 +223,8 @@ class ConnectScreen(ModalScreen[dict | None]):
                 self.candidate[f"{self.provider}_url"] = value
                 await self._discover()
             elif self.stage == "model" and value:
-                self.candidate["model"] = value
+                from djcode.model_selection import candidate_config
+                self.candidate = candidate_config(self.candidate, self.provider, value)
                 await self._finish()
         except Exception as error:
             self.query_one("#connect-detail", Static).update(str(error))
@@ -218,12 +232,20 @@ class ConnectScreen(ModalScreen[dict | None]):
             self.busy = False
 
     async def _discover(self):
+        self.busy = True
         self.query_one(Input).value = ""
         self.query_one("#connect-detail", Static).update("Discovering models…")
-        found = await asyncio.to_thread(probe, self.candidate)
+        try:
+            found = await asyncio.to_thread(probe, self.candidate)
+        finally:
+            self.busy = False
         if self.cancelled:
             return
         self.models = found.get("models", [])
+        if found.get("error") in {"auth_missing", "auth_rejected", "auth_endpoint"}:
+            self._field("auth", found["message"], "Choose authentication above")
+            self._options([(m["id"], m["label"]) for m in auth_methods(self.provider) if m["available"]])
+            return
         self._field(
             "model",
             f"Choose a model from {self.provider}, or enter its exact ID.\n{found['message']}",
@@ -234,6 +256,8 @@ class ConnectScreen(ModalScreen[dict | None]):
     async def _finish(self):
         self.busy = True
         try:
+            from djcode.config import load_config_for_write
+            load_config_for_write()
             checked = await asyncio.to_thread(probe, self.candidate)
             if self.cancelled:
                 return

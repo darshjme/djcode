@@ -6,7 +6,13 @@ DJcode runs a model you choose — Ollama, MLX, or a hosted OpenAI-compatible pr
 
 [Website](https://cli.darshj.ai) · [Getting started](docs/INSTALLATION-AND-RECOVERY.md) · [Project studio](docs/PROJECT-STUDIO.md) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/darshjme/djcode/issues)
 
-![DJcode workspace](docs/images/workspace.svg)
+![DJcode terminal workspace](docs/assets/terminal-workspace.svg)
+
+The workspace keeps chat, tool progress and the prompt in view. On narrow
+terminals the sidebar collapses; **Ctrl+B** restores it, **Ctrl+P** or **F4** opens commands,
+**F2** chooses models, **F1** shows shortcuts and **Ctrl+K** cancels generation. Unmeasured context and unpriced
+usage display as unknown. MCP panels report extension status; they do not pretend
+to enable or disable servers.
 
 ## Build with your own team
 
@@ -20,6 +26,13 @@ Use the full-screen app or REPL to define agents, organise them into teams and r
 | Persistent session memory and facts | `/memory`, `/remember`, `/recall` |
 | Roadmap and development history | `/roadmap`, `/timeline` |
 | Diagnostics and completion checks | `/doctor`, `/finish` |
+
+Flows validate their complete graph before any tool dispatch, admit up to 32
+nodes and bound concurrency to 1–4. Each tool keeps the current session's approval
+gate. Failed dependencies block their dependents; cancellation cleans up the local
+host and pending calls. The bundled DAF/DDAL engine is a local scheduler and
+transport, while the standalone [DAF runtime](https://github.com/darshjme/daf) has
+its own remote-worker API. See [the operating guide](docs/SWARM-AND-TERMINAL.md).
 
 ```mermaid
 flowchart LR
@@ -40,7 +53,21 @@ djcode --check
 djcode --setup
 ```
 
-`--setup` picks provider, authentication, and model. Ollama discovery uses `/api/tags`; it never pulls weights. Hosted providers need their documented API key in the environment.
+`--setup` picks provider, authentication, and model. Ollama discovery uses `/api/tags`; it never pulls weights. Hosted providers use their supported authentication method.
+
+```sh
+djcode auth login openai          # hidden API-key prompt
+djcode auth list                  # credential sources, no secret values
+djcode models openai              # discover exact model IDs
+djcode models --select openai/MODEL_ID
+djcode update --check             # check without installing
+djcode update --status --json     # offline installation ownership and mode
+djcode lint . --json              # fatal diagnostics without changing files
+```
+
+Replace `MODEL_ID` with an ID from discovery. OpenRouter offers browser sign-in;
+xAI account sign-in requires an approved client registration. OpenAI/Anthropic
+use API keys. See [authentication, models and maintenance](docs/AUTH-MODELS-MAINTENANCE.md).
 
 From source:
 
@@ -100,14 +127,14 @@ Optional extras: `computer` (Playwright / PyAutoGUI), `voice` (sounddevice), `to
 ```sh
 uv sync
 uv run python -m djcode --check
-uv run --with pytest --with pytest-asyncio pytest -q
+PYTHONPATH=src uv run --with pytest --with pytest-asyncio python -m pytest -q
 uv run ruff check src/djcode --select E9,F63,F7,F82
 uv run python -m djcode --doctor
 ```
 
 See [docs/INSTALLATION-AND-RECOVERY.md](docs/INSTALLATION-AND-RECOVERY.md), [docs/AGENT-WORKSPACE.md](docs/AGENT-WORKSPACE.md), and [docs/ACCOUNT-AUTH.md](docs/ACCOUNT-AUTH.md).
 
-The 4.4 validation run passed 494 tests and 14 subtests, plus 12 release-helper tests. See [validation scope](docs/WEBSITE-PARITY.md) and [development timeline](docs/DEVELOPMENT-TIMELINE.md).
+The October verification passed **692 tests and 14 subtests**, **260 bundled Rust tests**, and **12 offline release-helper tests**. See [the dated evidence and limits](docs/SWARM-VALIDATION-2026-10-06.md), [the operating guide](docs/SWARM-AND-TERMINAL.md) and [development timeline](docs/DEVELOPMENT-TIMELINE.md).
 
 ## Related
 

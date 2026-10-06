@@ -260,12 +260,14 @@ def doctor(deep=False):
 
     from djcode.maintenance import run_checks
     from djcode.managed_update import installation
+    from djcode.updater import get_update_status
 
     checks = run_checks()
     checks["runtime"] = {
         "djcode": __version__,
         "cargo": bool(shutil.which("cargo")),
         "managed_install": installation() is not None,
+        "update_status": get_update_status(),
         "update": "Use djcode --update for verified canonical updates; --rollback restores "
         "the previous managed release. Source checkouts are not overwritten.",
     }

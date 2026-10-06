@@ -46,9 +46,10 @@ impl fmt::Display for EdgeKind {
 
 /// Condition that determines whether an edge should fire after the source
 /// node reaches a terminal state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum EdgeCondition {
     /// Always fire regardless of source outcome.
+    #[default]
     Always,
     /// Only fire if the source node succeeded.
     OnSuccess,
@@ -57,12 +58,6 @@ pub enum EdgeCondition {
     /// Fire if the source node's output contains the specified key.
     /// Used for routing based on output content (e.g., branch on classification).
     OnOutput(String),
-}
-
-impl Default for EdgeCondition {
-    fn default() -> Self {
-        Self::Always
-    }
 }
 
 impl fmt::Display for EdgeCondition {
@@ -182,8 +177,7 @@ mod tests {
     fn edge_display() {
         let src = NodeId::new();
         let tgt = NodeId::new();
-        let edge = Edge::new(src, tgt, EdgeKind::DataFlow)
-            .with_condition(EdgeCondition::OnFailure);
+        let edge = Edge::new(src, tgt, EdgeKind::DataFlow).with_condition(EdgeCondition::OnFailure);
         let display = format!("{edge}");
         assert!(display.contains("data_flow"));
         assert!(display.contains("on_failure"));

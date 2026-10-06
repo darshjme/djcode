@@ -18,6 +18,9 @@ import random
 import time
 from typing import Any
 
+from rich.markup import escape
+from rich.text import Text
+from rich.cells import cell_len
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer, Grid
 from textual.reactive import reactive
@@ -263,10 +266,27 @@ class AgentStatusBar(Widget):
 
     def _build_bar(self) -> str:
         """Show active work; idle roles remain available in the agent dashboard."""
-        active = [(name, state) for name, state in self._states.items() if state != "idle"]
+        active = [(name, state) for name, state in self._states.items() if state not in ("idle", "ready")]
         if not active:
-            return f"[{TEXT_DIM}]{len(self._states)} specialists ready · F5 agents[/]"
-        return " · ".join(f"[{AGENT_STATES.get(state, ('', TEXT_BASE))[1]}]{name}: {state}[/]" for name, state in active)
+            return f"[{TEXT_DIM}]{len(self._states)} agent profiles · F5 agents[/]"
+        width = max(1, (self.size.width or 120) - 2)
+        visible: list[str] = []
+        for name, state in active:
+            label = f"[{AGENT_STATES.get(state, ('', TEXT_BASE))[1]}]{escape(name)}: {escape(state)}[/]"
+            remaining = len(active) - len(visible) - 1
+            suffix = f" · +{remaining} more · F5" if remaining else ""
+            candidate = " · ".join([*visible, label]) + suffix
+            if not visible and cell_len(Text.from_markup(candidate).plain) > width:
+                return f"[{SUCCESS}]{len(active)} active · F5 agents[/]"
+            if visible and cell_len(Text.from_markup(candidate).plain) > width:
+                break
+            visible.append(label)
+        hidden = len(active) - len(visible)
+        suffix = f" [{TEXT_DIM}]· +{hidden} more · F5[/]" if hidden else ""
+        return " · ".join(visible) + suffix
+
+    def on_resize(self) -> None:
+        self.query_one("#agent-bar-display", Static).update(self._build_bar())
 
     def set_agent_state(self, agent_name: str, state: str) -> None:
         """Update a single agent's state and refresh display."""
@@ -288,7 +308,7 @@ class AgentStatusBar(Widget):
 
     def get_active_count(self) -> int:
         """Return count of non-idle agents."""
-        return sum(1 for s in self._states.values() if s != "idle")
+        return sum(1 for s in self._states.values() if s not in ("idle", "ready"))
 
 
 # ---------------------------------------------------------------------------
@@ -312,9 +332,9 @@ class HackerHeader(Widget):
     """
 
     model_name: reactive[str] = reactive("unknown")
-    context_pct: reactive[int] = reactive(0)
+    context_pct: reactive[int] = reactive(-1)
     context_used: reactive[str] = reactive("0K")
-    context_max: reactive[str] = reactive("1M")
+    context_max: reactive[str] = reactive("unknown")
     active_agents: reactive[int] = reactive(0)
     total_agents: reactive[int] = reactive(len(AGENT_ROSTER))
     session_cost: reactive[str] = reactive("$0.00")
@@ -338,25 +358,26 @@ class HackerHeader(Widget):
         else:
             ctx_color = ERROR
 
-        ctx_bar = self._mini_bar(self.context_pct)
-
         # Agent count color
         agent_color = SUCCESS if self.active_agents > 0 else TEXT_DIM
 
         width = self.size.width or 120
-        from rich.markup import escape
         model = self.model_name
-        limit = max(12, width - 65)
-        if len(model) > limit:
-            model = model[:limit - 1] + "…"
-        parts = [f"[bold {GOLD}]DJcode[/] [{TEXT_DIM}]v{self.version}[/]", mode_str]
-        parts.append(f"[{TEXT_STRONG}]{escape(model)}[/]")
+        parts = [f"[bold {GOLD}]DJcode[/] [{TEXT_DIM}]v{escape(self.version)}[/]", mode_str]
+        trailing: list[str] = []
         if width >= 70:
-            parts.append(f"[{ctx_color}]Context {self.context_pct}%[/]")
+            context = f"Context {self.context_pct}%" if self.context_pct >= 0 else "Context --"
+            trailing.append(f"[{ctx_color if self.context_pct >= 0 else TEXT_DIM}]{context}[/]")
         if width >= 110:
-            parts.append(f"[{agent_color}]Agents {self.active_agents}/{self.total_agents}[/]")
-
-        return "  ·  ".join(parts)
+            trailing.append(f"[{agent_color}]Active {self.active_agents}/{self.total_agents}[/]")
+        fixed = cell_len(Text.from_markup("  ·  ".join([*parts, *trailing])).plain)
+        limit = max(1, width - fixed - 7)
+        if cell_len(model) > limit:
+            while model and cell_len(model + "…") > limit:
+                model = model[:-1]
+            model += "…"
+        parts.append(f"[{TEXT_STRONG}]{escape(model)}[/]")
+        return "  ·  ".join([*parts, *trailing])
 
     def on_resize(self) -> None:
         self._refresh()
@@ -393,7 +414,9 @@ class HackerHeader(Widget):
     def update_context(self, used_tokens: int, max_tokens: int) -> None:
         """Update context utilization from raw token counts."""
         if max_tokens > 0:
-            self.context_pct = int((used_tokens / max_tokens) * 100)
+            self.context_pct = max(0, int((used_tokens / max_tokens) * 100))
+        else:
+            self.context_pct = -1
         self.context_used = self._fmt_tokens(used_tokens)
         self.context_max = self._fmt_tokens(max_tokens)
         self._refresh()
@@ -610,12 +633,14 @@ class ContextBar(Widget):
     """
 
     used_tokens: reactive[int] = reactive(0)
-    max_tokens: reactive[int] = reactive(1_000_000)
+    max_tokens: reactive[int] = reactive(0)
 
     def compose(self) -> ComposeResult:
         yield Static(self._build_bar(), id="context-bar-display")
 
     def _build_bar(self) -> str:
+        if self.max_tokens <= 0:
+            return f"  [{TEXT_DIM}]Context usage unavailable until a model is connected.[/]"
         pct = int((self.used_tokens / self.max_tokens) * 100) if self.max_tokens > 0 else 0
         pct = min(100, max(0, pct))
 
@@ -761,7 +786,7 @@ class ThreatPanel(Widget):
 
             if not self._alerts:
                 container.mount(
-                    Static(f"  [{TEXT_DIM}]No active threats. All clear.[/]")
+                    Static(f"  [{TEXT_DIM}]No reported alerts. This does not certify project safety.[/]")
                 )
                 return
 
@@ -781,8 +806,8 @@ class ThreatPanel(Widget):
 
                 markup = (
                     f"  [{sev_color}][{sev_icon}][/]"
-                    f" [{agent_color}]{alert.agent}[/]"
-                    f" [{TEXT_BASE}]{alert.message}[/]"
+                    f" [{agent_color}]{escape(alert.agent)}[/]"
+                    f" [{TEXT_BASE}]{escape(alert.message)}[/]"
                 )
                 container.mount(Static(markup))
 

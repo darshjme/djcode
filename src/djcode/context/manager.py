@@ -166,6 +166,13 @@ class ContextWindowManager:
     # Properties
     # ------------------------------------------------------------------
 
+    def reconfigure(self, model: str, provider: Provider, max_context: int | None = None) -> None:
+        """Switch inference settings without dropping pinned or injected context."""
+        self._model = model
+        self._provider = provider
+        self._compressor._provider = provider
+        self.max_context = max_context or get_context_size(model, default=8_192)
+
     @property
     def model(self) -> str:
         return self._model

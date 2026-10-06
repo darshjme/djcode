@@ -127,25 +127,57 @@ def is_uncensored_model(model_name: str) -> bool:
 # ── API key management ─────────────────────────────────────────────────────
 
 
+def get_key_source(provider_id: str, cfg: dict | None = None) -> tuple[str, str, str]:
+    """Internal credential resolver: (key, source, environment variable).
+
+    Saved provider keys precede environment keys. Invalid/empty saved values
+    cannot shadow valid environment credentials. Never print the first value.
+    """
+    if not isinstance(provider_id, str):
+        return "", "none", ""
+    cfg = load_config() if cfg is None else cfg
+    custom_providers = cfg.get("custom_providers", {})
+    custom_entry = custom_providers.get(provider_id) if isinstance(custom_providers, dict) else None
+    has_custom = isinstance(custom_entry, dict)
+    custom = custom_entry if has_custom else {}
+    custom = custom if isinstance(custom, dict) else {}
+    prov = PROVIDERS.get(provider_id, {})
+    generic = (
+        has_custom
+        or provider_id in {"custom", "remote"}
+        or provider_id.startswith(("http://", "https://"))
+    )
+    if not generic and not (prov.get("needs_key") or prov.get("optional_key")):
+        return "", "none", ""
+    env_var = "DJCODE_API_KEY" if generic else prov.get("env", "")
+    stored = [custom.get("api_key"), cfg.get(f"{provider_id}_api_key")]
+    if provider_id == "remote":
+        stored.append(cfg.get("remote_api_key"))
+    for value in stored:
+        if _usable_key(value):
+            return value.strip(), "stored", env_var
+    for variable in ([env_var] if env_var else []) + (["OPENAI_API_KEY"] if generic else []):
+        value = os.environ.get(variable, "").strip()
+        if _usable_key(value):
+            return value, "env", variable
+    if generic and not has_custom:
+        value = cfg.get("remote_api_key")
+        if _usable_key(value):
+            return value.strip(), "stored", env_var
+    return "", "none", env_var
+
+
+def _usable_key(value) -> bool:
+    return (
+        isinstance(value, str)
+        and 0 < len(value.strip()) <= 16384
+        and all(33 <= ord(c) <= 126 for c in value.strip())
+    )
+
+
 def get_api_key(provider_id: str) -> str:
-    """Get API key for a provider from config or environment."""
-    prov = PROVIDERS.get(provider_id)
-    if not prov or not (prov.get("needs_key") or prov.get("optional_key")):
-        return ""
-
-    cfg = load_config()
-    env_var = prov.get("env", "")
-
-    # Check config first
-    config_key = f"{provider_id}_api_key"
-    key = cfg.get(config_key, "")
-    if key:
-        return key
-
-    # Fall back to environment variable
-    if env_var:
-        key = os.environ.get(env_var, "")
-    return key
+    """Get a provider credential using the shared, explicit source precedence."""
+    return get_key_source(provider_id)[0]
 
 
 def set_api_key(provider_id: str, key: str) -> None:
@@ -214,7 +246,9 @@ def interactive_auth() -> str | None:
     if method == "browser" and provider_id == "openrouter":
         import asyncio
         import webbrowser
+
         from djcode.openrouter_auth import begin, exchange
+
         verifier, url = begin()
         console.print(url, markup=False)
         webbrowser.open(url)

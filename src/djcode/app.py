@@ -37,6 +37,7 @@ from textual.widgets import (
     OptionList,
     RichLog,
     Static,
+    Tabs,
 )
 from textual.widgets.option_list import Option
 
@@ -73,20 +74,24 @@ HELP_TEXT = """\
   [cyan]Escape[/]     Return focus to input
   [cyan]Tab[/]        Complete a slash command or cycle focus
   [cyan]Ctrl+O[/]     Toggle thinking display
-  [cyan]Ctrl+P[/]     Toggle Plan / Act mode
+  [cyan]Ctrl+P[/]     Search commands and operations
+  [cyan]Ctrl+G[/]     Toggle Plan / Act mode
   [cyan]Ctrl+L[/]     Clear chat history
   [cyan]Ctrl+T[/]     Toggle auto-accept tools
   [cyan]Ctrl+R[/]     Rerun last message
   [cyan]Ctrl+K[/]     Cancel generation
+  [cyan]Ctrl+B[/]     Show / hide sidebar
+  [cyan]Ctrl+E[/]     Open Project studio
   [cyan]Ctrl+Q[/]     Quit DJcode TUI
   [cyan]F1[/]         This help screen
   [cyan]F2[/]         Model picker
-  [cyan]F3[/]         Provider picker
+  [cyan]F3[/]         Connect a provider
   [cyan]F4[/]         Command palette
   [cyan]F5[/]         Agent roster
+  [cyan]F6[/]         Focus sidebar tabs; Left / Right selects
   [cyan]Up / Down[/]  Prompt history (or command suggestions)
 
-[dim]F4 commands · Ctrl+B sidebar · Ctrl+K cancel · Escape closes[/]
+[dim]Ctrl+P commands · Ctrl+G Plan/Act · Escape closes[/]
 """
 HELP_TEXT += "\n\n" + command_help("tui")
 
@@ -96,10 +101,10 @@ class ToolApprovalScreen(ModalScreen[bool]):
     BINDINGS = [Binding("escape", "deny", "Deny")]
     DEFAULT_CSS = """
     ToolApprovalScreen { align: center middle; background: rgba(0, 0, 0, 0.85); }
-    #approval-box { width: 76; height: auto; max-height: 85%; border: round #7C96FF; background: #111111; padding: 1 2; }
-    #approval-details { height: auto; max-height: 12; overflow-y: auto; }
+    #approval-box { width: 76; height: 90%; max-height: 24; border: round #7C96FF; background: #111111; padding: 0 1; }
+    #approval-details { height: 1fr; min-height: 1; overflow-y: auto; }
     #approval-actions { height: 3; margin-top: 1; }
-    #approval-actions Button { margin-right: 2; }
+    #approval-actions Button { width: 1fr; min-width: 10; margin-right: 1; padding: 0; }
     """
     def __init__(self, name: str, arguments: dict) -> None:
         super().__init__()
@@ -203,207 +208,14 @@ class AgentsScreen(ModalScreen[None]):
     """
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="agents-box"):
+        with ScrollableContainer(id="agents-box"):
             yield Static(AGENTS_TEXT)
 
 
 # ── Interactive Model Picker ────────────────────────────────────────────
 
 
-class ModelPicker(ModalScreen[str | None]):
-    """Interactive model selection with fuzzy search — KiloCode-style."""
-
-    BINDINGS = [Binding("escape", "dismiss", "Close")]
-
-    DEFAULT_CSS = """
-    ModelPicker {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.85);
-    }
-    #model-box {
-        width: 76;
-        height: 36;
-        background: #141414;
-        border: double #7C96FF;
-        padding: 1 2;
-    }
-    #model-title {
-        height: 1;
-        color: #7C96FF;
-        text-style: bold;
-        text-align: center;
-        margin-bottom: 1;
-    }
-    #model-search {
-        height: 3;
-        background: #1a1a1a;
-        color: #7C96FF;
-        border: solid #2a2a2a;
-        margin-bottom: 1;
-    }
-    #model-search:focus {
-        border: solid #7C96FF;
-    }
-    #model-info {
-        height: 1;
-        color: #6f6f6f;
-        padding: 0 1;
-        margin-bottom: 1;
-    }
-    #model-list {
-        height: 1fr;
-        background: #101010;
-        scrollbar-color: #2a2a2a;
-        scrollbar-color-hover: #7C96FF;
-    }
-    #model-list > .option-list--option-highlighted {
-        background: #7C96FF 20%;
-        color: #7C96FF;
-    }
-    #model-list > .option-list--option {
-        padding: 0 1;
-    }
-    """
-
-    def __init__(self, provider_name: str = "ollama", base_url: str = "") -> None:
-        super().__init__()
-        self._provider_name = provider_name
-        self._base_url = base_url
-        self._models: list[dict] = []
-        self._recent: list[str] = []
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="model-box"):
-            yield Static("Select Model", id="model-title")
-            yield Input(
-                id="model-search",
-                placeholder="Search models... (type to filter)",
-            )
-            yield Static(
-                f"  Provider: {self._provider_name}  |  Arrow keys + Enter to select",
-                id="model-info",
-            )
-            yield OptionList(id="model-list")
-
-    def on_mount(self) -> None:
-        self.query_one("#model-search", Input).focus()
-        self.run_worker(self._load_models())
-
-    async def _load_models(self) -> None:
-        """Fetch models from the current provider."""
-        option_list = self.query_one("#model-list", OptionList)
-
-        # Load recent models from config
-        from djcode.config import load_config
-        cfg = load_config()
-        self._recent = cfg.get("recent_models", [])
-
-        from djcode.startup import probe
-        if self._base_url:
-            cfg["base_url"] = self._base_url
-        found = await asyncio.to_thread(probe, cfg, self._provider_name)
-        self._models = [{"name": name} for name in found.get("models", [])]
-        if not self._models:
-            self.query_one("#model-info", Static).update(found["message"] + " Enter an exact model ID.")
-
-        self._render_models("")
-
-    def _render_models(self, query: str) -> None:
-        """Render the model list with optional search filter."""
-        option_list = self.query_one("#model-list", OptionList)
-        option_list.clear_options()
-
-        query_lower = query.lower().strip()
-
-        # Separate into recent and all
-        recent_matches = []
-        all_matches = []
-
-        for m in self._models:
-            name = m.get("name", "")
-            if query_lower and query_lower not in name.lower():
-                continue
-            if name in self._recent:
-                recent_matches.append(name)
-            else:
-                all_matches.append(name)
-
-        # Also allow free-text entry if query doesn't match anything
-        if recent_matches:
-            option_list.add_option(Option("── Recent ──", disabled=True))
-            for name in recent_matches:
-                size = self._get_size(name)
-                label = f"  {name:<40} {size}" if size else f"  {name}"
-                option_list.add_option(Option(label, id=name))
-
-        if all_matches:
-            header = "── All Models ──" if recent_matches else f"── {self._provider_name.capitalize()} Models ──"
-            option_list.add_option(Option(header, disabled=True))
-            for name in all_matches:
-                size = self._get_size(name)
-                label = f"  {name:<40} {size}" if size else f"  {name}"
-                option_list.add_option(Option(label, id=name))
-
-        if not recent_matches and not all_matches and query_lower:
-            # Allow custom model name entry
-            option_list.add_option(
-                Option(f"  Use custom: {query_lower}", id=query_lower)
-            )
-
-    def _get_size(self, model_name: str) -> str:
-        """Get model size if available."""
-        for m in self._models:
-            if m.get("name") == model_name:
-                size = m.get("size", 0)
-                if size:
-                    try:
-                        from djcode.provider import format_model_size
-                        return format_model_size(size)
-                    except Exception:
-                        pass
-        return ""
-
-    @on(Input.Changed, "#model-search")
-    def filter_models(self, event: Input.Changed) -> None:
-        self._render_models(event.value)
-
-    @on(OptionList.OptionSelected, "#model-list")
-    def select_model(self, event: OptionList.OptionSelected) -> None:
-        if event.option.id:
-            model = str(event.option.id)
-            # Save to recent
-            self._save_recent(model)
-            self.dismiss(model)
-
-    @on(Input.Submitted, "#model-search")
-    def submit_search(self, event: Input.Submitted) -> None:
-        """Enter in search: select first match or use as custom model name."""
-        option_list = self.query_one("#model-list", OptionList)
-        if option_list.option_count > 0:
-            for i in range(option_list.option_count):
-                opt = option_list.get_option_at_index(i)
-                if not opt.disabled and opt.id:
-                    self._save_recent(str(opt.id))
-                    self.dismiss(str(opt.id))
-                    return
-        # Use raw input as model name
-        if event.value.strip():
-            self._save_recent(event.value.strip())
-            self.dismiss(event.value.strip())
-
-    def _save_recent(self, model: str) -> None:
-        """Add model to recent list (max 10)."""
-        try:
-            from djcode.config import load_config, save_config
-            cfg = load_config()
-            recent = cfg.get("recent_models", [])
-            if model in recent:
-                recent.remove(model)
-            recent.insert(0, model)
-            cfg["recent_models"] = recent[:10]
-            save_config(cfg)
-        except Exception:
-            pass
+from djcode.model_picker import ModelPicker
 
 
 # ── Interactive Provider Picker ────────────────────────────────────────
@@ -883,13 +695,14 @@ class DJcodeApp(App):
     """
 
     CSS = DJCODE_CSS
-    ENABLE_COMMAND_PALETTE = False  # F4 opens DJcode commands; Ctrl+P toggles plan mode.
+    ENABLE_COMMAND_PALETTE = False  # DJcode supplies its own searchable operation palette.
     TITLE = "DJcode"
     SUB_TITLE = f"v{__version__}"
 
     BINDINGS = [
         Binding("ctrl+o", "toggle_thinking", "Thinking", show=False),
-        Binding("ctrl+p", "toggle_plan", "Plan/Act", show=True, priority=True),
+        Binding("ctrl+p", "show_palette", "Commands", show=True, priority=True),
+        Binding("ctrl+g", "toggle_plan", "Plan/Act", show=False, priority=True),
         Binding("ctrl+l", "clear_chat", "Clear", show=False),
         Binding("ctrl+t", "toggle_auto", "Auto", show=False),
         Binding("ctrl+r", "rerun", "Rerun", show=False),
@@ -900,6 +713,8 @@ class DJcodeApp(App):
         Binding("f3", "show_provider_picker", "Provider", show=False),
         Binding("f4", "show_palette", "Cmds", show=True),
         Binding("f5", "show_agents", "Agents", show=False),
+        Binding("f6", "focus_sidebar", "Panels", show=False),
+        Binding("ctrl+e", "show_studio", "Studio", show=False, priority=True),
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=False),
         Binding("tab", "focus_next", "Focus Next", show=False),
         # Vim keys — only active when chat-log is focused
@@ -944,6 +759,7 @@ class DJcodeApp(App):
         self._cancel_requested = False
         self._generation_task: asyncio.Task | None = None
         self._approval_lock = asyncio.Lock()
+        self._connection_lock = asyncio.Lock()
         self._sidebar_override: bool | None = None
         self._last_input = ""
         self._prompt_history: list[str] = []
@@ -964,7 +780,7 @@ class DJcodeApp(App):
         yield HackerHeader(id="hacker-header")
         with Horizontal(id="main-layout"):
             with VerticalScroll(id="workspace-nav"):
-                yield Static("❯_ [bold]DJcode[/]   F4", classes="nav-brand")
+                yield Static("❯_ [bold]DJcode[/]   Ctrl+P", classes="nav-brand")
                 yield Static("WORKSPACE", classes="nav-heading")
                 for ident, label in (
                     ("build", "Build session"), ("project", "Project context"),
@@ -1018,6 +834,15 @@ class DJcodeApp(App):
     def action_toggle_sidebar(self) -> None:
         self._sidebar_override = not self.query_one("#side-panel").display
         self._update_layout()
+
+    def action_focus_sidebar(self) -> None:
+        self._sidebar_override = True
+        self._update_layout()
+        self.query_one("#side-panel Tabs", Tabs).focus()
+
+    def action_show_studio(self) -> None:
+        from djcode.studio_screen import StudioScreen
+        self.push_screen(StudioScreen(), self._studio_command)
 
     def _studio_command(self, command: str | None) -> None:
         if command:
@@ -1112,6 +937,7 @@ class DJcodeApp(App):
             "[#A2BA9A]04  Verify[/]    /test        [#A0A0A5]Agni[/]\n\n"
             "[#A0A0A5]Choose a command with your task, or describe it below.\n"
             "/features capabilities · /design references · /connect models[/]\n"
+            "[dim]F1 help · Ctrl+E studio · F6 panels[/]\n"
         )
 
         # Focus the input by default
@@ -1202,6 +1028,7 @@ class DJcodeApp(App):
                     provider=self._provider.config.name,
                     cwd=str(Path.cwd()),
                 )
+                self._attach_session_checkpoint()
             except Exception as error:
                 self._session_db = None
                 self.notify(f"Session history unavailable: {type(error).__name__}", severity="warning")
@@ -1217,7 +1044,8 @@ class DJcodeApp(App):
                 self._ext_manager = None
 
             model = self._provider.config.model
-            prov = self._provider.config.name
+            prov = getattr(self._provider.config, "provider_id", "") or self._provider.config.name
+            self._provider_name, self._model_name = prov, model
             self.sub_title = f"v{__version__} | {model} | {prov}"
 
             # Update HackerHeader with model info
@@ -1233,7 +1061,7 @@ class DJcodeApp(App):
 
             from rich.text import Text
             chat.write(Text(f"{prov} · {model} · approvals {'automatic' if self._auto_accept else 'ask first'}"))
-            chat.write("[dim]Ready · F4 commands · F2 model · Ctrl+B sidebar[/]\n")
+            chat.write("[dim]Ready · Ctrl+P commands · F2 model · Ctrl+E studio · Ctrl+B sidebar[/]\n")
 
             # Update sidebar panels
             side.agent_panel.set_agent("Operator", "General")
@@ -1436,7 +1264,7 @@ class DJcodeApp(App):
             return
 
         if self._is_generating and text.split()[0].lower() not in {
-            "/cancel", "/help", "/shortcuts", "/exit", "/quit", "/q", "/queue", "/jobs",
+            "/cancel", "/help", "/shortcuts", "/hotkeys", "/exit", "/quit", "/q", "/queue", "/jobs",
         }:
             self.notify("Response running. Draft kept; Ctrl+K cancels.", severity="warning")
             return
@@ -1505,13 +1333,19 @@ class DJcodeApp(App):
             if self._operator:
                 self._operator.session_db = self._session_db
                 self._operator.session_id = self._sqlite_session_id
-            chat.write(Text(await handle(self._operator, cmd, arg)))
+            result = await handle(self._operator, cmd, arg)
+            if cmd == "/new" and self._operator:
+                chat.clear()
+                if self._memory:
+                    self._memory.clear_session()
+            chat.write(Text(result))
             if cmd == "/workflow" and self._operator:
                 self.query_one("#workflow-state", Static).update(
                     "DAF + DDAL · default engine" if self._operator.workflow.mode == "daf" else "Native engine · explicitly selected"
                 )
             if self._operator:
                 self._sqlite_session_id = self._operator.session_id
+                self._attach_session_checkpoint()
             return
         if cmd == "/queue":
             from rich.text import Text
@@ -1543,29 +1377,19 @@ class DJcodeApp(App):
                 except ValueError as error:
                     chat.write(Text(str(error), style="yellow"))
 
-        elif cmd in ("/check", "/lint"):
-            from djcode.maintenance import run_checks
-            chat.write("[dim]Running checks…[/]")
+        elif cmd in {"/check", "/lint", "/update"}:
+            from djcode.terminal_operations import run_operation
+            from rich.text import Text
+            chat.write(Text("Running operation…", style="dim"))
             try:
-                result = await asyncio.to_thread(run_checks)
-                from rich.text import Text
-                chat.write(Text(result["summary"], style="green" if result["ok"] else "yellow"))
-                for check in result.get("checks", []):
-                    chat.write(Text(f"{check['name']}: {check['status']} · {check['detail']}"))
-            except Exception as exc:
-                chat.write(f"[red]Check failed: {type(exc).__name__}[/]")
+                lines = await asyncio.to_thread(run_operation, cmd, arg)
+                for line in lines:
+                    chat.write(Text(line))
+            except Exception as error:
+                chat.write(Text(f"Operation failed: {type(error).__name__}", style=ERROR))
 
-        elif cmd == "/update":
-            from djcode.updater import perform_update
-            chat.write("[dim]Checking for updates…[/]")
-            try:
-                result = await asyncio.to_thread(perform_update, force=True)
-                from rich.text import Text
-                chat.write(Text(result["message"], style="green" if result["ok"] else "yellow"))
-                if result.get("updated"):
-                    chat.write("Restart DJcode after your current work to use the update.")
-            except Exception as exc:
-                chat.write(f"[red]Update failed: {type(exc).__name__}[/]")
+        elif cmd == "/studio":
+            self.action_show_studio()
 
         elif cmd == "/clear":
             self.action_clear_chat()
@@ -1584,8 +1408,7 @@ class DJcodeApp(App):
                 self._show_model_picker()
 
         elif cmd == "/models":
-            # Also opens interactive picker (no arg = picker, with arg = direct switch)
-            self._show_model_picker()
+            self._show_model_picker(arg.strip() or None)
 
         elif cmd == "/provider":
             if arg:
@@ -1612,7 +1435,7 @@ class DJcodeApp(App):
         elif cmd == "/auto":
             self.action_toggle_auto()
 
-        elif cmd == "/shortcuts":
+        elif cmd in {"/shortcuts", "/hotkeys"}:
             self.push_screen(HelpScreen())
 
         elif cmd == "/save":
@@ -1691,7 +1514,10 @@ class DJcodeApp(App):
             await self._handle_agent_command(cmd, arg)
 
         elif cmd == "/auth":
-            self._show_provider_picker()
+            from djcode.terminal_operations import run_operation
+            from rich.text import Text
+            for line in await asyncio.to_thread(run_operation, cmd, arg):
+                chat.write(Text(line))
 
         else:
             chat.write(f"[{WARNING}]Unknown command: {cmd}. Use /help or the command palette.[/]")
@@ -2010,148 +1836,138 @@ class DJcodeApp(App):
 
         chat.write(f"[{ERROR}]Specialist execution unavailable. Check provider initialization.[/]")
 
-    def _show_model_picker(self) -> None:
-        """Open interactive model picker overlay."""
+    def _runtime_config(self) -> dict:
+        """Use the running provider as the current selection, including CLI overrides."""
+        from djcode.config import load_config
+        from djcode.model_selection import candidate_config
+        cfg = load_config()
+        if self._provider:
+            current = self._provider.config
+            provider = getattr(current, "provider_id", "") or self._provider_name or current.name
+            cfg = candidate_config(cfg, provider, current.model)
+            cfg["base_url"] = current.base_url
+            cfg[f"{provider}_auth_method"] = current.auth_method
+        return cfg
+
+    def _show_model_picker(self, provider: str | None = None) -> None:
+        """Browse live models; only successful runtime selection is saved."""
         if self._is_generating:
             self.notify("Cancel the response before switching models.", severity="warning")
             return
-        provider_name = self._provider.config.name if self._provider else "ollama"
-        base_url = self._provider.config.base_url if self._provider else ""
+        cfg = self._runtime_config()
+        provider_name = provider or cfg.get("provider", "ollama")
 
-        def on_model_selected(model: str | None) -> None:
-            if model:
-                self.run_worker(self._handle_model_switch(model), exclusive=True)
+        def on_model_selected(choice: dict | None) -> None:
+            if choice:
+                self.run_worker(self._handle_model_switch(choice["model"], choice["provider"]), group="connection")
 
-        self.push_screen(
-            ModelPicker(provider_name=provider_name, base_url=base_url),
-            callback=on_model_selected,
-        )
+        self.push_screen(ModelPicker(provider_name=provider_name, config=cfg), callback=on_model_selected)
 
-    def _show_provider_picker(self) -> None:
-        """Open interactive provider picker overlay."""
+    def _show_provider_picker(self, provider: str | None = None) -> None:
         if self._is_generating:
             self.notify("Cancel the response before switching providers.", severity="warning")
             return
-
         from djcode.connect import ConnectScreen
         def connected(result):
             if result:
                 self.run_worker(self._apply_connection(result), group="connection")
-        self.push_screen(ConnectScreen(), callback=connected)
+        self.push_screen(ConnectScreen(provider=provider), callback=connected)
 
-    async def _apply_connection(self, config):
+    async def _apply_connection(self, config, *, persist=False) -> bool:
+        """Install a validated candidate while retaining conversation and tools."""
         from djcode.provider import Provider, ProviderConfig
-        self._provider_name = config["provider"]
-        self._model_name = config["model"]
+        from djcode.config import save_config
+        from rich.text import Text
+        chat = self.query_one("#chat-log", RichLog)
+        candidate = None
+        if self._is_generating:
+            self.notify("Cancel the response before switching providers or models.", severity="warning")
+            return False
+        try:
+            candidate = Provider(ProviderConfig.from_mapping(config))
+            if persist:
+                from djcode.config import load_config_for_write
+                load_config_for_write()
+                save_config(config)
+        except Exception as error:
+            if candidate:
+                await candidate.close()
+            chat.write(Text(f"Selection could not be applied: {type(error).__name__}. Current provider retained.", style=ERROR))
+            return False
         previous = self._provider
-        if not self._operator:
-            if previous:
-                await previous.close()
-            self._provider = None
-            await self._initialize()
-            return
-        self._provider = Provider(ProviderConfig.from_config(self._provider_name, self._model_name))
+        self._provider_name, self._model_name = config["provider"], config["model"]
+        self._provider = candidate
         if self._operator:
-            self._operator.provider = self._provider
-            self._operator.context_manager.provider = self._provider
-            # Keep the conversation and its session-owned tools when switching models.
-            self._provider._session_runtimes = [self._operator.capabilities]
+            self._operator.provider = candidate
+            manager = self._operator.context_manager
+            manager.reconfigure(candidate.config.model, candidate, candidate.config.context_window)
+            self._context_mgr = manager
+            candidate._session_runtimes = list(getattr(previous, "_session_runtimes", [])) if previous else [self._operator.capabilities]
             if previous:
                 previous._session_runtimes = []
             if self._orchestrator:
-                self._orchestrator.provider = self._provider
-                self._orchestrator._shadow.provider = self._provider
+                self._orchestrator.provider = candidate
+                shadow = getattr(self._orchestrator, "_shadow", None)
+                if shadow:
+                    shadow.provider = candidate
         else:
+            # First connection initializes the normal operator/session lifecycle.
+            await candidate.close()
+            self._provider = None
             await self._initialize()
+            if not self._operator:
+                return False
         if previous:
-            await previous.close()
+            try:
+                await previous.close()
+            except Exception:
+                self.notify("Previous provider cleanup failed; new selection is active.", severity="warning")
+        if self._session_db and self._sqlite_session_id:
+            try:
+                self._session_db.set_session_model(self._sqlite_session_id, self._provider_name, self._model_name)
+            except Exception:
+                self.notify("Model changed; session metadata could not be saved.", severity="warning")
+        self.sub_title = f"v{__version__} | {self._model_name} | {self._provider_name}"
+        self.query_one(HackerHeader).model_name = self._model_name
+        if self._context_mgr:
+            stats = self._context_mgr.stats
+            self.query_one(HackerHeader).update_context(stats.current_tokens, stats.max_context_tokens)
+        side = self.query_one(SidePanel)
+        side.stats_panel.update_stats(model=self._model_name, provider=self._provider_name)
+        side.agent_panel.add_tool_call("model_switch", "ok")
         self._refresh_status_bar()
         self.notify(f"Connected to {self._provider_name} / {self._model_name}")
+        return True
 
-    # ── Model / Provider switching ───────────────────────────────────────
-
-    async def _handle_model_switch(self, model_name: str) -> None:
-        """Switch model."""
-        chat = self.query_one("#chat-log", RichLog)
-        side = self.query_one(SidePanel)
-
-        if not self._provider:
-            chat.write(f"[{ERROR}]Provider not initialized yet.[/]")
+    async def _handle_model_switch(self, model_name: str, provider: str | None = None) -> None:
+        """Validate without mutating the running provider, then apply atomically."""
+        if self._is_generating:
+            self.notify("Cancel the response before switching models.", severity="warning")
             return
-
-        old_model = self._provider.config.model
-        self._provider.config.model = model_name
-        ok, msg = await asyncio.to_thread(self._provider.validate_model)
-
-        if ok:
-            new_model = self._provider.config.model
-            chat.write(f"[{SUCCESS}]Model: {old_model} -> {new_model}[/]")
-            self.sub_title = (
-                f"v{__version__} | {new_model} | {self._provider.config.name}"
-            )
-
-            if self._provider._new_provider is not None:
-                await self._provider._new_provider.close()
-                self._provider._new_provider = None
-            from djcode.context.manager import ContextWindowManager
-            self._operator.context_manager = ContextWindowManager(model=new_model, provider=self._provider)
-            self._operator.context_manager.replace_messages(self._operator.messages)
-            self._context_mgr = self._operator.context_manager
-            side.stats_panel.update_stats(model=new_model)
-            side.agent_panel.add_tool_call("model_switch", "ok")
-        else:
-            self._provider.config.model = old_model
-            chat.write(f"[{ERROR}]{msg}[/]")
+        from djcode.model_selection import select_model, ModelSelectionError
+        from rich.text import Text
+        async with self._connection_lock:
+            try:
+                from djcode.config import load_config_for_write
+                load_config_for_write()
+                cfg = self._runtime_config()
+                choice = await asyncio.to_thread(select_model, cfg, model_name, provider)
+            except (ModelSelectionError, ValueError) as error:
+                self.query_one("#chat-log", RichLog).write(Text(str(error), style=ERROR))
+                return
+            # A response can start while bounded discovery is in progress.
+            if self._is_generating:
+                self.notify("Response started; selection was not applied. Retry after the response.", severity="warning")
+                return
+            await self._apply_connection(choice, persist=True)
 
     async def _handle_provider_switch(self, provider_name: str) -> None:
-        """Switch provider."""
-        chat = self.query_one("#chat-log", RichLog)
-        side = self.query_one(SidePanel)
-
-        try:
-            from djcode.provider import Provider, ProviderConfig
-
-            config = ProviderConfig.from_config(
-                provider_override=provider_name,
-                model_override=self._model_name,
-            )
-            self._provider = Provider(config)
-
-            from djcode.agents.operator import Operator
-
-            self._operator = Operator(
-                self._provider,
-                bypass_rlhf=self._bypass_rlhf,
-                raw=True,
-                model=self._provider.config.model,
-                auto_accept=self._auto_accept,
-                show_thinking=False,
-                approval_callback=self._approve_tool,
-            )
-            self._operator.auto_accept = self._auto_accept
-
-            # Re-initialize orchestrator with new provider
-            try:
-                from djcode.orchestrator import Orchestrator
-                self._orchestrator = Orchestrator(self._provider, auto_accept=self._auto_accept, approval_callback=self._approve_tool)
-            except Exception:
-                pass
-
-            # Re-initialize context manager with new model
-            try:
-                from djcode.context import ContextWindowManager
-                self._context_mgr = self._operator.context_manager
-            except Exception:
-                pass
-
-            model = self._provider.config.model
-            prov = self._provider.config.name
-            self.sub_title = f"v{__version__} | {model} | {prov}"
-            chat.write(f"[{SUCCESS}]Provider: {prov} ({model})[/]")
-            side.stats_panel.update_stats(model=model, provider=prov)
-            side.agent_panel.add_tool_call("provider_switch", "ok")
-        except Exception as e:
-            chat.write(f"[{ERROR}]Provider error: {e}[/]")
+        """Reconnect explicitly; never reuse another provider's model ID."""
+        from djcode.model_selection import provider_choices
+        if provider_name not in {item["id"] for item in provider_choices()}:
+            self.notify("Unknown provider. Use F3 to connect a provider.", severity="warning")
+            return
+        self._show_provider_picker(provider_name)
 
     def _show_models_list(self) -> None:
         """List available models."""
@@ -2571,8 +2387,16 @@ class DJcodeApp(App):
 
     def _handle_resume(self, arg: str) -> None:
         chat = self.query_one("#chat-log", RichLog)
+        from rich.text import Text
         if not arg.strip():
             chat.write(f"[dim]Usage: /resume <session_id>[/]")
+            return
+
+        if self._is_generating:
+            chat.write(Text("Cancel or finish the current task before resuming a session.", style=WARNING))
+            return
+        if not self._operator:
+            chat.write(Text("Connect a provider with /connect before resuming a session.", style=WARNING))
             return
 
         if not self._session_db:
@@ -2583,7 +2407,14 @@ class DJcodeApp(App):
                 chat.write(f"[{ERROR}]Session DB unavailable.[/]")
                 return
 
-        target_id = arg.strip()
+        try:
+            target_id = self._session_db.resolve_session_id(arg.strip())
+        except ValueError as error:
+            chat.write(Text(str(error), style=WARNING))
+            return
+        if target_id is None:
+            chat.write(Text(f"Session not found: {arg.strip()}", style=WARNING))
+            return
         session = self._session_db.get_session(target_id)
         if not session:
             chat.write(f"[{WARNING}]Session not found: {target_id}[/]")
@@ -2594,28 +2425,44 @@ class DJcodeApp(App):
             chat.write(f"[{WARNING}]No conversation data for {target_id}[/]")
             return
 
-        if self._operator:
-            from djcode.provider import Message as _Msg
-            system_msg = self._operator.messages[0] if self._operator.messages else None
-            self._operator.messages.clear()
-            if system_msg:
-                self._operator.messages.append(system_msg)
+        from djcode.provider import Message as _Msg
+        system_msg = next((m for m in self._operator.messages if m.role == "system"), None)
+        restored = [
+            _Msg(role=m["role"], content=m.get("content", ""),
+                 tool_calls=m.get("tool_calls") or [], tool_call_id=m.get("tool_call_id"),
+                 name=m.get("name"), images=m.get("images", []))
+            for m in messages if m.get("role") != "system"
+        ]
+        if self._sqlite_session_id and self._sqlite_session_id != target_id:
+            self._session_db.save_conversation(self._sqlite_session_id, self._operator.messages)
+            self._session_db.end_session(self._sqlite_session_id)
+        self._session_db.reopen_session(target_id)
+        self._operator.messages = ([system_msg] if system_msg else []) + restored
+        self._sqlite_session_id = target_id
+        self._attach_session_checkpoint()
+        self._operator.context_manager.clear_messages()
+        self._operator.context_manager.replace_messages(self._operator.messages)
+        if self._memory:
+            self._memory.clear_session()
+        chat.clear()
+        for message in restored:
+            if message.role in {"user", "assistant"} and message.content:
+                marker = "❯" if message.role == "user" else "Assistant:"
+                chat.write(Text(f"{marker} {message.content}"))
+                if self._memory:
+                    self._memory.add_session_message(message.role, message.content)
+        model = self._provider.config.model if self._provider else session.model
+        chat.write(Text(
+            f"Resumed session {target_id} ({len(restored)} messages). "
+            f"History model: {session.model}. Current model: {model}.", style=SUCCESS,
+        ))
 
-            restored = 0
-            for m in messages:
-                role = m.get("role", "")
-                if role == "system":
-                    continue
-                content = m.get("content", "")
-                tc = m.get("tool_calls")
-                self._operator.messages.append(
-                    _Msg(role=role, content=content, tool_calls=tc or [], tool_call_id=m.get("tool_call_id"), name=m.get("name"), images=m.get("images", []))
-                )
-                restored += 1
-
-            chat.write(
-                f"[{SUCCESS}]Resumed session {target_id} "
-                f"({session.model}, {restored} messages)[/]"
+    def _attach_session_checkpoint(self) -> None:
+        if self._operator and self._session_db and self._sqlite_session_id:
+            self._operator.session_db = self._session_db
+            self._operator.session_id = self._sqlite_session_id
+            self._operator.on_checkpoint = lambda messages: self._session_db.save_conversation(
+                self._operator.session_id, messages,
             )
 
     # ── Message sending and streaming ────────────────────────────────────
@@ -2711,7 +2558,7 @@ class DJcodeApp(App):
 
             self._operator.plan_mode = self._plan_mode
             if self._session_db and self._sqlite_session_id:
-                self._operator.on_checkpoint = lambda messages: self._session_db.save_conversation(self._sqlite_session_id, messages)
+                self._attach_session_checkpoint()
             async for token in self._operator.send(actual_input):
                 # Check for cancel
                 if self._cancel_requested:
@@ -2876,6 +2723,7 @@ class DJcodeApp(App):
         if self._operator:
             self._operator.plan_mode = self._plan_mode
         mode = "PLAN" if self._plan_mode else "ACT"
+        self.query_one(HackerHeader).mode = mode
         chat = self.query_one("#chat-log", RichLog)
         chat.write(f"[dim]Mode: {mode}[/]")
         try:

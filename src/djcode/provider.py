@@ -52,6 +52,7 @@ class ProviderConfig:
     max_tokens: int = 8192
     context_window: int | None = None
     auth_method: str = "api_key"
+    provider_id: str = ""
 
     @classmethod
     def from_config(
@@ -67,15 +68,21 @@ class ProviderConfig:
         - URL-as-provider: passing a URL (http/https) as the provider name
         - base_url override via config or DJCODE_BASE_URL env var
         """
-        from djcode.auth import PROVIDERS, get_api_key, get_base_url
+        return cls.from_mapping(load_config(), provider_override, model_override)
 
-        cfg = load_config()
-        provider = provider_override or cfg["provider"]
-        model = model_override or cfg["model"]
+    @classmethod
+    def from_mapping(
+        cls, cfg: dict, provider_override: str | None = None,
+        model_override: str | None = None,
+    ) -> ProviderConfig:
+        """Build from an explicit candidate without rereading saved credentials."""
+        from djcode.startup import connection
+        from djcode.auth import PROVIDERS
+        details = connection(cfg, provider_override, model_override)
+        provider = details["provider"]
         context_window = None
         max_tokens = cfg.get("max_tokens", 8192)
         if provider == "colibri":
-            model = model_override or (cfg.get("model") if cfg.get("provider") == "colibri" else None) or "djcode-colibri"
             try:
                 context_window = int(os.environ.get("DJCODE_COLIBRI_CONTEXT", "8192"))
                 max_tokens = int(os.environ.get("DJCODE_COLIBRI_MAX_TOKENS", "256"))
@@ -85,61 +92,12 @@ class ProviderConfig:
                 raise ValueError("DJCODE_COLIBRI_CONTEXT must be between 1 and 1048576 and match the served --ctx")
             if not 1 <= max_tokens < context_window:
                 raise ValueError("DJCODE_COLIBRI_MAX_TOKENS must be positive and smaller than DJCODE_COLIBRI_CONTEXT")
-
-        # 1. URL-as-provider: treat http(s) URLs as custom OpenAI-compatible endpoints
-        if provider.startswith("http://") or provider.startswith("https://"):
-            base_url = provider.rstrip("/")
-            api_key = (
-                os.environ.get("DJCODE_API_KEY", "")
-                or os.environ.get("OPENAI_API_KEY", "")
-                or cfg.get("remote_api_key", "")
-            )
-            provider = "custom"
-
-        # 2. Check custom_providers from config
-        elif provider in cfg.get("custom_providers", {}):
-            custom = cfg["custom_providers"][provider]
-            base_url = custom.get("base_url", "")
-            api_key = custom.get("api_key", "") or os.environ.get("DJCODE_API_KEY", "")
-            model = model_override or custom.get("model", model)
-            provider = "custom"
-
-        # 3. Known provider from auth registry
-        elif provider in PROVIDERS:
-            base_url = get_base_url(provider)
-            api_key = get_api_key(provider)
-
-        # 4. Legacy fallback for "remote" or unknown providers
-        else:
-            url_map = {
-                "ollama": cfg.get("ollama_url", "http://localhost:11434"),
-                "mlx": cfg.get("mlx_url", "http://localhost:8080"),
-                "remote": cfg.get("remote_url", ""),
-            }
-            base_url = url_map.get(provider, cfg.get("ollama_url", "http://localhost:11434"))
-            api_key = cfg.get("remote_api_key", "")
-            if provider == "remote" and not api_key:
-                api_key = os.environ.get("OPENAI_API_KEY", "")
-                if not api_key:
-                    api_key = os.environ.get("DJCODE_API_KEY", "")
-
-        # Apply base_url override from config or env (takes precedence over everything)
-        env_base_url = os.environ.get("DJCODE_BASE_URL", "")
-        config_base_url = cfg.get("base_url", "")
-        if env_base_url:
-            base_url = env_base_url.rstrip("/")
-        elif config_base_url:
-            base_url = config_base_url.rstrip("/")
-
+        protocol = provider if provider in PROVIDERS or provider == "remote" else "custom"
         return cls(
-            name=provider,
-            base_url=base_url,
-            model=model,
-            api_key=api_key,
-            temperature=cfg.get("temperature", 0.7),
-            max_tokens=max_tokens,
-            context_window=context_window,
-            auth_method=cfg.get(f"{provider}_auth_method", "api_key"),
+            name=protocol, base_url=details["base"], model=details["model"],
+            api_key=details["key"], temperature=cfg.get("temperature", 0.7),
+            max_tokens=max_tokens, context_window=context_window,
+            auth_method=details["method"], provider_id=provider,
         )
 
 
