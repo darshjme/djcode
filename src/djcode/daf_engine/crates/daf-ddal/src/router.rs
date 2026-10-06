@@ -102,11 +102,12 @@ impl fmt::Display for RouteEntry {
 // ---------------------------------------------------------------------------
 
 /// Load-balancing strategy for distributing messages across a group of agents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BalancingStrategy {
     /// Cycle through agents in order. Simple, predictable, no hot-spots on
     /// uniform workloads.
+    #[default]
     RoundRobin,
     /// Pick the agent with the fewest pending messages. Adapts to heterogeneous
     /// processing speeds at the cost of tracking in-flight counts.
@@ -117,12 +118,6 @@ pub enum BalancingStrategy {
     /// Pick a random agent. Statistically uniform but can produce short-term
     /// imbalance.
     Random,
-}
-
-impl Default for BalancingStrategy {
-    fn default() -> Self {
-        Self::RoundRobin
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -198,9 +193,9 @@ impl RoutingTable {
 
     /// Look up the best (lowest-priority) route to an agent.
     pub fn best_route(&self, agent: &AgentId) -> Option<RouteEntry> {
-        self.routes.get(agent).and_then(|entries| {
-            entries.iter().min_by_key(|e| e.priority).cloned()
-        })
+        self.routes
+            .get(agent)
+            .and_then(|entries| entries.iter().min_by_key(|e| e.priority).cloned())
     }
 
     /// Number of distinct agents in the table.
@@ -210,10 +205,7 @@ impl RoutingTable {
 
     /// Total number of route entries across all agents.
     pub fn route_count(&self) -> usize {
-        self.routes
-            .iter()
-            .map(|entry| entry.value().len())
-            .sum()
+        self.routes.iter().map(|entry| entry.value().len()).sum()
     }
 
     /// Remove all stale routes older than `timeout`.

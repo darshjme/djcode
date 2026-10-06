@@ -22,9 +22,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from rich.markup import escape
 from textual import on, work
 from textual.app import ComposeResult
-from textual.containers import Vertical, Horizontal, ScrollableContainer
+from textual.containers import Vertical, VerticalScroll, Horizontal, ScrollableContainer
 from textual.message import Message
 from textual.reactive import reactive
 from textual.timer import Timer
@@ -37,7 +38,6 @@ from textual.widgets import (
     TabPane,
     ProgressBar,
     Rule,
-    Switch,
     Tree,
 )
 
@@ -257,8 +257,8 @@ class ProjectPanel(Vertical):
         self.project_name = self._root_path.name or "Project"
 
     def compose(self) -> ComposeResult:
-        yield Label(f"  [{GOLD}]FILES[/] // {self.project_name}", classes="project-header")
-        yield Label(self._truncate_path(str(self._root_path)), classes="project-path")
+        yield Label(f"  [{GOLD}]FILES[/] // {escape(self.project_name)}", classes="project-header")
+        yield Label(self._truncate_path(str(self._root_path)), classes="project-path", markup=False)
         yield FilteredDirectoryTree(str(self._root_path))
         yield Label("", classes="file-info", id="file-info-label")
 
@@ -271,9 +271,9 @@ class ProjectPanel(Vertical):
             size = path.stat().st_size
             ext = path.suffix.lower()
             icon = FILE_ICONS.get(ext, ">>")
-            info_label.update(f" [{SUCCESS}]{icon}[/] [{TEXT}]{path.name}[/]  [{DIM}]|[/]  [{TEXT}]{self._format_size(size)}[/]")
+            info_label.update(f" [{SUCCESS}]{icon}[/] [{TEXT}]{escape(path.name)}[/]  [{DIM}]|[/]  [{TEXT}]{self._format_size(size)}[/]")
         except OSError:
-            info_label.update(f" [{TEXT}]{path.name}[/]")
+            info_label.update(f" [{TEXT}]{escape(path.name)}[/]")
 
     def set_path(self, new_path: str | Path) -> None:
         new_path = Path(new_path)
@@ -286,7 +286,7 @@ class ProjectPanel(Vertical):
             tree.reload()
             header = self.query("Label.project-header")
             if header:
-                header.first().update(f"  [{GOLD}]FILES[/] // {self.project_name}")
+                header.first().update(f"  [{GOLD}]FILES[/] // {escape(self.project_name)}")
             path_label = self.query("Label.project-path")
             if path_label:
                 path_label.first().update(self._truncate_path(str(new_path)))
@@ -326,11 +326,11 @@ class ToolHistoryItem(Static):
     def __init__(self, tool_name: str, status: str = "ok", **kwargs: Any) -> None:
         icon = ">>" if status == "ok" else "XX" if status == "error" else ".."
         color = SUCCESS if status == "ok" else ERROR if status == "error" else GOLD
-        markup = f"[{color}]{icon}[/] [{TEXT}]{tool_name}[/]"
+        markup = f"[{color}]{icon}[/] [{TEXT}]{escape(tool_name)}[/]"
         super().__init__(markup, **kwargs)
 
 
-class AgentPanel(Vertical):
+class AgentPanel(VerticalScroll):
     """Live agent dashboard with RA status integration.
 
     Shows: active agent, tier, RA status, tools, tokens, memory.
@@ -434,7 +434,10 @@ class AgentPanel(Vertical):
 
         # Tool history
         yield Label("TOOL HISTORY", classes="agent-section-title")
-        yield ScrollableContainer(id="tool-history-scroll", classes="tool-history-container")
+        yield ScrollableContainer(
+            Static("No tools called in this session.", classes="panel-empty", markup=False),
+            id="tool-history-scroll", classes="tool-history-container",
+        )
         yield Rule()
 
         # Memory stats
@@ -461,8 +464,8 @@ class AgentPanel(Vertical):
 
         return (
             f"  [{tier_color}][{tier_label}][/]"
-            f" [bold {GOLD}]{self.active_agent}[/]"
-            f" [{TEXT}]({self.active_role})[/]"
+            f" [bold {GOLD}]{escape(self.active_agent)}[/]"
+            f" [{TEXT}]({escape(self.active_role)})[/]"
         )
 
     def on_mount(self) -> None:
@@ -503,6 +506,9 @@ class AgentPanel(Vertical):
         except Exception:
             pass
 
+    def watch_active_role(self, value: str) -> None:
+        self.watch_active_agent(self.active_agent)
+
     def watch_ra_status(self, value: str) -> None:
         self._refresh_ra_display()
 
@@ -519,7 +525,7 @@ class AgentPanel(Vertical):
                 WARNING if self.confidence > 0.5 else ERROR if self.confidence > 0 else TEXT_DIM
             )
             self.query_one("#agent-ra-display", Static).update(
-                f"  [{DIM}]Mode:[/] [{ra_color}]{self.ra_status}[/]"
+                f"  [{DIM}]Mode:[/] [{ra_color}]{escape(self.ra_status)}[/]"
                 f"  [{DIM}]Confidence:[/] [{conf_color}]{conf_str}[/]"
             )
         except Exception:
@@ -610,7 +616,7 @@ class AgentPanel(Vertical):
 # 3. StatsPanel -- Session statistics with live updates (hacker themed)
 # ---------------------------------------------------------------------------
 
-class StatsPanel(Vertical):
+class StatsPanel(VerticalScroll):
     """Session stats with live updates -- cyberpunk HUD style."""
 
     DEFAULT_CSS = """
@@ -762,7 +768,7 @@ class StatsPanel(Vertical):
     def _refresh_model_display(self) -> None:
         try:
             self.query_one("#stats-model-display", Static).update(
-                f"  [{TEXT_BRIGHT}]{self.current_model}[/] via [{GOLD}]{self.current_provider}[/]"
+                f"  [{TEXT_BRIGHT}]{escape(self.current_model)}[/] via [{GOLD}]{escape(self.current_provider)}[/]"
             )
         except Exception:
             pass
@@ -816,7 +822,7 @@ class StatsPanel(Vertical):
 # ---------------------------------------------------------------------------
 
 class ExtensionRow(Horizontal):
-    """A single extension entry with status dot and toggle."""
+    """A single extension entry with read-only connection/configuration state."""
 
     DEFAULT_CSS = """
     ExtensionRow {
@@ -847,8 +853,9 @@ class ExtensionRow(Horizontal):
         text-align: right;
     }
 
-    ExtensionRow Switch {
-        width: 8;
+    ExtensionRow .ext-enabled {
+        width: 4;
+        color: #A0A0A5;
         background: #0A0A0A;
     }
     """
@@ -876,9 +883,11 @@ class ExtensionRow(Horizontal):
         label = self._ext_name
         if self._description:
             label += f" -- {self._description}"
-        yield Label(label, classes="ext-name")
+        yield Label(label, classes="ext-name", markup=False)
         yield Static(f"{self._tools_count}t", classes="ext-tools-count")
-        yield Switch(value=self._enabled, id=f"ext-toggle-{self._ext_name}")
+        enabled = Static("on" if self._enabled else "off", classes="ext-enabled")
+        enabled.tooltip = "Configured status. Manage extensions with /extension."
+        yield enabled
 
 
 class MCPPanel(Vertical):
@@ -956,7 +965,7 @@ class MCPPanel(Vertical):
             container.mount(
                 Static(
                     f"[{DIM}]No extensions registered.\n"
-                    f"Use /ext add <name> <cmd> to add one.[/]",
+                    f"Use /extension add <name> <command> to add one.[/]",
                     classes="mcp-empty",
                 )
             )
@@ -974,6 +983,7 @@ class MCPPanel(Vertical):
 
             if not statuses:
                 self._show_empty()
+                self._refresh_summary()
                 return
 
             for status in statuses:
@@ -994,23 +1004,13 @@ class MCPPanel(Vertical):
     def _refresh_summary(self) -> None:
         try:
             display = self.query_one("#mcp-summary-display", Static)
-            conn_color = SUCCESS if self.connected_count > 0 else ERROR
+            conn_color = SUCCESS if self.connected_count > 0 else DIM
             display.update(
                 f"  [{conn_color}]{self.connected_count} connected[/] / "
                 f"[{TEXT}]{self.total_extensions} registered[/]"
             )
         except Exception:
             pass
-
-    @on(Switch.Changed)
-    def handle_toggle(self, event: Switch.Changed) -> None:
-        switch_id = event.switch.id or ""
-        if switch_id.startswith("ext-toggle-"):
-            ext_name = switch_id.replace("ext-toggle-", "")
-            self.log.info(
-                "Extension toggle: %s -> %s", ext_name, "enabled" if event.value else "disabled"
-            )
-
 
 # ---------------------------------------------------------------------------
 # 5. TodoPanel -- Per-session todo list (hacker themed)
@@ -1021,7 +1021,8 @@ class TodoItem(Horizontal):
 
     DEFAULT_CSS = """
     TodoItem {
-        height: 1;
+        height: auto;
+        min-height: 1;
         padding: 0 1;
         color: #8A8A8A;
     }
@@ -1052,8 +1053,8 @@ class TodoItem(Horizontal):
         check_cls = "todo-check done" if self._done else "todo-check"
         label_cls = "todo-label done" if self._done else "todo-label"
         check_char = "[x]" if self._done else "[ ]"
-        yield Static(check_char, classes=check_cls)
-        yield Label(self._text, classes=label_cls)
+        yield Static(check_char, classes=check_cls, markup=False)
+        yield Label(f"{self._todo_id}. {self._text}", classes=label_cls, markup=False)
 
 
 class TodoPanel(Vertical):
@@ -1143,14 +1144,14 @@ class TodoPanel(Vertical):
         try:
             container = self.query_one("#todo-list-scroll", ScrollableContainer)
             container.remove_children()
+            self.query_one("#todo-count-display", Static).update(
+                f"  [{SUCCESS}]{self.done}[/] / [{TEXT}]{self.total}[/] done"
+            )
             if not self._todos:
                 self._show_empty()
                 return
             for t in self._todos:
                 container.mount(TodoItem(t["text"], t["done"], t["id"]))
-            self.query_one("#todo-count-display", Static).update(
-                f"  [{SUCCESS}]{self.done}[/] / [{TEXT}]{self.total}[/] done"
-            )
         except Exception:
             pass
 
@@ -1162,7 +1163,7 @@ class TodoPanel(Vertical):
 # 6. CostPanel -- Token usage and cost estimates (hacker themed)
 # ---------------------------------------------------------------------------
 
-class CostPanel(Vertical):
+class CostPanel(VerticalScroll):
     """Token usage with cost estimates -- cyberpunk accounting."""
 
     DEFAULT_CSS = """
@@ -1205,6 +1206,11 @@ class CostPanel(Vertical):
     avg_response_ms: reactive[float] = reactive(0.0)
     session_start: reactive[float] = reactive(0.0)
 
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._input_rate_known = False
+        self._output_rate_known = False
+
     def compose(self) -> ComposeResult:
         yield Label(f"  [{GOLD}]COST[/] // RESOURCE EXPENDITURE", classes="cost-header")
         yield Rule()
@@ -1216,9 +1222,9 @@ class CostPanel(Vertical):
         yield Rule()
 
         yield Label("ESTIMATED COST", classes="cost-section-title")
-        yield Static("  Input:  $0.00", id="cost-dollars-in", classes="cost-row")
-        yield Static("  Output: $0.00", id="cost-dollars-out", classes="cost-row")
-        yield Static(f"  [{GOLD}]Total:  $0.00[/]", id="cost-dollars-total", classes="cost-total")
+        yield Static("  Input:  --", id="cost-dollars-in", classes="cost-row")
+        yield Static("  Output: --", id="cost-dollars-out", classes="cost-row")
+        yield Static("  Rates unavailable; cost not estimated.", id="cost-dollars-total", classes="cost-total")
         yield Rule()
 
         yield Label("PERFORMANCE", classes="cost-section-title")
@@ -1284,13 +1290,15 @@ class CostPanel(Vertical):
                 f"  Total:  {self._fmt(total)}"
             )
             self.query_one("#cost-dollars-in", Static).update(
-                f"  Input:  ${cost_in:.4f}"
+                f"  Input:  ${cost_in:.4f}" if self._input_rate_known else "  Input:  --"
             )
             self.query_one("#cost-dollars-out", Static).update(
-                f"  Output: ${cost_out:.4f}"
+                f"  Output: ${cost_out:.4f}" if self._output_rate_known else "  Output: --"
             )
             self.query_one("#cost-dollars-total", Static).update(
                 f"  [{GOLD}]Total:  ${cost_total:.4f}[/]"
+                if self._input_rate_known and self._output_rate_known
+                else "  Rates unavailable; cost not estimated."
             )
         except Exception:
             pass
@@ -1310,13 +1318,16 @@ class CostPanel(Vertical):
         if tokens_out is not None:
             self.tokens_out = tokens_out
         if cost_per_1k_in is not None:
+            self._input_rate_known = True
             self.cost_per_1k_in = cost_per_1k_in
         if cost_per_1k_out is not None:
+            self._output_rate_known = True
             self.cost_per_1k_out = cost_per_1k_out
         if requests is not None:
             self.total_requests = requests
         if avg_ms is not None:
             self.avg_response_ms = avg_ms
+        self._refresh_display()
 
     @staticmethod
     def _fmt(count: int) -> str:
@@ -1400,9 +1411,10 @@ class ArmyTabPanel(Vertical):
         )
 
     def _build_grid(self) -> str:
-        """Build text-based agent grid: 2 columns for sidebar width."""
+        """Use one column in sidebars; show two only when both cells fit."""
         lines: list[str] = []
-        cols = 2
+        width = self.size.width or 40
+        cols = 2 if width >= 58 else 1
         rows_needed = (len(self._roster) + cols - 1) // cols
 
         for row_idx in range(rows_needed):
@@ -1418,18 +1430,21 @@ class ArmyTabPanel(Vertical):
                     task_snip = task[:10] + ".." if len(task) > 12 else (task or ".." * 5)
 
                     if state == "idle":
-                        cell = f"[{DIM}]{icon} {name:<10}[/] [{DIM}]{task_snip}[/]"
+                        cell = f"[{DIM}]{icon} {escape(name):<10}[/] [{DIM}]{escape(task_snip)}[/]"
                     else:
-                        cell = f"[{color}]{icon}[/] [{tier_color}]{name:<10}[/] [{TEXT}]{task_snip}[/]"
+                        cell = f"[{color}]{icon}[/] [{tier_color}]{escape(name):<10}[/] [{TEXT}]{escape(task_snip)}[/]"
                     row_parts.append(cell)
                 else:
                     row_parts.append(" " * 24)
 
             lines.append("  " + f" [{HUD_BORDER}]|[/] ".join(row_parts))
-            if row_idx < rows_needed - 1:
+            if cols > 1 and row_idx < rows_needed - 1:
                 lines.append(f"  [{HUD_BORDER}]{'-' * 52}[/]")
 
         return "\n".join(lines)
+
+    def on_resize(self) -> None:
+        self._refresh()
 
     def set_agent_state(self, name: str, state: str, task: str = "") -> None:
         if name in self._agent_states:
@@ -1456,7 +1471,7 @@ class ArmyTabPanel(Vertical):
 # 8. IntelPanel -- Context utilization + Threat monitor (NEW)
 # ---------------------------------------------------------------------------
 
-class IntelPanel(Vertical):
+class IntelPanel(VerticalScroll):
     """Intelligence panel: context utilization and threat alerts.
 
     Combines:
@@ -1501,7 +1516,7 @@ class IntelPanel(Vertical):
     """
 
     context_used: reactive[int] = reactive(0)
-    context_max: reactive[int] = reactive(1_000_000)
+    context_max: reactive[int] = reactive(0)
     alert_count: reactive[int] = reactive(0)
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1536,7 +1551,12 @@ class IntelPanel(Vertical):
         )
         yield ScrollableContainer(id="intel-threat-scroll", classes="threat-area")
 
+    def on_mount(self) -> None:
+        self._refresh_threats()
+
     def _build_context_bar(self) -> str:
+        if self.context_max <= 0:
+            return f"  [{DIM}]Context usage unavailable.\n  Connect a model to measure its window.[/]"
         pct = int((self.context_used / self.context_max) * 100) if self.context_max > 0 else 0
         pct = min(100, max(0, pct))
 
@@ -1566,7 +1586,7 @@ class IntelPanel(Vertical):
         parts: list[str] = []
         for name, color in self._sentinel_colors.items():
             parts.append(f"[{color}]{name}[/]")
-        return "  " + f" [{DIM}]|[/] ".join(parts) + f" [{DIM}]-- monitoring[/]"
+        return "  " + f" [{DIM}]|[/] ".join(parts) + f"\n  [{DIM}]Review profiles · alerts shown when reported[/]"
 
     def update_context(self, used: int, maximum: int) -> None:
         self.context_used = used
@@ -1607,7 +1627,7 @@ class IntelPanel(Vertical):
 
             if not self._alerts:
                 container.mount(
-                    Static(f"  [{DIM}]All clear. No active threats.[/]")
+                    Static(f"  [{DIM}]No reported alerts. Run a review with /review.\n  This is not a continuous security monitor.[/]")
                 )
                 return
 
@@ -1628,8 +1648,8 @@ class IntelPanel(Vertical):
                 container.mount(Static(
                     f"  [{sev_color}][{sev_icon}][/]"
                     f" [{DIM}]{alert['time']}[/]"
-                    f" [{agent_color}]{alert['agent']}[/]"
-                    f" [{TEXT}]{alert['message']}[/]"
+                    f" [{agent_color}]{escape(alert['agent'])}[/]"
+                    f" [{TEXT}]{escape(alert['message'])}[/]"
                 ))
 
         except Exception:

@@ -41,7 +41,15 @@ def auth_methods(provider: str) -> list[dict]:
         }
     ]
     if provider == "openrouter":
-        methods.insert(0, {"id": "browser", "label": "Sign in with OpenRouter", "available": True, "reason": "Browser PKCE; creates a user-controlled API key."})
+        methods.insert(
+            0,
+            {
+                "id": "browser",
+                "label": "Sign in with OpenRouter",
+                "available": True,
+                "reason": "Browser PKCE; creates a user-controlled API key.",
+            },
+        )
     if provider == "xai":
         available = bool(os.environ.get("DJCODE_XAI_OAUTH_CLIENT_ID", "").strip())
         methods.append(
@@ -76,9 +84,7 @@ def auth_methods(provider: str) -> list[dict]:
 def _client_id() -> str:
     value = os.environ.get("DJCODE_XAI_OAUTH_CLIENT_ID", "").strip()
     if not value:
-        raise AccountAuthError(
-            "Set an approved DJCODE_XAI_OAUTH_CLIENT_ID or choose API key."
-        )
+        raise AccountAuthError("Set an approved DJCODE_XAI_OAUTH_CLIENT_ID or choose API key.")
     return value
 
 
@@ -94,24 +100,69 @@ def _read() -> dict:
         return {}
 
 
-def has_account(provider: str) -> bool:
-    if provider != "xai":
-        return False
-    value = _read()
-    return bool(
-        value.get("access_token")
-        and value.get("client_id") == os.environ.get("DJCODE_XAI_OAUTH_CLIENT_ID", "").strip()
+def _valid_token(value) -> bool:
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= 16384
+        and all(33 <= ord(c) <= 126 for c in value)
     )
 
 
+def account_status(provider: str) -> dict:
+    """Local credential readiness only; no tokens and no network validation."""
+    if provider != "xai":
+        return {"stored": False, "connected": False, "expired": False, "refreshable": False}
+    value = _read()
+    registered = os.environ.get("DJCODE_XAI_OAUTH_CLIENT_ID", "").strip()
+    access = value.get("access_token")
+    refresh = value.get("refresh_token")
+    stored = _valid_token(access)
+    refreshable = _valid_token(refresh)
+    expiry = value.get("expires_at")
+    try:
+        valid_expiry = (
+            isinstance(expiry, (int, float))
+            and not isinstance(expiry, bool)
+            and math.isfinite(expiry)
+        )
+    except OverflowError:
+        valid_expiry = False
+    expired = not valid_expiry or expiry <= time.time() + 120
+    return {
+        "stored": stored,
+        "connected": bool(
+            stored
+            and registered
+            and value.get("client_id") == registered
+            and valid_expiry
+            and (not expired or refreshable)
+        ),
+        "expired": expired,
+        "refreshable": refreshable,
+    }
+
+
+def has_account(provider: str) -> bool:
+    return account_status(provider)["connected"]
+
+
+# A logout invalidates in-flight device grants/refreshes in this process.
+_generation = 0
+
+
 def _save(value: dict) -> None:
+    _save_raw(json.dumps(value).encode("utf-8"))
+
+
+def _save_raw(value: bytes) -> None:
+    """Atomic private-store write, also used to restore an interrupted settings update."""
     path = _path()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, temporary = tempfile.mkstemp(prefix=".xai-", dir=path.parent)
     try:
         os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w") as handle:
-            json.dump(value, handle)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(value)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
@@ -123,23 +174,27 @@ def _save(value: dict) -> None:
 def forget_account(provider: str) -> None:
     """Remove only DJcode's own local account credential, on explicit logout."""
     if provider == "xai":
+        global _generation
         _path().unlink(missing_ok=True)
+        _generation += 1
 
 
 def _positive(value, fallback: float, maximum: float) -> float:
+    if isinstance(value, bool):
+        return fallback
     try:
         number = float(value)
         return min(number, maximum) if math.isfinite(number) and number > 0 else fallback
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return fallback
 
 
 def _tokens(body: dict, client_id: str, previous: dict | None = None) -> dict:
     access = body.get("access_token")
-    if not isinstance(access, str) or not access:
+    if not _valid_token(access):
         raise AccountAuthError("xAI returned an invalid token response. Sign in again.")
     refresh = body.get("refresh_token") or (previous or {}).get("refresh_token", "")
-    if not isinstance(refresh, str):
+    if refresh != "" and not _valid_token(refresh):
         raise AccountAuthError("xAI returned an invalid refresh token.")
     return {
         "access_token": access,
@@ -180,16 +235,27 @@ async def begin_xai_login(*, client: httpx.AsyncClient | None = None) -> DeviceS
     if not isinstance(body, dict):
         raise AccountAuthError("xAI returned an invalid device authorization response.")
     uri = body.get("verification_uri_complete") or body.get("verification_uri", "")
-    parsed = urlparse(uri) if isinstance(uri, str) else None
+    try:
+        parsed = urlparse(uri) if isinstance(uri, str) else None
+        port = parsed.port if parsed else None
+    except ValueError:
+        parsed, port = None, None
     if (
         not parsed
+        or len(uri) > 2048
+        or any(ord(c) < 33 or ord(c) > 126 for c in uri)
         or parsed.scheme != "https"
         or parsed.hostname not in {"auth.x.ai", "accounts.x.ai", "grok.com", "x.ai"}
         or parsed.username
         or parsed.password
+        or port not in {None, 443}
     ):
         raise AccountAuthError("xAI returned an unexpected verification address.")
-    if not all(isinstance(body.get(k), str) and body[k] for k in ("device_code", "user_code")):
+    if (
+        not _valid_token(body.get("device_code"))
+        or not _valid_token(body.get("user_code"))
+        or len(body["user_code"]) > 128
+    ):
         raise AccountAuthError("xAI returned an invalid device authorization response.")
     return DeviceSignIn(
         uri,
@@ -202,12 +268,13 @@ async def begin_xai_login(*, client: httpx.AsyncClient | None = None) -> DeviceS
 
 
 async def finish_xai_login(
-    device: DeviceSignIn, *, client: httpx.AsyncClient | None = None
-) -> None:
+    device: DeviceSignIn, *, client: httpx.AsyncClient | None = None, store: bool = True
+) -> dict:
     """Bounded RFC8628 polling. Cancelling the task interrupts requests and waits."""
     if client is None:
         async with httpx.AsyncClient(timeout=10, follow_redirects=False) as owned:
-            return await finish_xai_login(device, client=owned)
+            return await finish_xai_login(device, client=owned, store=store)
+    generation = _generation
     interval = device.interval
     while time.monotonic() < device.deadline:
         await asyncio.sleep(min(interval, max(0, device.deadline - time.monotonic())))
@@ -230,8 +297,14 @@ async def finish_xai_login(
         if not isinstance(body, dict):
             raise AccountAuthError("xAI returned an invalid sign-in response.")
         if response.is_success:
-            _save(_tokens(body, device.client_id))
-            return
+            if generation != _generation:
+                raise AccountAuthError(
+                    "Account sign-in was cancelled by logout. Start sign-in again."
+                )
+            tokens = _tokens(body, device.client_id)
+            if store:
+                _save(tokens)
+            return tokens
         error = body.get("error")
         if error == "authorization_pending":
             continue
@@ -258,8 +331,9 @@ async def account_token(provider: str, base_url: str) -> str:
         )
     async with _refresh_lock:
         value = _read()
-        if not value.get("access_token") or value.get("client_id") != _client_id():
+        if not has_account(provider) or value.get("client_id") != _client_id():
             raise AccountAuthError("Sign in to your xAI account again.")
+        generation = _generation
         if value.get("expires_at", 0) > time.time() + 120:
             return value["access_token"]
         if not value.get("refresh_token"):
@@ -283,6 +357,8 @@ async def account_token(provider: str, base_url: str) -> str:
         if not isinstance(body, dict):
             raise AccountAuthError("xAI returned an invalid refresh response.")
         value = _tokens(body, value["client_id"], value)
+        if generation != _generation:
+            raise AccountAuthError("Account was disconnected during refresh. Sign in again.")
         _save(value)
         return value["access_token"]
 

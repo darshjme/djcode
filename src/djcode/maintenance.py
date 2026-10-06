@@ -38,3 +38,27 @@ def run_checks() -> dict:
         checks.append({"name": "Fatal lint", "status": "failed", "detail": str(error)})
     ok = all(check["status"] == "passed" for check in checks)
     return {"ok": ok, "summary": "Installation checks passed." if ok else "Installation checks failed.", "checks": checks}
+
+
+def run_lint(path: str | Path | None = None) -> dict:
+    """Run bounded fatal Python lint without mutation or tool installation."""
+    target = Path(path).expanduser().resolve() if path is not None else Path(__file__).resolve().parent
+    command = [sys.executable, "-m", "ruff", "check", "--no-cache", "--select", "E9,F63,F7,F82", "--output-format", "json", "--", str(target)]
+    base = {"ok": False, "status": "unavailable", "summary": "Lint could not run.",
+            "command": command, "diagnostics": [], "detail": "", "exit_code": 2}
+    if not target.exists():
+        return {**base, "detail": f"Lint path does not exist: {target}"}
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        if completed.returncode not in (0, 1):
+            return {**base, "detail": "Ruff unavailable or configuration invalid. Install project dependencies and inspect Ruff configuration."}
+        diagnostics = json.loads(completed.stdout)
+        if not isinstance(diagnostics, list):
+            raise ValueError("Unexpected lint response")
+        ok = completed.returncode == 0 and not diagnostics
+        return {**base, "ok": ok, "status": "passed" if ok else "failed", "summary": "Fatal lint passed." if ok else "Fatal lint found errors.", "diagnostics": diagnostics,
+                "detail": "Fix reported locations, then run lint again." if not ok else "", "exit_code": 0 if ok else 1}
+    except subprocess.TimeoutExpired:
+        return {**base, "detail": "Lint exceeded 30 seconds. Narrow the path and retry."}
+    except (OSError, ValueError):
+        return {**base, "detail": "Cannot run Ruff or decode its results. Install project dependencies and retry."}

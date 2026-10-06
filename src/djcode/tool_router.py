@@ -1099,7 +1099,7 @@ class ToolExtractionRouter:
         elif choice in ("s", "select"):
             return await self._select_intents(intents)
         else:
-            return intents  # Default to yes
+            return []  # Unrecognized responses do not authorize execution.
 
     async def _select_intents(self, intents: list[ToolIntent]) -> list[ToolIntent]:
         """Interactive picker to select which intents to execute."""
@@ -1149,7 +1149,7 @@ class ToolExtractionRouter:
                 })
                 return ToolResult(
                     intent=intent,
-                    success="Error" not in result,
+                    success=not result.startswith("Error"),
                     output=result,
                 )
 
@@ -1160,7 +1160,7 @@ class ToolExtractionRouter:
                         success=False,
                         output="Missing path for file_edit",
                     )
-                if intent.old_string and intent.new_string:
+                if intent.old_string and intent.new_string is not None:
                     result = await self._dispatcher("file_edit", {
                         "path": intent.path,
                         "old_string": intent.old_string,
@@ -1174,7 +1174,7 @@ class ToolExtractionRouter:
                     )
                 return ToolResult(
                     intent=intent,
-                    success="Error" not in result,
+                    success=not result.startswith("Error"),
                     output=result,
                 )
 
@@ -1204,7 +1204,7 @@ class ToolExtractionRouter:
                 })
                 return ToolResult(
                     intent=intent,
-                    success=True,
+                    success=not result.startswith(("Error:", "[exit code", "Command timed out")),
                     output=result or f"Created {intent.path}",
                 )
 

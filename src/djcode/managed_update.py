@@ -1,4 +1,4 @@
-"""Install CI-validated canonical builds without touching developer checkouts."""
+"""Install verified canonical builds without touching developer checkouts."""
 from __future__ import annotations
 
 import hashlib
@@ -176,13 +176,19 @@ def perform_update(force=False) -> dict:
             if manifest["commit"] == current_info.get("commit"):
                 return result("current", f"DJcode {current_info.get('version', '')} is current ({manifest['commit'][:8]}).")
             release = stage_build(prefix, current_info, manifest, client)
-            atomic_link(old, prefix / "previous")
+            previous = prefix / "previous"
+            prior_previous = previous.resolve() if previous.is_symlink() else None
+            atomic_link(old, previous)
             try:
                 atomic_link(release, current)
                 env = {**os.environ, "DJCODE_NO_UPDATE_CHECK": "1", "DJCODE_SKIP_STARTUP_CHECK": "1"}
                 run([str(current / "venv/bin/djcode"), "--version"], timeout=30, env=env)
             except BaseException:
                 atomic_link(old, current)
+                if prior_previous is not None:
+                    atomic_link(prior_previous, previous)
+                else:
+                    previous.unlink(missing_ok=True)
                 raise
         return result("updated", f"Installed DJcode {manifest['version']} ({manifest['commit'][:8]}). Previous build retained.",
                       updated=True, version=manifest["version"], commit=manifest["commit"], entrypoint=str(current / "venv/bin/djcode"))
@@ -212,16 +218,23 @@ def rollback() -> dict:
         target, old = previous.resolve(), current.resolve()
         for candidate in (target, old):
             read_receipt(candidate, prefix)
-        from djcode.config import set_value
+        target_info = read_receipt(target, prefix)
+        env = {**os.environ, "DJCODE_NO_UPDATE_CHECK": "1", "DJCODE_SKIP_STARTUP_CHECK": "1"}
+        version = run([str(target / "venv/bin/djcode"), "--version"], timeout=30, env=env)
+        if version != f"djcode, version {target_info.get('version', '')}":
+            raise ValueError("Rollback package version differs from its receipt")
+        from djcode.config import load_config, set_value
+        old_mode = load_config().get("update_mode", "auto")
         set_value("update_mode", "manual")
-        atomic_link(target, current)
         try:
+            atomic_link(target, current)
             atomic_link(old, previous)
         except BaseException:
             atomic_link(old, current)
+            set_value("update_mode", old_mode)
             raise
         return result("rolled_back", "Previous build restored. Updates set to manual to prevent immediate reinstallation.", updated=True)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         return result("unavailable", f"Rollback failed ({type(error).__name__}).", ok=False)
     finally:
         if lock:

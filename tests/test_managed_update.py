@@ -26,6 +26,7 @@ def managed(monkeypatch, tmp_path):
     monkeypatch.setattr(updater.sys, 'prefix', str(old / 'venv'))
     monkeypatch.setattr(config, 'load_config', lambda: {'update_mode': 'auto'})
     monkeypatch.delenv('DJCODE_NO_UPDATE_CHECK', raising=False)
+    monkeypatch.setattr(updater, "run", lambda *a, **kw: "djcode, version 4.1.0")
     modes = []
     monkeypatch.setattr(config, 'set_value', lambda *args: modes.append(args))
     return prefix, old, previous, release, modes
@@ -208,3 +209,27 @@ def test_rollback_non_posix_returns_without_lock_import(managed, monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr(updater, 'os', SimpleNamespace(name='nt'))
     assert updater.rollback()['status'] == 'manual_required'
+
+
+def test_rollback_rejects_broken_version_before_switching(managed, monkeypatch):
+    prefix, old, previous, _, modes = managed
+    monkeypatch.setattr(updater, 'run', lambda *a, **kw: 'djcode, version wrong')
+    assert not updater.rollback()['ok']
+    assert (prefix / 'current').resolve() == old
+    assert (prefix / 'previous').resolve() == previous
+    assert modes == []
+
+
+def test_failed_activation_preserves_previous_pointer(managed, monkeypatch):
+    prefix, old, previous, make, _ = managed
+    new = make('staged', 'c' * 40)
+    monkeypatch.setattr(updater, 'verified_manifest', lambda client: manifest())
+    monkeypatch.setattr(updater, 'stage_build', lambda *a: new)
+    def fail(*a, **kw):
+        raise RuntimeError('fixture-token')
+    monkeypatch.setattr(updater, 'run', fail)
+    result = updater.perform_update()
+    assert not result['ok']
+    assert (prefix / 'current').resolve() == old
+    assert (prefix / 'previous').resolve() == previous
+    assert 'fixture-token' not in json.dumps(result)

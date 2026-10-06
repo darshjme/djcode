@@ -256,6 +256,15 @@ class SessionDB:
 
         return session_id
 
+    def set_session_model(self, session_id: str, provider: str, model: str) -> None:
+        """Record the current inference selection without changing session counters."""
+        conn = self._connect()
+        try:
+            conn.execute("UPDATE sessions SET provider = ?, model = ? WHERE id = ?", (provider, model, session_id))
+            conn.commit()
+        finally:
+            conn.close()
+
     def update_session(
         self,
         session_id: str,
@@ -295,13 +304,13 @@ class SessionDB:
         finally:
             conn.close()
 
-    def end_session(self, session_id: str, summary: str = "") -> None:
+    def end_session(self, session_id: str, summary: str | None = None) -> None:
         """Mark a session as ended."""
         conn = self._connect()
         try:
             now = datetime.now().isoformat()
             conn.execute(
-                "UPDATE sessions SET end_time = ?, summary = ? WHERE id = ?",
+                "UPDATE sessions SET end_time = ?, summary = COALESCE(?, summary) WHERE id = ?",
                 (now, summary, session_id),
             )
             conn.commit()
@@ -323,6 +332,34 @@ class SessionDB:
         except sqlite3.Error as e:
             logger.error("Failed to get session: %s", e)
             return None
+        finally:
+            conn.close()
+
+    def resolve_session_id(self, reference: str) -> str | None:
+        """Resolve a full ID or the unique prefix printed by session history."""
+        if not reference:
+            return None
+        exact = self.get_session(reference)
+        if exact:
+            return exact.id
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT id FROM sessions WHERE substr(id, 1, ?) = ? LIMIT 2",
+                (len(reference), reference),
+            ).fetchall()
+            if len(rows) > 1:
+                raise ValueError("Session prefix is ambiguous; enter more of the session ID")
+            return rows[0]["id"] if rows else None
+        finally:
+            conn.close()
+
+    def reopen_session(self, session_id: str) -> None:
+        """Continue an existing record without discarding its summary or totals."""
+        conn = self._connect()
+        try:
+            conn.execute("UPDATE sessions SET end_time = NULL WHERE id = ?", (session_id,))
+            conn.commit()
         finally:
             conn.close()
 

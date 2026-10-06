@@ -2,14 +2,18 @@
 
 Run `djcode` for the full-screen TUI or `djcode --repl` for the line-oriented interface.
 Both interfaces discover commands from the same catalog. Each shows only the commands
-it supports. Provider setup and managed updates keep their existing behavior.
+it supports. The [connection and maintenance guide](AUTH-MODELS-MAINTENANCE.md)
+explains authentication, model readiness and installation ownership.
 
 ## Full-screen TUI
 
 - Type `/` to browse suggestions. Tab completes the highlighted command; Enter
   completes a partial name or submits an exact command. Arguments are preserved.
-- F4 opens the searchable command palette. F1 shows the full command and shortcut list.
+- Ctrl+P opens the searchable command palette, with F4 as a fallback. F1 or
+  `/hotkeys` shows the command and shortcut list. Ctrl+G toggles Plan/Act.
   F2 selects a model, F3 selects a provider, and F5 shows agents.
+- Selecting a palette entry fills the prompt. Review its arguments and press
+  Enter again to submit; Escape closes the palette and retains your draft.
 - Up/Down browse this application's submitted prompts when suggestions are hidden.
   Moving past the newest entry restores the draft you were editing.
 - While a response runs, submitting another prompt keeps the draft intact. Ctrl+K
@@ -17,6 +21,8 @@ it supports. Provider setup and managed updates keep their existing behavior.
   conversation wait until the active response is cancelled or finished.
 - Ctrl+B toggles the sidebar. It starts hidden below 110 columns. The footer and
   approval status occupy separate rows; command suggestions do not cover the input.
+- Ctrl+E or `/studio` opens Project studio. F6 focuses the sidebar tabs;
+  Left/Right selects a panel. Escape closes dialogs without applying a selection.
 
 TUI conversations are checkpointed to SQLite and saved on exit. `/history` lists
 sessions and `/resume ID` restores their conversation.
@@ -28,13 +34,19 @@ sessions and `/resume ID` restores their conversation.
   to the prompt. Ctrl+D at an empty prompt, or `/exit`, closes the session.
 - Ctrl+R recalls the last message for editing. Ctrl+K deletes text after the input
   cursor. These input bindings are active while the REPL is accepting input.
-- `/plan` or Ctrl+P switches Plan/Act. Plan mode blocks operator tool execution,
+- Ctrl+P starts slash-command completion at an empty prompt or a slash prefix;
+  it preserves an ordinary draft. `/plan` or Ctrl+G switches Plan/Act.
+  Plan mode blocks operator tool execution,
   including when auto-accept is enabled. Specialist execution and running recipes
   require returning to Act; read-only scout/architect commands remain available.
 - `/thinking` toggles thinking output. `/auto` or Ctrl+T toggles the effective
   approval state for both the operator and orchestration.
-- `/check` and `/lint` run the existing runtime checks; `/update` uses the existing
-  managed updater. `/docs` opens the built-in index, `/docs overview` opens a topic,
+- `/check` checks the runtime. `/lint [PATH]` runs bounded fatal Ruff checks.
+  `/update` or `/update status` reports offline status, `/update check` checks for
+  a release, and `/update install` explicitly installs (Act mode required).
+  `/auth` lists readiness and `/auth status [PROVIDER]` reports a provider;
+  `/connect` starts sign-in. `/hotkeys` lists interface-specific shortcuts.
+  `/docs` opens the built-in index, `/docs overview` opens a topic,
   and `/docs <project task>` dispatches documentation work in Act mode.
 
 The full operator conversation is checkpointed after tool rounds and responses,

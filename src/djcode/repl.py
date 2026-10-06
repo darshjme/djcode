@@ -34,10 +34,6 @@ from djcode.repl_runtime import run_interruptible
 from djcode.agents.operator import Operator
 from djcode.auth import (
     PROVIDERS,
-    get_api_key,
-    get_base_url,
-    interactive_auth,
-    interactive_provider_picker,
     is_uncensored_model,
 )
 from djcode.errors import classify_error, format_error, get_fallback_model
@@ -63,8 +59,6 @@ from djcode.provider import (
     ProviderConfig,
     fetch_ollama_models_sync,
     format_model_size,
-    fuzzy_match_model,
-    get_ollama_model_names,
 )
 from djcode.status import StatusBar
 from djcode.tui import (
@@ -102,7 +96,7 @@ def print_banner(provider: Provider, *, auto_accept: bool = False) -> None:
     body.append("Your terminal. An entire team.\n", style="bold #F4F4F4")
     body.append(cwd + "\n", style="dim")
     body.append(f"Approvals: {'auto' if auto_accept else 'ask'}", style="yellow")
-    body.append(" · /help commands · Tab complete · Ctrl+P plan", style="dim")
+    body.append(" · /help commands · Tab complete · Ctrl+P commands · Ctrl+G plan", style="dim")
     body.append("\n/features · /project · /memory · /design · /fleet", style=GOLD)
     console.print(Panel(body, border_style="#29292C", padding=(1, 2)))
 
@@ -110,103 +104,112 @@ def print_banner(provider: Provider, *, auto_accept: bool = False) -> None:
 HELP_TEXT = command_help("repl") + "\n\n[dim]Tab completes commands · Up/Down history · /shortcuts for keys[/]"
 
 
-def _discover_current_models(provider):
-    from djcode.startup import probe
-    config = load_config()
-    config.update(provider=provider.config.name, model=provider.config.model, base_url=provider.config.base_url)
-    config[f"{provider.config.name}_api_key"] = provider.config.api_key
-    config[f"{provider.config.name}_auth_method"] = provider.config.auth_method
-    return probe(config)
+def _runtime_config(provider: Provider) -> dict:
+    from djcode.model_selection import candidate_config
+    current = provider.config
+    ident = current.provider_id or current.name
+    config = candidate_config(load_config(), ident, current.model)
+    config["base_url"] = current.base_url
+    config[f"{ident}_auth_method"] = current.auth_method
+    return config
 
 
-def _handle_models_list(provider: Provider) -> None:
-    found = _discover_current_models(provider)
+def _discover_current_models(provider, provider_id=None):
+    from djcode.model_selection import model_catalog
+    return model_catalog(_runtime_config(provider), provider_id)
+
+
+def _handle_models_list(provider: Provider, provider_id=None) -> None:
+    from djcode.model_selection import capability_summary
+    found = _discover_current_models(provider, provider_id)
     if not found["models"]:
         console.print(found["message"], markup=False)
         return
-    table = Table(title="Available models", border_style=GOLD)
+    table = Table(title=f"Models · {found['provider']} · {found['source']} catalog", border_style=GOLD)
     table.add_column("Model")
-    for name in found["models"]:
-        table.add_row(name + (" · current" if name == provider.config.model else ""))
+    table.add_column("Provider-reported capabilities")
+    for item in found["models"]:
+        ident = item["id"]
+        table.add_row(ident + (" · current" if ident == found.get("selected") else ""), capability_summary(item))
     console.print(table)
 
 
-async def _handle_model_switch_interactive(operator: Operator, status_bar: StatusBar) -> None:
-    found = await asyncio.to_thread(_discover_current_models, operator.provider)
-    if found["models"]:
-        selected = await questionary.autocomplete("Select model:", choices=found["models"], match_middle=True, ignore_case=True).ask_async()
-    else:
+async def _apply_connection(config: dict, operator: Operator, status_bar: StatusBar,
+                            orchestrator=None, *, persist=True) -> bool:
+    from djcode.config import load_config_for_write
+    candidate = None
+    try:
+        candidate = Provider(ProviderConfig.from_mapping(config))
+        if persist:
+            load_config_for_write()
+            save_config(config)
+    except (OSError, ValueError, TypeError) as error:
+        if candidate:
+            await candidate.close()
+        console.print(f"Selection could not be applied: {type(error).__name__}. Current provider retained.", markup=False)
+        return False
+    previous = operator.provider
+    operator.provider = candidate
+    manager = getattr(operator, "context_manager", None)
+    if manager:
+        manager.reconfigure(candidate.config.model, candidate, candidate.config.context_window)
+    candidate._session_runtimes = list(getattr(previous, "_session_runtimes", []))
+    if not candidate._session_runtimes and getattr(operator, "capabilities", None):
+        candidate._session_runtimes = [operator.capabilities]
+    previous._session_runtimes = []
+    if orchestrator:
+        orchestrator.provider = candidate
+        if getattr(orchestrator, "_shadow", None):
+            orchestrator._shadow.provider = candidate
+    try:
+        await previous.close()
+    except Exception:
+        console.print("Previous provider cleanup failed; new selection is active.", markup=False)
+    if getattr(operator, "session_db", None) and getattr(operator, "session_id", None):
+        try:
+            operator.session_db.set_session_model(operator.session_id, config["provider"], config["model"])
+        except Exception:
+            console.print("Model changed; session metadata could not be saved.", markup=False)
+    status_bar.update(provider=config["provider"], model=config["model"], uncensored=is_uncensored_model(config["model"]))
+    console.print(f"Connected to {config['provider']} / {config['model']}", markup=False)
+    return True
+
+
+async def _handle_model_switch(arg: str, operator: Operator, status_bar: StatusBar,
+                               orchestrator=None, provider_id=None) -> bool:
+    from djcode.config import load_config_for_write
+    from djcode.model_selection import select_model, ModelSelectionError
+    try:
+        load_config_for_write()
+        config = _runtime_config(operator.provider)
+        selected = await asyncio.to_thread(select_model, config, arg, provider_id)
+    except (ModelSelectionError, ValueError) as error:
+        console.print(str(error), markup=False)
+        return False
+    return await _apply_connection(selected, operator, status_bar, orchestrator)
+
+
+async def _handle_model_switch_interactive(operator: Operator, status_bar: StatusBar,
+                                           orchestrator=None, provider_id=None) -> None:
+    found = await asyncio.to_thread(_discover_current_models, operator.provider, provider_id)
+    if not found["models"]:
         console.print(found["message"], markup=False)
-        selected = await questionary.text("Exact model ID:").ask_async()
+        return
+    selected = await questionary.autocomplete("Select model:", choices=[item["id"] for item in found["models"]],
+                                             match_middle=True, ignore_case=True).ask_async()
     if selected:
-        _handle_model_switch(selected, operator, status_bar)
+        await _handle_model_switch(selected, operator, status_bar, orchestrator, found["provider"])
 
 
-def _handle_model_switch(arg: str, operator: Operator, status_bar: StatusBar) -> None:
-    """Handle /model <name> with fuzzy matching and validation."""
-    provider = operator.provider
-
-    if provider.config.name == "ollama":
-        available = get_ollama_model_names(provider.config.base_url)
-
-        if available:
-            match = fuzzy_match_model(arg, available)
-            if match:
-                if match != arg:
-                    console.print(f"[dim]Resolved '{arg}' -> '{match}'[/]")
-                provider.config.model = match
-                set_value("model", match)
-                uncensored = is_uncensored_model(match)
-                status_bar.update(model=match, uncensored=uncensored)
-
-                if uncensored or operator.bypass_rlhf:
-                    from djcode.prompt import build_system_prompt
-                    operator.messages[0].content = build_system_prompt(
-                        bypass_rlhf=operator.bypass_rlhf, model=match
-                    )
-
-                console.print(f"[green]Model switched to:[/] {match}")
-                if uncensored:
-                    console.print(f"  [dim]\U0001f513 Uncensored mode active[/]")
-            else:
-                console.print(f"[red]Model '{arg}' not found.[/]")
-                names = ", ".join(available[:10])
-                console.print(f"[dim]Available: {names}[/]")
-                console.print(f"[dim]Pull it with: ollama pull {arg}[/]")
-        else:
-            # Can't reach Ollama — set it anyway, will fail at chat time
-            console.print(f"[yellow]Cannot verify model (Ollama unreachable).[/]")
-            provider.config.model = arg
-            set_value("model", arg)
-            status_bar.update(model=arg, uncensored=is_uncensored_model(arg))
-            console.print(f"[green]Model set to:[/] {arg}")
-    else:
-        # Non-Ollama provider — just set it
-        provider.config.model = arg
-        set_value("model", arg)
-        status_bar.update(model=arg, uncensored=is_uncensored_model(arg))
-        console.print(f"[green]Model switched to:[/] {arg}")
-
-
-def _handle_provider_switch_interactive(operator: Operator, status_bar: StatusBar) -> None:
-    """Interactive provider picker."""
-    provider_id = interactive_provider_picker()
-    if not provider_id:
-        return
-
-    prov_info = PROVIDERS.get(provider_id, {})
-
-    new_config = ProviderConfig.from_config(provider_override=provider_id)
-    from djcode.account_auth import has_account
-    authenticated = has_account(provider_id) if new_config.auth_method == "account" else bool(new_config.api_key)
-    if prov_info.get("needs_key") and not authenticated:
-        console.print(f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]")
-        return
-
-    operator.provider = Provider(new_config)
-    set_value("provider", provider_id)
-    status_bar.update(provider=provider_id, model=new_config.model)
-    console.print(f"[green]Provider switched to:[/] {prov_info.get('name', provider_id)}")
+async def _handle_provider_switch_interactive(operator: Operator, status_bar: StatusBar,
+                                              orchestrator=None, provider_id=None) -> None:
+    """Choose a provider and a verified model as a single transaction."""
+    from djcode.model_selection import provider_choices
+    if provider_id is None:
+        choices = provider_choices(load_config())
+        provider_id = await questionary.select("Provider:", choices=[questionary.Choice(item["name"], value=item["id"]) for item in choices]).ask_async()
+    if provider_id:
+        await _handle_model_switch_interactive(operator, status_bar, orchestrator, provider_id)
 
 
 async def handle_slash_command(
@@ -240,31 +243,21 @@ async def handle_slash_command(
     if command == "/connect":
         from djcode.startup import setup
         configured = await asyncio.to_thread(setup, load_config())
-        previous = operator.provider
-        operator.provider = Provider(ProviderConfig.from_config(configured["provider"], configured["model"]))
-        operator.provider._session_runtimes = [operator.capabilities]
-        previous._session_runtimes = []
-        operator.context_manager.provider = operator.provider
-        await previous.close()
-        status_bar.update(model=operator.provider.config.model, provider=operator.provider.config.name)
+        from djcode.startup import probe
+        checked = await asyncio.to_thread(probe, configured)
+        if checked["status"] == "ready":
+            await _apply_connection(configured, operator, status_bar, orchestrator, persist=False)
+        else:
+            console.print(checked["message"] + " Saved setup retained for later; current runtime unchanged.", markup=False)
         return True
 
     if command == "/help":
         console.print(Panel(HELP_TEXT, title=f"[bold {GOLD}]DJcode Help[/]", border_style=GOLD))
 
-    elif command in ("/check", "/lint"):
-        from djcode.maintenance import run_checks
-        result = await asyncio.to_thread(run_checks)
-        console.print(result["summary"], markup=False)
-        for item in result.get("checks", []):
-            console.print(f"{item['name']}: {item['status']} · {item['detail']}", markup=False)
-
-    elif command == "/update":
-        from djcode.updater import perform_update
-        result = await asyncio.to_thread(perform_update, force=True)
-        console.print(result["message"], markup=False)
-        if result.get("updated"):
-            console.print("Restart DJcode after your current work to use the update.")
+    elif command in {"/check", "/lint", "/update"}:
+        from djcode.terminal_operations import run_operation
+        for line in await asyncio.to_thread(run_operation, command, arg):
+            console.print(line, markup=False)
 
     elif command == "/plan":
         operator.plan_mode = not operator.plan_mode
@@ -292,52 +285,21 @@ async def handle_slash_command(
                 console.print(str(error), markup=False)
 
     elif command == "/models":
-        await asyncio.to_thread(_handle_models_list, operator.provider)
+        await asyncio.to_thread(_handle_models_list, operator.provider, arg.strip() or None)
 
     elif command == "/model":
-        if not arg:
-            # No arg — interactive picker
-            await _handle_model_switch_interactive(operator, status_bar)
+        if arg:
+            await _handle_model_switch(arg, operator, status_bar, orchestrator)
         else:
-            _handle_model_switch(arg, operator, status_bar)
-        if getattr(operator.provider, "_new_provider", None) is not None:
-            await operator.provider._new_provider.close()
-            operator.provider._new_provider = None
-        if hasattr(operator, "context_manager"):
-            from djcode.context.manager import ContextWindowManager
-            operator.context_manager = ContextWindowManager(model=operator.provider.config.model, provider=operator.provider)
-            operator.context_manager.replace_messages(operator.messages)
+            await _handle_model_switch_interactive(operator, status_bar, orchestrator)
 
     elif command == "/provider":
-        if not arg:
-            await asyncio.to_thread(_handle_provider_switch_interactive, operator, status_bar)
-        else:
-            # Direct provider switch by name
-            if arg in PROVIDERS:
-                prov_info = PROVIDERS[arg]
-                new_config = ProviderConfig.from_config(provider_override=arg)
-                from djcode.account_auth import has_account
-                authenticated = has_account(arg) if new_config.auth_method == "account" else bool(new_config.api_key)
-                if prov_info.get("needs_key") and not authenticated:
-                    console.print(f"[yellow]No configured authentication for {prov_info['name']}.[/] [dim]Run /auth to configure.[/]")
-                else:
-                    operator.provider = Provider(new_config)
-                    set_value("provider", arg)
-                    status_bar.update(provider=arg, model=new_config.model)
-                    console.print(f"[green]Provider switched to:[/] {prov_info['name']}")
-            else:
-                console.print(f"[red]Unknown provider:[/] {arg}")
-                names = ", ".join(PROVIDERS.keys())
-                console.print(f"[dim]Options: {names}[/]")
+        await _handle_provider_switch_interactive(operator, status_bar, orchestrator, arg.strip() or None)
 
     elif command == "/auth":
-        await asyncio.to_thread(interactive_auth)
-        # Reload provider after auth
-        cfg = load_config()
-        provider_id = cfg.get("provider", "ollama")
-        new_config = ProviderConfig.from_config(provider_override=provider_id)
-        operator.provider = Provider(new_config)
-        status_bar.update(provider=provider_id, model=new_config.model)
+        from djcode.terminal_operations import run_operation
+        for line in await asyncio.to_thread(run_operation, command, arg):
+            console.print(line, markup=False)
 
     elif command == "/auto":
         new_val = not operator.auto_accept
@@ -642,7 +604,7 @@ async def handle_slash_command(
         console.print("[dim]Goodbye.[/]")
         return False
 
-    elif command == "/shortcuts":
+    elif command in {"/shortcuts", "/hotkeys"}:
         show_shortcuts()
 
     # ── MCP Extensions ────────────────────────────────────────────────

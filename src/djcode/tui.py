@@ -146,8 +146,18 @@ def register_keybindings(
     def _kill_generation(event: Any) -> None:
         event.app.current_buffer.delete(len(event.app.current_buffer.text_after_cursor))
 
-    # Ctrl+P — Toggle plan/act mode
+    # Ctrl+P discovers commands without overwriting an existing draft.
     @kb.add("c-p")
+    def _complete_commands(event: Any) -> None:
+        buf = event.app.current_buffer
+        if not buf.text:
+            buf.text = "/"
+            buf.cursor_position = 1
+        if buf.text.startswith("/") and not any(c.isspace() for c in buf.text):
+            buf.start_completion(select_first=False)
+
+    # Ctrl+G — Toggle plan/act mode
+    @kb.add("c-g")
     def _toggle_plan_mode(event: Any) -> None:
         _mode.plan_mode = not _mode.plan_mode
         operator.plan_mode = _mode.plan_mode
@@ -371,7 +381,8 @@ SHORTCUTS_TABLE = [
     ("Ctrl+O", "Toggle thinking verbose"),
     ("Ctrl+L", "Clear screen"),
     ("Ctrl+T", "Toggle auto-accept"),
-    ("Ctrl+P", "Toggle plan/act mode"),
+    ("Ctrl+P", "Search slash commands at an empty prompt"),
+    ("Ctrl+G", "Toggle plan/act mode"),
     ("Ctrl+R", "Recall last prompt for editing"),
     ("Ctrl+K", "Delete input after the cursor"),
     ("Ctrl+C", "Cancel input or the current response"),

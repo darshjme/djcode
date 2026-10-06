@@ -466,6 +466,12 @@ class ShadowOrchestrator:
         All agents run concurrently. Results are collected on the context bus.
         Only the final synthesis is streamed.
         """
+        if not roles or len(roles) > 32 or len(set(roles)) != len(roles):
+            raise ValueError("Parallel execution needs 1–32 unique specialist roles")
+        # Resolve the complete batch before emitting events or starting workers.
+        for role in roles:
+            get_agent(role)
+
         async def run_agent(role: AgentRole) -> str:
             spec = get_agent(role)
             self._print_agent_header(spec)

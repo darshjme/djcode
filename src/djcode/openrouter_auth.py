@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 import secrets
 from urllib.parse import urlencode
 
@@ -24,7 +25,14 @@ def begin():
 
 
 async def exchange(code, verifier, *, client=None):
-    if not isinstance(code, str) or not code.strip() or not verifier:
+    if (
+        not isinstance(code, str)
+        or not code.strip()
+        or len(code) > 2048
+        or any(ord(c) < 33 or ord(c) > 126 for c in code.strip())
+        or not isinstance(verifier, str)
+        or not re.fullmatch(r"[A-Za-z0-9._~-]{43,128}", verifier)
+    ):
         raise AccountAuthError("Enter the one-time authorization code from OpenRouter")
     if client is None:
         async with httpx.AsyncClient(timeout=20, follow_redirects=False) as owned:
@@ -40,6 +48,12 @@ async def exchange(code, verifier, *, client=None):
         raise AccountAuthError(
             "OpenRouter sign-in failed or expired; restart browser sign-in"
         ) from None
-    if not isinstance(body, dict) or not isinstance(body.get("key"), str) or not body["key"]:
+    if (
+        not isinstance(body, dict)
+        or not isinstance(body.get("key"), str)
+        or not body["key"]
+        or len(body["key"]) > 16384
+        or any(ord(c) < 33 or ord(c) > 126 for c in body["key"])
+    ):
         raise AccountAuthError("OpenRouter returned an invalid sign-in response")
     return body["key"]

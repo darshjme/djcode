@@ -26,6 +26,33 @@ from djcode import __version__
 console = Console()
 
 
+class CodingCommand(click.Command):
+    """Keep one-shot prompts while routing explicit maintenance commands."""
+
+    def parse_args(self, ctx, args):
+        from djcode.maintenance_cli import commands
+
+        if args and args[0] in commands:
+            command = commands[args[0]]
+            result = command.main(
+                args=args[1:], prog_name=f"{ctx.info_name} {args[0]}", standalone_mode=False
+            )
+            ctx.exit(result if isinstance(result, int) else 0)
+        return super().parse_args(ctx, args)
+
+    def get_help(self, ctx):
+        return super().get_help(ctx) + (
+            "\n\nCommands:\n"
+            "  auth     Log in, inspect or remove provider credentials.\n"
+            "  models   Discover models or select a provider/model pair.\n"
+            "  update   Check, install or roll back a managed update.\n"
+            "  lint     Check Python files with actionable fatal diagnostics.\n"
+            "  doctor   Verify installation and runtime health.\n"
+            "\nUse 'djcode COMMAND --help' for options. To send a reserved word as a prompt,\n"
+            "use 'djcode -- WORD'."
+        )
+
+
 def redact_config(value, name=""):
     if any(word in name.lower() for word in ("key", "token", "secret", "password")):
         return "***" if value else value
@@ -36,7 +63,7 @@ def redact_config(value, name=""):
     return value
 
 
-@click.command(context_settings={"help_option_names": ["-h", "--help"]})
+@click.command(cls=CodingCommand, context_settings={"help_option_names": ["-h", "--help"]})
 @click.argument("prompt", required=False, default=None)
 @click.option(
     "--provider",
